@@ -281,6 +281,27 @@ class CsdOsqpOptimizer:
     # ------------------------------------------------------------------
 
     def fit_batch(self, data_all, x0_all, eta=None):
+        """Fit all voxels; forces float32 (jax_enable_x64=False) for the OSQP solve, then restores the flag.
+
+        CSD is a float32 production path: the FOD is thresholded / peak-extracted, so it sits
+        within the float32 noise floor, and float64 is far slower on GPU. jaxopt's OSQP mixes
+        float32 and float64 internals when the *global* ``jax_enable_x64`` flag is on -- which a
+        preceding cylinder-model fit leaves enabled (cylinders need float64 for their Van
+        Gelderen sums, whose alpha^6 terms overflow float32). That mismatch raises a dtype
+        TypeError in ``lax.cond``. Forcing x64 off for our solve (and restoring it afterwards)
+        makes CSD robust to the ambient global flag and keeps it in its intended float32.
+        """
+        import jax
+        _prev_x64 = jax.config.jax_enable_x64
+        if _prev_x64:
+            jax.config.update("jax_enable_x64", False)
+        try:
+            return self._fit_batch_impl(data_all, x0_all, eta)
+        finally:
+            if _prev_x64:
+                jax.config.update("jax_enable_x64", True)
+
+    def _fit_batch_impl(self, data_all, x0_all, eta=None):
         """Fit all voxels in parallel using jaxopt.OSQP + jax.vmap.
 
         Parameters
