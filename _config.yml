@@ -1,0 +1,35 @@
+# Jupyter Book configuration for the dmipy-fit documentation site.
+# Built and deployed to GitHub Pages by .github/workflows/docs.yml.
+title: "dmipy — Diffusion Microstructure Imaging in Python"
+author: "dmrai-lab"
+copyright: "2019–2026"
+only_build_toc_files: true
+
+# Use the outputs committed in the notebooks (the real-data / GPU notebooks are
+# expensive and the Monte Carlo ground truth is shipped as cached arrays). The
+# lightweight notebooks are independently re-executed for honesty by the nbmake
+# job in the test workflow.
+execute:
+  execute_notebooks: "off"
+
+repository:
+  url: https://github.com/dmrai-lab/dmipy-fit
+  branch: main
+
+html:
+  use_repository_button: true
+  use_issues_button: true
+  home_page_in_navbar: false
+
+parse:
+  myst_enable_extensions:
+    - amsmath
+    - dollarmath
+    - colon_fence
+
+sphinx:
+  config:
+    html_show_copyright: false
+    mathjax3_config:
+      tex:
+        macros: {}

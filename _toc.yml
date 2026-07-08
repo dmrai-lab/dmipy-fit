@@ -1,0 +1,10 @@
+# Table of contents for the dmipy-fit Jupyter Book (see _config.yml).
+# Only pages that actually ship are listed (only_build_toc_files: true in _config.yml).
+# The broader tutorial suite (acquisition / fitting / distributed / white-matter /
+# real-data chapters) is authored in the private repo and lands here as it is released.
+format: jb-book
+root: README
+parts:
+  - caption: Flagship
+    chapters:
+      - file: examples/flagship_canonical_wm/canonical_wm_parity
