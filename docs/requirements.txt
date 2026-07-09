@@ -1,0 +1,5 @@
+# Dependencies to build the Jupyter Book (notebook execution is OFF in _config.yml,
+# so only rendering deps are needed — no JAX/GPU).
+jupyter-book>=1.0
+jupytext>=1.16
+matplotlib>=3.5

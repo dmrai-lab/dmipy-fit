@@ -32,6 +32,8 @@ jobs:
           # dmipy itself is needed only for cross-references; data extras keep
           # the bundled-slice loaders importable. Notebook execution is OFF in
           # _config.yml (committed outputs), so no GPU is required here.
+          # dmipy-sim is a hard dependency; install from the public repo until it is on PyPI.
+          pip install "dmipy-sim @ git+https://github.com/dmrai-lab/dmipy-sim.git"
           pip install -e ".[data]"
 
       - name: Build the book
