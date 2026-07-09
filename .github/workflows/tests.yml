@@ -44,13 +44,14 @@ jobs:
           # Executes the flagship canonical-WM parity page on CPU: the analytical
           # forward runs live and is asserted against the cached, step-resolved
           # Monte-Carlo reference (flagship_mc_reference.npz), so CPU CI stays fast.
+          # nbmake collects .ipynb natively (the paired .md is the editable source).
           JAX_PLATFORMS=cpu pytest --nbmake -q \
-            examples/flagship_canonical_wm/canonical_wm_parity.md \
-            examples/01_acquisition_schemes/waveform_first_acquisition_scheme.md \
-            examples/01_acquisition_schemes/loading_schemes_from_files_and_dipy.md \
-            examples/02_signal_models/build_multicompartment_model.md \
-            examples/03_fitting_and_optimization/simulating_and_fitting.md \
-            examples/06_gpu_acceleration/jax_gpu_fitting.md
+            examples/flagship_canonical_wm/canonical_wm_parity.ipynb \
+            examples/01_acquisition_schemes/waveform_first_acquisition_scheme.ipynb \
+            examples/01_acquisition_schemes/loading_schemes_from_files_and_dipy.ipynb \
+            examples/02_signal_models/build_multicompartment_model.ipynb \
+            examples/03_fitting_and_optimization/simulating_and_fitting.ipynb \
+            examples/06_gpu_acceleration/jax_gpu_fitting.ipynb
 
       - name: Upload coverage
         if: matrix.python-version == '3.12'
