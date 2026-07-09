@@ -51,7 +51,10 @@ jobs:
             examples/01_acquisition_schemes/loading_schemes_from_files_and_dipy.ipynb \
             examples/02_signal_models/build_multicompartment_model.ipynb \
             examples/03_fitting_and_optimization/simulating_and_fitting.ipynb \
-            examples/06_gpu_acceleration/jax_gpu_fitting.ipynb
+            examples/03_fitting_and_optimization/ivim.ipynb \
+            examples/05_distributed_models/noddi_watson.ipynb \
+            examples/06_gpu_acceleration/jax_gpu_fitting.ipynb \
+            examples/11_acquisition_families/btensor_microscopic_anisotropy.ipynb
 
       - name: Upload coverage
         if: matrix.python-version == '3.12'
