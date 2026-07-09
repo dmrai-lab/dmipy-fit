@@ -618,12 +618,12 @@ class S4SphereGaussianPhaseApproximation(
                 if freq_m == 0:
                     # PGSE measurement inside a mixed scheme
                     if g is not None and g[m] > 0:
-                        E_sphere[m] = float(self.sphere_attenuation(
+                        E_sphere[m] = float(np.asarray(self.sphere_attenuation(
                             np.atleast_1d(g[m]),
                             float(delta[m]),
                             float(Delta[m]),
                             diameter,
-                        ))
+                        )).reshape(-1)[0])
                 else:
                     # OGSE measurement
                     t_r = float(acquisition_scheme.gradient_rise_time[m])

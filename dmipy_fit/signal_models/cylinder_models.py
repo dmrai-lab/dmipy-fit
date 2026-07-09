@@ -788,15 +788,16 @@ class C4CylinderGaussianPhaseApproximation(
                 freq_m = osc_freq[m]
                 if freq_m == 0:
                     # PGSE measurement inside a mixed scheme
-                    E_perpendicular[m] = _attenuation_perpendicular_gaussian_phase(
-                        diameter,
-                        np.atleast_1d(G_perp_m),
-                        float(delta[m]),
-                        float(Delta[m]),
-                        D,
-                        self.gyromagnetic_ratio,
-                        self._CYLINDER_TRASCENDENTAL_ROOTS,
-                    )
+                    E_perpendicular[m] = float(np.asarray(
+                        _attenuation_perpendicular_gaussian_phase(
+                            diameter,
+                            np.atleast_1d(G_perp_m),
+                            float(delta[m]),
+                            float(Delta[m]),
+                            D,
+                            self.gyromagnetic_ratio,
+                            self._CYLINDER_TRASCENDENTAL_ROOTS,
+                        )).reshape(-1)[0])
                 else:
                     t_r = float(acquisition_scheme.gradient_rise_time[m])
                     if t_r > 0:

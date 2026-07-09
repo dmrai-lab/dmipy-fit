@@ -78,9 +78,9 @@ def test_c4_pgse_bit_identical():
     from dmipy_fit.signal_models.cylinder_models import _attenuation_perpendicular_gaussian_phase
     roots = C4CylinderGaussianPhaseApproximation._CYLINDER_TRASCENDENTAL_ROOTS
     for i in np.where(mask)[0]:
-        E_perp_ref[i] = _attenuation_perpendicular_gaussian_phase(
+        E_perp_ref[i] = np.asarray(_attenuation_perpendicular_gaussian_phase(
             diam, np.atleast_1d(g_perp[i]), delta, Delta,
-            c4.diffusion_perpendicular, c4.gyromagnetic_ratio, roots)
+            c4.diffusion_perpendicular, c4.gyromagnetic_ratio, roots)).reshape(-1)[0]
     E_ref = E_par_ref * E_perp_ref
 
     assert_allclose(E_new, E_ref, rtol=1e-12,

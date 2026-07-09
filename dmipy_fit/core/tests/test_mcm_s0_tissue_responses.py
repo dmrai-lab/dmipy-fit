@@ -90,8 +90,8 @@ def test_s0_responses_fit_recovers_vf():
     mcm.set_fixed_parameter('G1Ball_1_lambda_iso', 3.0e-9)
     fit_result = mcm.fit(scheme, data, solver='brute2fine', Ns=5)
 
-    fitted_vf_stick = float(fit_result.fitted_parameters['partial_volume_0'])
-    fitted_vf_ball = float(fit_result.fitted_parameters['partial_volume_1'])
+    fitted_vf_stick = float(np.asarray(fit_result.fitted_parameters['partial_volume_0']).reshape(-1)[0])
+    fitted_vf_ball = float(np.asarray(fit_result.fitted_parameters['partial_volume_1']).reshape(-1)[0])
 
     np.testing.assert_allclose(fitted_vf_stick, true_vf_stick, atol=0.05)
     np.testing.assert_allclose(fitted_vf_ball, true_vf_ball, atol=0.05)
