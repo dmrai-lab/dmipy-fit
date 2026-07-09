@@ -29,6 +29,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest pytest-cov nbmake jupytext
+          # dmipy-sim is a hard dependency; until it is on PyPI, install it from the
+          # (public) GitHub repo so the versioned `dmipy-sim>=2.0` requirement resolves.
+          pip install "dmipy-sim @ git+https://github.com/dmrai-lab/dmipy-sim.git"
           pip install -e ".[jax,all]"
 
       - name: Run tests
@@ -42,7 +45,8 @@ jobs:
           # forward runs live and is asserted against the cached, step-resolved
           # Monte-Carlo reference (flagship_mc_reference.npz), so CPU CI stays fast.
           JAX_PLATFORMS=cpu pytest --nbmake -q \
-            examples/flagship_canonical_wm/canonical_wm_parity.md
+            examples/flagship_canonical_wm/canonical_wm_parity.md \
+            examples/01_acquisition_schemes/waveform_first_acquisition_scheme.md
 
       - name: Upload coverage
         if: matrix.python-version == '3.12'
