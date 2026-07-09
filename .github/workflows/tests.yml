@@ -46,7 +46,8 @@ jobs:
           # Monte-Carlo reference (flagship_mc_reference.npz), so CPU CI stays fast.
           JAX_PLATFORMS=cpu pytest --nbmake -q \
             examples/flagship_canonical_wm/canonical_wm_parity.md \
-            examples/01_acquisition_schemes/waveform_first_acquisition_scheme.md
+            examples/01_acquisition_schemes/waveform_first_acquisition_scheme.md \
+            examples/01_acquisition_schemes/loading_schemes_from_files_and_dipy.md
 
       - name: Upload coverage
         if: matrix.python-version == '3.12'
