@@ -48,6 +48,7 @@ jobs:
             examples/flagship_canonical_wm/canonical_wm_parity.md \
             examples/01_acquisition_schemes/waveform_first_acquisition_scheme.md \
             examples/01_acquisition_schemes/loading_schemes_from_files_and_dipy.md \
+            examples/02_signal_models/build_multicompartment_model.md \
             examples/03_fitting_and_optimization/simulating_and_fitting.md
 
       - name: Upload coverage
