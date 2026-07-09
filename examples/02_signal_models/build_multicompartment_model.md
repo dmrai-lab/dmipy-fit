@@ -60,9 +60,10 @@ E = ball_and_stick.simulate_signal(acq_scheme, truth)
 
 fit = ball_and_stick.fit(acq_scheme, E)
 p = fit.fitted_parameters
-print("recovered f_ball =", round(float(p['partial_volume_0']), 3),
-      "| lambda_iso =", f"{float(p['G1Ball_1_lambda_iso']):.2e}",
-      "| lambda_par =", f"{float(p['C1Stick_1_lambda_par']):.2e}")
+sc = lambda a: float(np.asarray(a).reshape(-1)[0])   # size-1 array -> scalar (numpy>=2.3 safe)
+print("recovered f_ball =", round(sc(p['partial_volume_0']), 3),
+      "| lambda_iso =", f"{sc(p['G1Ball_1_lambda_iso']):.2e}",
+      "| lambda_par =", f"{sc(p['C1Stick_1_lambda_par']):.2e}")
 ```
 
 ```{code-cell} ipython3
@@ -70,9 +71,9 @@ print("recovered f_ball =", round(float(p['partial_volume_0']), 3),
 # (the stick orientation mu is recovered only up to its antipodal symmetry).
 E_fit = ball_and_stick.simulate_signal(acq_scheme, fit.fitted_parameters_vector.ravel())
 np.testing.assert_allclose(E_fit, E, atol=1e-3)
-np.testing.assert_allclose(float(p['partial_volume_0']), 0.5, atol=0.05)
-np.testing.assert_allclose(float(p['G1Ball_1_lambda_iso']), 3e-9, rtol=0.05)
-np.testing.assert_allclose(float(p['C1Stick_1_lambda_par']), 1.7e-9, rtol=0.05)
+np.testing.assert_allclose(sc(p['partial_volume_0']), 0.5, atol=0.05)
+np.testing.assert_allclose(sc(p['G1Ball_1_lambda_iso']), 3e-9, rtol=0.05)
+np.testing.assert_allclose(sc(p['C1Stick_1_lambda_par']), 1.7e-9, rtol=0.05)
 print("fit reproduces the signal and recovers the ground-truth parameters.")
 ```
 
