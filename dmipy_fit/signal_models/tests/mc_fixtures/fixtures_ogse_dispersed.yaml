@@ -1,0 +1,134 @@
+G_max_levels_Tm:
+- 0.05
+- 0.1
+- 0.2
+- 0.3
+description: MC fiber-response RH coefficients and Watson-dispersed signals for OGSE
+  waveforms. Generated from pre-saved trajectory substrates (500k walkers each) via
+  batched CPU phase integral + Gauss-Legendre Legendre fit.
+echo_convention: Zero net area by construction (integer n_cycles cosine); no echo
+  sign flip applied.
+entries:
+- G_max_Tm: 0.05
+  R_um: 1.0
+  dispersed_by_kappa:
+    1: 0.9739875274605884
+    5: 0.9540390549118354
+    20: 0.9432028407883726
+    100: 0.9408005855549728
+  waveform: ogse_cosine
+- G_max_Tm: 0.1
+  R_um: 1.0
+  dispersed_by_kappa:
+    1: 0.9019774052013285
+    5: 0.8294045457333927
+    20: 0.7914498686848487
+    100: 0.7833680817305038
+  waveform: ogse_cosine
+- G_max_Tm: 0.2
+  R_um: 1.0
+  dispersed_by_kappa:
+    1: 0.6855006119637704
+    5: 0.48297849527117814
+    20: 0.3923686102912319
+    100: 0.3761988765456744
+  waveform: ogse_cosine
+- G_max_Tm: 0.3
+  R_um: 1.0
+  dispersed_by_kappa:
+    1: 0.48128042202309684
+    5: 0.21366493822839433
+    20: 0.12219367683681066
+    100: 0.11113985124922426
+  waveform: ogse_cosine
+- G_max_Tm: 0.05
+  R_um: 2.0
+  dispersed_by_kappa:
+    1: 0.9727702828524323
+    5: 0.9535054018591871
+    20: 0.9430337090311591
+    100: 0.9407103504356273
+  waveform: ogse_cosine
+- G_max_Tm: 0.1
+  R_um: 2.0
+  dispersed_by_kappa:
+    1: 0.8973492554484773
+    5: 0.8274982828406742
+    20: 0.7908978258369874
+    100: 0.7830873687551549
+  waveform: ogse_cosine
+- G_max_Tm: 0.2
+  R_um: 2.0
+  dispersed_by_kappa:
+    1: 0.6700875352663174
+    5: 0.47799766958199663
+    20: 0.3914353343847056
+    100: 0.37584969996443046
+  waveform: ogse_cosine
+- G_max_Tm: 0.3
+  R_um: 2.0
+  dispersed_by_kappa:
+    1: 0.45412918820920495
+    5: 0.20738072704889401
+    20: 0.12158403135601797
+    100: 0.11087275887261676
+  waveform: ogse_cosine
+- G_max_Tm: 0.05
+  R_um: 3.0
+  dispersed_by_kappa:
+    1: 0.9686963142334009
+    5: 0.9518088155769141
+    20: 0.942625686714668
+    100: 0.9405886329845783
+  waveform: ogse_cosine
+- G_max_Tm: 0.1
+  R_um: 3.0
+  dispersed_by_kappa:
+    1: 0.8819826569235956
+    5: 0.8214278054977827
+    20: 0.7895470766397968
+    100: 0.7827142129150312
+  waveform: ogse_cosine
+- G_max_Tm: 0.2
+  R_um: 3.0
+  dispersed_by_kappa:
+    1: 0.6207513697755437
+    5: 0.4622000660697971
+    20: 0.3891006422563637
+    100: 0.3755970162961885
+  waveform: ogse_cosine
+- G_max_Tm: 0.3
+  R_um: 3.0
+  dispersed_by_kappa:
+    1: 0.37348050789155196
+    5: 0.18877439688043454
+    20: 0.12101170409882951
+    100: 0.111780918628551
+  waveform: ogse_cosine
+kappa_values:
+- 1
+- 5
+- 20
+- 100
+lmax: 8
+n_gl_angles: 12
+n_walkers: 500000
+radii_um:
+- 1.0
+- 2.0
+- 3.0
+wall_time_s: 111.2
+waveforms:
+  ogse_cosine:
+    T_total_s: 0.04
+    description: "Cosine OGSE along \xEA_z"
+    dt_wf_s: 0.0001
+    freq_Hz: 50
+    n_cycles: 2
+  ogse_rotating:
+    T_total_s: 0.04
+    description: "Rotating cosine OGSE: G(t)=G0 cos(2\u03C0ft)[cos(\u03C0t/T),sin(\u03C0\
+      t/T),0]"
+    dt_wf_s: 0.0001
+    freq_Hz: 50
+    n_cycles: 2

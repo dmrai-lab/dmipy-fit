@@ -39,9 +39,11 @@ warnings.filterwarnings("ignore")
 # ---------------------------------------------------------------------------
 
 import os
-# Dev-only MC fixtures (not shipped). Point DMIPY_FIXTURE_DIR at them to run these tests;
-# otherwise the default path does not exist and every fixture test skips.
-FIXTURE_DIR = Path(os.environ.get("DMIPY_FIXTURE_DIR", "cylinder_fixtures_unavailable"))
+# Offline-generated MC signal fixtures, shipped alongside these tests (generated from dmipy-sim;
+# see mc_fixtures/README.md). This lets fit-side parity run in CI without any live Monte Carlo.
+# Override DMIPY_FIXTURE_DIR to validate against a fresh regeneration.
+FIXTURE_DIR = Path(os.environ.get(
+    "DMIPY_FIXTURE_DIR", str(Path(__file__).parent / "mc_fixtures")))
 
 #: Mapping from radius (µm) to the stem used in fixture filenames.
 RADIUS_TO_STEM = {

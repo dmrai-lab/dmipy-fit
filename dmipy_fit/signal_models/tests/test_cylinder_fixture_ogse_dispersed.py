@@ -59,8 +59,10 @@ DIAM_UM     = 2.0                   # µm (fast-eigenmode valid: α₁T ≈ 57)
 DIAM_M      = DIAM_UM * 1e-6
 G_AMP       = 0.10                  # T/m
 
-FIXTURE_DIR = Path(__file__).parent.parent.parent.parent.parent / \
-    "dmipy" / "benchmarks" / "cylinder_fixtures"
+import os
+# Offline-generated MC fixtures, shipped alongside these tests (see mc_fixtures/README.md).
+FIXTURE_DIR = Path(os.environ.get(
+    "DMIPY_FIXTURE_DIR", str(Path(__file__).parent / "mc_fixtures")))
 FIXTURE_NPZ = FIXTURE_DIR / "fixtures_ogse_dispersed.npz"
 
 _ROOTS = C4CylinderGaussianPhaseApproximation._CYLINDER_TRASCENDENTAL_ROOTS

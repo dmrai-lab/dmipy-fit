@@ -39,8 +39,9 @@ warnings.filterwarnings("ignore")
 # Paths and constants
 # ---------------------------------------------------------------------------
 import os
-# Dev-only MC fixtures (not shipped). Set DMIPY_FIXTURE_DIR to run; else the tests skip.
-FIXTURE_DIR     = Path(os.environ.get("DMIPY_FIXTURE_DIR", "cylinder_fixtures_unavailable"))
+# Offline-generated MC fixtures, shipped alongside these tests (see mc_fixtures/README.md).
+FIXTURE_DIR     = Path(os.environ.get(
+    "DMIPY_FIXTURE_DIR", str(Path(__file__).parent / "mc_fixtures")))
 FIXTURE_NPZ     = FIXTURE_DIR / "fixtures_R2.0um_gamma_lm_validation.npz"
 
 D    = 1.7e-9         # m²/s

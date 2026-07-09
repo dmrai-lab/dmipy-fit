@@ -1,0 +1,124 @@
+substrate_file: substrate_R1.0um.npz
+R_m: 1.0e-06
+D_m2s: 1.7e-09
+n_walkers: 500000
+dt_traj_s: 0.0001
+gradient_direction:
+- 1
+- 0
+- 0
+cylinder_axis:
+- 0
+- 0
+- 1
+waveform_group: pgse_finite_delta
+n_measurements: 21
+waveform_dt_s: 0.0001
+waveform_params:
+- waveform: pgse
+  delta_s: 0.005
+  DELTA_s: 0.025
+  G_Tm: 0.03
+  b_sm2: 37573267.074190155
+- waveform: pgse
+  delta_s: 0.005
+  DELTA_s: 0.025
+  G_Tm: 0.06
+  b_sm2: 150293068.29676062
+- waveform: pgse
+  delta_s: 0.005
+  DELTA_s: 0.025
+  G_Tm: 0.1
+  b_sm2: 417480745.2687796
+- waveform: pgse
+  delta_s: 0.005
+  DELTA_s: 0.025
+  G_Tm: 0.3
+  b_sm2: 3757326707.4190164
+- waveform: pgse
+  delta_s: 0.005
+  DELTA_s: 0.025
+  G_Tm: 0.6
+  b_sm2: 15029306829.676065
+- waveform: pgse
+  delta_s: 0.005
+  DELTA_s: 0.025
+  G_Tm: 1.0
+  b_sm2: 41748074526.87795
+- waveform: pgse
+  delta_s: 0.005
+  DELTA_s: 0.025
+  G_Tm: 3.0
+  b_sm2: 375732670741.9016
+- waveform: pgse
+  delta_s: 0.01
+  DELTA_s: 0.03
+  G_Tm: 0.03
+  b_sm2: 171763506.62486926
+- waveform: pgse
+  delta_s: 0.01
+  DELTA_s: 0.03
+  G_Tm: 0.06
+  b_sm2: 687054026.499477
+- waveform: pgse
+  delta_s: 0.01
+  DELTA_s: 0.03
+  G_Tm: 0.1
+  b_sm2: 1908483406.9429922
+- waveform: pgse
+  delta_s: 0.01
+  DELTA_s: 0.03
+  G_Tm: 0.3
+  b_sm2: 17176350662.486929
+- waveform: pgse
+  delta_s: 0.01
+  DELTA_s: 0.03
+  G_Tm: 0.6
+  b_sm2: 68705402649.947716
+- waveform: pgse
+  delta_s: 0.01
+  DELTA_s: 0.03
+  G_Tm: 1.0
+  b_sm2: 190848340694.2992
+- waveform: pgse
+  delta_s: 0.01
+  DELTA_s: 0.03
+  G_Tm: 3.0
+  b_sm2: 1717635066248.6929
+- waveform: pgse
+  delta_s: 0.02
+  DELTA_s: 0.04
+  G_Tm: 0.03
+  b_sm2: 858817533.1243464
+- waveform: pgse
+  delta_s: 0.02
+  DELTA_s: 0.04
+  G_Tm: 0.06
+  b_sm2: 3435270132.4973855
+- waveform: pgse
+  delta_s: 0.02
+  DELTA_s: 0.04
+  G_Tm: 0.1
+  b_sm2: 9542417034.714962
+- waveform: pgse
+  delta_s: 0.02
+  DELTA_s: 0.04
+  G_Tm: 0.3
+  b_sm2: 85881753312.43465
+- waveform: pgse
+  delta_s: 0.02
+  DELTA_s: 0.04
+  G_Tm: 0.6
+  b_sm2: 343527013249.7386
+- waveform: pgse
+  delta_s: 0.02
+  DELTA_s: 0.04
+  G_Tm: 1.0
+  b_sm2: 954241703471.4961
+- waveform: pgse
+  delta_s: 0.02
+  DELTA_s: 0.04
+  G_Tm: 3.0
+  b_sm2: 8588175331243.465
+dmipy_sim_commit: 3b2ca58
+date: '2026-04-26'

@@ -1,0 +1,127 @@
+substrate_file: substrate_R1.0um.npz
+R_m: 1.0e-06
+D_m2s: 1.7e-09
+n_walkers: 500000
+dt_traj_s: 0.0001
+gradient_direction:
+- 1
+- 0
+- 0
+cylinder_axis:
+- 0
+- 0
+- 1
+waveform_group: ogse_trap
+n_measurements: 18
+waveform_dt_s: 0.0001
+waveform_params:
+- waveform: ogse_trap
+  N_lobes: 1
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 0.06
+  b_approx_sm2: 8115825688.025072
+- waveform: ogse_trap
+  N_lobes: 1
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 0.1
+  b_approx_sm2: 22543960244.514095
+- waveform: ogse_trap
+  N_lobes: 1
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 0.3
+  b_approx_sm2: 202895642200.6268
+- waveform: ogse_trap
+  N_lobes: 1
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 0.6
+  b_approx_sm2: 811582568802.5072
+- waveform: ogse_trap
+  N_lobes: 1
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 1.0
+  b_approx_sm2: 2254396024451.409
+- waveform: ogse_trap
+  N_lobes: 1
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 3.0
+  b_approx_sm2: 20289564220062.68
+- waveform: ogse_trap
+  N_lobes: 2
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 0.06
+  b_approx_sm2: 8115825688.025072
+- waveform: ogse_trap
+  N_lobes: 2
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 0.1
+  b_approx_sm2: 22543960244.514095
+- waveform: ogse_trap
+  N_lobes: 2
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 0.3
+  b_approx_sm2: 202895642200.6268
+- waveform: ogse_trap
+  N_lobes: 2
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 0.6
+  b_approx_sm2: 811582568802.5072
+- waveform: ogse_trap
+  N_lobes: 2
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 1.0
+  b_approx_sm2: 2254396024451.409
+- waveform: ogse_trap
+  N_lobes: 2
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 3.0
+  b_approx_sm2: 20289564220062.68
+- waveform: ogse_trap
+  N_lobes: 4
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 0.06
+  b_approx_sm2: 8115825688.025072
+- waveform: ogse_trap
+  N_lobes: 4
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 0.1
+  b_approx_sm2: 22543960244.514095
+- waveform: ogse_trap
+  N_lobes: 4
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 0.3
+  b_approx_sm2: 202895642200.6268
+- waveform: ogse_trap
+  N_lobes: 4
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 0.6
+  b_approx_sm2: 811582568802.5072
+- waveform: ogse_trap
+  N_lobes: 4
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 1.0
+  b_approx_sm2: 2254396024451.409
+- waveform: ogse_trap
+  N_lobes: 4
+  delta_s: 0.03
+  DELTA_s: 0.045
+  G_Tm: 3.0
+  b_approx_sm2: 20289564220062.68
+dmipy_sim_commit: 3b2ca58
+date: '2026-04-26'
