@@ -1,6 +1,0 @@
-# Dependencies to build the Jupyter Book (notebook execution is OFF in _config.yml,
-# so only rendering deps are needed — no JAX/GPU).
-# Pin to Jupyter Book v1: v2 has an incompatible CLI (no `jupyter-book build --path-output`).
-jupyter-book>=1.0,<2
-jupytext>=1.16
-matplotlib>=3.5
