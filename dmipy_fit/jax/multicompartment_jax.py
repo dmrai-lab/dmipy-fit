@@ -26,9 +26,9 @@ from .signal_models_jax import (
     c1stick_spherical_mean,
     g2zeppelin_spherical_mean,
 )
-from .exchange_models_jax import karger_signal, karger_isotropic_signal, karger_from_Ri_Re, nexi_signal
+from .exchange_models_jax import karger_signal, karger_isotropic_signal, karger_from_Ri_Re
 from ..signal_models.gaussian_models import G1Ball, G2Zeppelin, G3TemporalZeppelin
-from ..signal_models.exchange_models import X0GeneralizedKarger, X2NEXIModel
+from ..signal_models.exchange_models import X0GeneralizedKarger
 # Backward-compat alias: X1KargerModel was renamed to X0GeneralizedKarger
 X1KargerModel = X0GeneralizedKarger
 from ..signal_models.cylinder_models import (
@@ -660,22 +660,6 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
     return _anisotropic_jax_fn
 
 
-def _x2nexi_jax_fn(scheme_jax, params):
-    mu_cart = unitsphere2cart_1d_jax(params['mu'])
-    E = nexi_signal(
-        scheme_jax['bvalues'],
-        scheme_jax['delta'],
-        scheme_jax['Delta'],
-        scheme_jax['gradient_directions'],
-        mu_cart,
-        params['C1Stick_1_lambda_par'],    # Di  — intra-neurite diffusivity
-        params['G2Zeppelin_1_lambda_par'], # De_par — extra-neurite parallel
-        params['f'],
-        params['kappa'],
-    )
-    return _apply_t2_weighting(E, scheme_jax, params)
-
-
 # Simple models: no per-instance constants needed
 _JAX_MODEL_FNS = {
     G1Ball: _g1ball_jax_fn,
@@ -684,7 +668,6 @@ _JAX_MODEL_FNS = {
     G3TemporalZeppelin: _g3temporal_zeppelin_jax_fn,
     S2SphereStejskalTannerApproximation: _s2sphere_jax_fn,
     C2CylinderStejskalTannerApproximation: _c2cylinder_jax_fn,
-    X2NEXIModel: _x2nexi_jax_fn,
     S1Dot: _s1dot_jax_fn,
     P2PlaneStejskalTannerApproximation: _p2plane_jax_fn,
 }

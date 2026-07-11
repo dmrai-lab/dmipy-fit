@@ -1,18 +1,15 @@
 # -*- coding: utf-8 -*-
 """Two-compartment water exchange models for diffusion MRI.
 
-Implements the generalised Karger exchange framework and the NEXI
-(Neurite Exchange Imaging) convenience model.
+Implements the generalised Karger exchange framework. NEXI (Neurite
+Exchange Imaging) is the Stick+Zeppelin+tortuosity special case, built via
+X0GeneralizedKarger (see reference_models.nexi()).
 
 Architecture
 ------------
 X0GeneralizedKarger  — wraps any two CompartmentModel instances with Karger
                        exchange.  Accepts parameter_links in the same format
                        as MultiCompartmentModel and SD1WatsonDistributed.
-
-X2NEXIModel          — convenience subclass: C1Stick + G2Zeppelin with the
-                       tortuosity link De_perp = (1-f)*De_par pre-wired.
-                       Reference: Jelescu et al. (2022).
 
 References
 ----------
@@ -33,7 +30,6 @@ from ..distributions.distribute_models import DistributedModel
 
 __all__ = [
     'X0GeneralizedKarger',
-    'X2NEXIModel',
 ]
 
 DIFFUSIVITY_SCALING = 1e-9
@@ -616,66 +612,3 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
                 )
 
         return rh_array
-
-
-# ---------------------------------------------------------------------------
-# X2NEXIModel  — NEXI convenience model
-# ---------------------------------------------------------------------------
-
-class X2NEXIModel(X0GeneralizedKarger):
-    r"""NEXI (Neurite Exchange Imaging) model.
-
-    A convenience subclass of ``X0GeneralizedKarger`` with:
-
-    - Intra compartment  : ``C1Stick`` (parameter ``C1Stick_1_lambda_par`` = Di)
-    - Extra compartment  : ``G2Zeppelin`` (parameter
-      ``G2Zeppelin_1_lambda_par`` = De_par)
-    - Tortuosity link    : De_perp = (1 − f) · De_par  (pre-wired, not free)
-    - Shared orientation : ``mu``
-    - Exchange rate      : ``kappa``
-    - Intra fraction     : ``f``
-    - Optional global T2 : ``T2``
-
-    Free parameters after tortuosity constraint:
-        mu, C1Stick_1_lambda_par, G2Zeppelin_1_lambda_par, f, kappa, [T2]
-
-    References
-    ----------
-    Jelescu IO, de Skowronski A, Gros F, Knott G, Gruetter R (2022).
-    Neurite Exchange Imaging (NEXI): A minimal model for diffusion in gray
-    matter with inter-compartment water exchange.
-    NeuroImage 256, 119277. doi:10.1016/j.neuroimage.2022.119277
-    """
-
-    _citations = {
-        'definition': [
-            {'key': 'Jelescu2022',
-             'authors': 'Jelescu IO, de Skowronski A, Gros F, Knott G, '
-                        'Gruetter R',
-             'title': 'Neurite Exchange Imaging (NEXI): A minimal model '
-                      'for diffusion in gray matter with inter-compartment '
-                      'water exchange',
-             'journal': 'NeuroImage',
-             'year': 2022,
-             'doi': '10.1016/j.neuroimage.2022.119277'},
-        ],
-        'default_parameters': {},
-    }
-
-    def __init__(self):
-        from .cylinder_models import C1Stick
-        from .gaussian_models import G2Zeppelin
-        from ..utils.utils import T1_tortuosity
-
-        stick    = C1Stick()
-        zeppelin = G2Zeppelin()
-
-        super().__init__(
-            model_intra=stick,
-            model_extra=zeppelin,
-            parameter_links=[(
-                zeppelin, 'lambda_perp',
-                T1_tortuosity(),
-                [(zeppelin, 'lambda_par'), (None, 'f')]
-            )],
-        )

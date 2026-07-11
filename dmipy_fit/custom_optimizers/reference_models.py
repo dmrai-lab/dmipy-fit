@@ -94,6 +94,10 @@ from dmipy_fit.signal_models.sphere_models import (
     S1Dot,
     S4SphereGaussianPhaseApproximation,
 )
+from dmipy_fit.signal_models.attenuation import (
+    OccupancyGatedModel,
+    TransverseRelaxation,
+)
 from dmipy_fit.signal_models.exchange_models import (
     X0GeneralizedKarger,
 )
@@ -619,8 +623,11 @@ def mte_ball_stick():
     Gong, Tong, He, Sun, Zhong & Zhang 2020, NeuroImage 217
     doi:10.1016/j.neuroimage.2020.116906
     """
-    mcm = MultiCompartmentModel([C1Stick(), G1Ball()])
-    return mcm   # T2 on both compartments is free by default
+    # Per-compartment T2 is an occupancy-gated factor on each compartment; bare
+    # C1Stick/G1Ball carry NO T2 parameter.
+    intra = OccupancyGatedModel(C1Stick(), [TransverseRelaxation()])
+    extra = OccupancyGatedModel(G1Ball(), [TransverseRelaxation()])
+    return MultiCompartmentModel([intra, extra])
 
 
 def mte_noddi():
@@ -633,14 +640,19 @@ def mte_noddi():
     Gong, Tong, He, Sun, Zhong & Zhang 2020, NeuroImage 217
     doi:10.1016/j.neuroimage.2020.116906
     """
-    bundle = SD1WatsonDistributed(models=[C1Stick(), G2Zeppelin()])
+    # Each compartment wrapped with a T2 factor so per-compartment T2 is fittable.
+    bundle = SD1WatsonDistributed(models=[
+        OccupancyGatedModel(C1Stick(), [TransverseRelaxation()]),
+        OccupancyGatedModel(G2Zeppelin(), [TransverseRelaxation()])])
     bundle.set_tortuous_parameter(
-        'G2Zeppelin_1_lambda_perp', 'G2Zeppelin_1_lambda_par', 'partial_volume_0')
-    bundle.set_equal_parameter('G2Zeppelin_1_lambda_par', 'C1Stick_1_lambda_par')
-    bundle.set_fixed_parameter('G2Zeppelin_1_lambda_par', _Da)
-    mcm = MultiCompartmentModel([bundle, G1Ball()])
-    mcm.set_fixed_parameter('G1Ball_1_lambda_iso', _Dcsf)
-    return mcm   # T2 on Stick and Zeppelin inside bundle are free parameters
+        'OccupancyGatedModel_2_lambda_perp', 'OccupancyGatedModel_2_lambda_par',
+        'partial_volume_0')
+    bundle.set_equal_parameter(
+        'OccupancyGatedModel_2_lambda_par', 'OccupancyGatedModel_1_lambda_par')
+    bundle.set_fixed_parameter('OccupancyGatedModel_2_lambda_par', _Da)
+    mcm = MultiCompartmentModel([bundle, OccupancyGatedModel(G1Ball(), [TransverseRelaxation()])])
+    mcm.set_fixed_parameter('OccupancyGatedModel_1_lambda_iso', _Dcsf)  # CSF ball
+    return mcm
 
 
 def mte_sandi():
@@ -651,10 +663,13 @@ def mte_sandi():
 
     Palombo, Gong & Shemesh 2023, ISMRM abstract #0766
     """
-    soma = S4SphereGaussianPhaseApproximation(diffusion_constant=_Din)
-    mcm  = MultiCompartmentModel([soma, C1Stick(), G1Ball()])
-    mcm.set_fixed_parameter('C1Stick_1_lambda_par', _Da)
-    return mcm   # T2 on Stick and Ball compartments are free; soma has no T2 param
+    soma    = OccupancyGatedModel(
+        S4SphereGaussianPhaseApproximation(diffusion_constant=_Din), [TransverseRelaxation()])
+    neurite = OccupancyGatedModel(C1Stick(), [TransverseRelaxation()])
+    extra   = OccupancyGatedModel(G1Ball(), [TransverseRelaxation()])
+    mcm = MultiCompartmentModel([soma, neurite, extra])
+    mcm.set_fixed_parameter('OccupancyGatedModel_2_lambda_par', _Da)  # neurite stick
+    return mcm   # per-compartment T2 (soma, neurite, extra) via the T2 factors
 
 
 def wmti():
@@ -689,16 +704,19 @@ def noddida_mte():
     NODDIDA: Jelescu et al. 2015, NMR Biomed 28, doi:10.1002/nbm.3450
     MTE extension: Gong et al. 2020, NeuroImage 217, doi:10.1016/j.neuroimage.2020.116906
     """
-    mcm = MultiCompartmentModel([C1Stick(), G2Zeppelin(), G1Ball()])
+    stick    = OccupancyGatedModel(C1Stick(), [TransverseRelaxation()])
+    zeppelin = OccupancyGatedModel(G2Zeppelin(), [TransverseRelaxation()])
+    extra    = OccupancyGatedModel(G1Ball(), [TransverseRelaxation()])
+    mcm = MultiCompartmentModel([stick, zeppelin, extra])
     mcm.set_tortuous_parameter(
-        'G2Zeppelin_1_lambda_perp',
-        'C1Stick_1_lambda_par',
+        'OccupancyGatedModel_2_lambda_perp',
+        'OccupancyGatedModel_1_lambda_par',
         'partial_volume_0',
         'partial_volume_1',
     )
-    mcm.set_equal_parameter('C1Stick_1_mu', 'G2Zeppelin_1_mu')
-    mcm.set_equal_parameter('C1Stick_1_lambda_par', 'G2Zeppelin_1_lambda_par')
-    return mcm   # T2 on all three compartments are free parameters
+    mcm.set_equal_parameter('OccupancyGatedModel_1_mu', 'OccupancyGatedModel_2_mu')
+    mcm.set_equal_parameter('OccupancyGatedModel_1_lambda_par', 'OccupancyGatedModel_2_lambda_par')
+    return mcm   # per-compartment T2 (all three) via the T2 factors
 
 
 def mte_impulsed():
@@ -712,4 +730,6 @@ def mte_impulsed():
     Jiang, Xu, Li, Gore & Does 2025, Magnetic Resonance in Medicine
     doi:10.1002/mrm.30254
     """
-    return MultiCompartmentModel([S4SphereGaussianPhaseApproximation(), G1Ball()])
+    soma  = OccupancyGatedModel(S4SphereGaussianPhaseApproximation(), [TransverseRelaxation()])
+    extra = OccupancyGatedModel(G1Ball(), [TransverseRelaxation()])
+    return MultiCompartmentModel([soma, extra])   # per-compartment T2 via the T2 factors
