@@ -1,0 +1,16 @@
+Human Connectome Project data-use acknowledgement
+==================================================
+
+The diffusion MRI example slices in this directory (coronal_3T.nii.gz,
+coronal_7T.nii.gz and the associated masks, T1w underlays, bvals and bvecs) are
+derived from a single coronal slice of HCP subject 191841 (within-subject 3T and
+7T diffusion acquisitions), resampled to the subject's ACPC/T1w anatomical frame.
+
+Data were provided in part by the Human Connectome Project, WU-Minn Consortium
+(Principal Investigators: David Van Essen and Kamil Ugurbil; 1U54MH091657) funded
+by the 16 NIH Institutes and Centers that support the NIH Blueprint for
+Neuroscience Research; and by the McDonnell Center for Systems Neuroscience at
+Washington University.
+
+Any work using these slices must acknowledge the HCP as above and abide by the
+HCP Open Access Data Use Terms (https://www.humanconnectome.org/study/hcp-young-adult/data-use-terms).

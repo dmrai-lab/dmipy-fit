@@ -1,0 +1,139 @@
+substrate_file: substrate_R0.25um.npz
+R_m: 2.5e-07
+D_m2s: 1.7e-09
+n_walkers: 500000
+dt_traj_s: 0.0001
+gradient_direction:
+- 1
+- 0
+- 0
+cylinder_axis:
+- 0
+- 0
+- 1
+waveform_group: pgse_short
+n_measurements: 24
+waveform_dt_s: 0.0001
+waveform_params:
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.01
+  G_Tm: 0.1
+  b_sm2: 6918252.350168347
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.01
+  G_Tm: 0.3
+  b_sm2: 62264271.15151512
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.01
+  G_Tm: 0.6
+  b_sm2: 249057084.60606048
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.01
+  G_Tm: 1.0
+  b_sm2: 691825235.0168346
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.01
+  G_Tm: 3.0
+  b_sm2: 6226427115.151511
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.01
+  G_Tm: 10.0
+  b_sm2: 69182523501.68346
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.02
+  G_Tm: 0.1
+  b_sm2: 14075065.126204567
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.02
+  G_Tm: 0.3
+  b_sm2: 126675586.13584109
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.02
+  G_Tm: 0.6
+  b_sm2: 506702344.54336435
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.02
+  G_Tm: 1.0
+  b_sm2: 1407506512.6204565
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.02
+  G_Tm: 3.0
+  b_sm2: 12667558613.584108
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.02
+  G_Tm: 10.0
+  b_sm2: 140750651262.04565
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.04
+  G_Tm: 0.1
+  b_sm2: 28388690.678277012
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.04
+  G_Tm: 0.3
+  b_sm2: 255498216.10449308
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.04
+  G_Tm: 0.6
+  b_sm2: 1021992864.4179723
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.04
+  G_Tm: 1.0
+  b_sm2: 2838869067.8277006
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.04
+  G_Tm: 3.0
+  b_sm2: 25549821610.449306
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.04
+  G_Tm: 10.0
+  b_sm2: 283886906782.7701
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.08
+  G_Tm: 0.1
+  b_sm2: 57015941.78242189
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.08
+  G_Tm: 0.3
+  b_sm2: 513143476.041797
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.08
+  G_Tm: 0.6
+  b_sm2: 2052573904.167188
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.08
+  G_Tm: 1.0
+  b_sm2: 5701594178.242188
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.08
+  G_Tm: 3.0
+  b_sm2: 51314347604.179695
+- waveform: pgse_short
+  delta_s: 0.001
+  DELTA_s: 0.08
+  G_Tm: 10.0
+  b_sm2: 570159417824.2189
+dmipy_sim_commit: 47facbe
+date: '2026-04-26'

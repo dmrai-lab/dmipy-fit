@@ -1,0 +1,95 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dmipy-fit"
+version = "2.0.0"
+description = "dmipy-fit: analytical diffusion-microstructure signal models + JAX GPU fitting"
+readme = "README.md"
+license = { text = "AGPL-3.0-only OR LicenseRef-Commercial" }  # dual-licensed; see LICENSING.md
+authors = [
+    { name = "Rutger Fick", email = "fick.rutger@gmail.com" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "dmipy-sim>=2.0,<3",   # the forward engine: substrate/constants + physical sequences (fit consumes it)
+    "numpy>=2.0",
+    "scipy>=1.10",
+    "dipy>=1.7",
+    "packaging>=23.0",
+]
+
+[project.optional-dependencies]
+jax = [
+    "jax[cpu]>=0.6.2",
+    "jaxopt>=0.8",
+]
+# GPU fitting (whole slice on device). Needs a working CUDA 12 stack; see the
+# dmipy-sim README / dmipy.org install page for the LD_LIBRARY_PATH note.
+jax-gpu = [
+    "jax[cuda12]>=0.6.2",
+    "jaxopt>=0.8",
+]
+speed = [
+    "numba>=0.57",
+]
+data = [
+    "nibabel>=5.0",
+]
+viz = [
+    "fury>=0.10",
+    "matplotlib>=3.5",
+]
+legacy = [
+    "cvxpy>=1.3",
+    "numba>=0.57",
+    "pathos>=0.3",
+]
+all = [
+    "cvxpy>=1.3",
+    "numba>=0.57",
+    "pathos>=0.3",
+    "nibabel>=5.0",
+    "matplotlib>=3.5",
+    "fury>=0.10",
+    "jax[cpu]>=0.6.2",
+    "jaxopt>=0.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/dmrai-lab/dmipy-fit"
+Repository = "https://github.com/dmrai-lab/dmipy-fit"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dmipy_fit*"]
+
+[tool.setuptools.package-data]
+dmipy_fit = [
+    "data/gradient_tables/*",
+    "data/spheres/*",
+    "data/bingham_normalization_splinefit.npz",
+    "data/sos_constraints/*",
+    "data/mgh_1010/*",
+    "data/hcp_191841/*",
+    "data/mc_reference/*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["dmipy_fit"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+markers = [
+    "slow: marks tests that take > 30 s (deselect with -m 'not slow')",
+]

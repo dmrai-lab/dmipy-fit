@@ -1,0 +1,28 @@
+description: "\u0393_lm fast-eigenmode validation signal fixtures for R=2\xB5m cylinder"
+groups:
+  A:
+    G_amps_Tm:
+    - 0.1
+    - 0.2
+    - 0.3
+    n_t: 400
+    sigma_s: 0.04
+    waveform: rotating_x_to_y
+  B:
+    Delta_s: 0.03
+    G_Tm: 0.3
+    delta_s: 0.01
+    directions:
+    - x_hat
+    - y_hat
+    - (x+y)/sqrt2
+    waveform: pgse_collinear_xyz
+  C:
+    G_amp_Tm: 3.0
+    n_t: 50
+    sigma_s: 0.0005
+    waveform: rotating_x_to_y
+n_walkers: 500000
+substrate: substrate_R2.0um.npz
+substrate_D_m2s: 1.7e-09
+substrate_R_m: 2.0e-06

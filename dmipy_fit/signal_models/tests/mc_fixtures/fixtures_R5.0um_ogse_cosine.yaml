@@ -1,0 +1,199 @@
+substrate_file: substrate_R5.0um.npz
+R_m: 5.0e-06
+D_m2s: 1.7e-09
+n_walkers: 500000
+dt_traj_s: 0.0001
+gradient_direction:
+- 1
+- 0
+- 0
+cylinder_axis:
+- 0
+- 0
+- 1
+waveform_group: ogse_cosine
+n_measurements: 36
+waveform_dt_s: 0.0001
+waveform_params:
+- waveform: ogse_cosine
+  freq_Hz: 25
+  T_total_s: 0.08
+  G_Tm: 0.06
+  b_sm2: 417678763.14696676
+- waveform: ogse_cosine
+  freq_Hz: 25
+  T_total_s: 0.08
+  G_Tm: 0.1
+  b_sm2: 1160218786.5193524
+- waveform: ogse_cosine
+  freq_Hz: 25
+  T_total_s: 0.08
+  G_Tm: 0.3
+  b_sm2: 10441969078.674171
+- waveform: ogse_cosine
+  freq_Hz: 25
+  T_total_s: 0.08
+  G_Tm: 0.6
+  b_sm2: 41767876314.696686
+- waveform: ogse_cosine
+  freq_Hz: 25
+  T_total_s: 0.08
+  G_Tm: 1.0
+  b_sm2: 116021878651.93523
+- waveform: ogse_cosine
+  freq_Hz: 25
+  T_total_s: 0.08
+  G_Tm: 3.0
+  b_sm2: 1044196907867.417
+- waveform: ogse_cosine
+  freq_Hz: 50
+  T_total_s: 0.08
+  G_Tm: 0.06
+  b_sm2: 104419690.78674169
+- waveform: ogse_cosine
+  freq_Hz: 50
+  T_total_s: 0.08
+  G_Tm: 0.1
+  b_sm2: 290054696.6298381
+- waveform: ogse_cosine
+  freq_Hz: 50
+  T_total_s: 0.08
+  G_Tm: 0.3
+  b_sm2: 2610492269.668543
+- waveform: ogse_cosine
+  freq_Hz: 50
+  T_total_s: 0.08
+  G_Tm: 0.6
+  b_sm2: 10441969078.674171
+- waveform: ogse_cosine
+  freq_Hz: 50
+  T_total_s: 0.08
+  G_Tm: 1.0
+  b_sm2: 29005469662.983807
+- waveform: ogse_cosine
+  freq_Hz: 50
+  T_total_s: 0.08
+  G_Tm: 3.0
+  b_sm2: 261049226966.85425
+- waveform: ogse_cosine
+  freq_Hz: 100
+  T_total_s: 0.08
+  G_Tm: 0.06
+  b_sm2: 26104922.696685422
+- waveform: ogse_cosine
+  freq_Hz: 100
+  T_total_s: 0.08
+  G_Tm: 0.1
+  b_sm2: 72513674.15745953
+- waveform: ogse_cosine
+  freq_Hz: 100
+  T_total_s: 0.08
+  G_Tm: 0.3
+  b_sm2: 652623067.4171357
+- waveform: ogse_cosine
+  freq_Hz: 100
+  T_total_s: 0.08
+  G_Tm: 0.6
+  b_sm2: 2610492269.668543
+- waveform: ogse_cosine
+  freq_Hz: 100
+  T_total_s: 0.08
+  G_Tm: 1.0
+  b_sm2: 7251367415.745952
+- waveform: ogse_cosine
+  freq_Hz: 100
+  T_total_s: 0.08
+  G_Tm: 3.0
+  b_sm2: 65262306741.71356
+- waveform: ogse_cosine
+  freq_Hz: 200
+  T_total_s: 0.08
+  G_Tm: 0.06
+  b_sm2: 6526230.674171356
+- waveform: ogse_cosine
+  freq_Hz: 200
+  T_total_s: 0.08
+  G_Tm: 0.1
+  b_sm2: 18128418.53936488
+- waveform: ogse_cosine
+  freq_Hz: 200
+  T_total_s: 0.08
+  G_Tm: 0.3
+  b_sm2: 163155766.85428393
+- waveform: ogse_cosine
+  freq_Hz: 200
+  T_total_s: 0.08
+  G_Tm: 0.6
+  b_sm2: 652623067.4171357
+- waveform: ogse_cosine
+  freq_Hz: 200
+  T_total_s: 0.08
+  G_Tm: 1.0
+  b_sm2: 1812841853.936488
+- waveform: ogse_cosine
+  freq_Hz: 200
+  T_total_s: 0.08
+  G_Tm: 3.0
+  b_sm2: 16315576685.42839
+- waveform: ogse_cosine
+  freq_Hz: 500
+  T_total_s: 0.08
+  G_Tm: 0.06
+  b_sm2: 1044196.907867417
+- waveform: ogse_cosine
+  freq_Hz: 500
+  T_total_s: 0.08
+  G_Tm: 0.1
+  b_sm2: 2900546.9662983813
+- waveform: ogse_cosine
+  freq_Hz: 500
+  T_total_s: 0.08
+  G_Tm: 0.3
+  b_sm2: 26104922.696685426
+- waveform: ogse_cosine
+  freq_Hz: 500
+  T_total_s: 0.08
+  G_Tm: 0.6
+  b_sm2: 104419690.7867417
+- waveform: ogse_cosine
+  freq_Hz: 500
+  T_total_s: 0.08
+  G_Tm: 1.0
+  b_sm2: 290054696.62983805
+- waveform: ogse_cosine
+  freq_Hz: 500
+  T_total_s: 0.08
+  G_Tm: 3.0
+  b_sm2: 2610492269.6685424
+- waveform: ogse_cosine
+  freq_Hz: 1000
+  T_total_s: 0.08
+  G_Tm: 0.06
+  b_sm2: 261049.22696685424
+- waveform: ogse_cosine
+  freq_Hz: 1000
+  T_total_s: 0.08
+  G_Tm: 0.1
+  b_sm2: 725136.7415745953
+- waveform: ogse_cosine
+  freq_Hz: 1000
+  T_total_s: 0.08
+  G_Tm: 0.3
+  b_sm2: 6526230.6741713565
+- waveform: ogse_cosine
+  freq_Hz: 1000
+  T_total_s: 0.08
+  G_Tm: 0.6
+  b_sm2: 26104922.696685426
+- waveform: ogse_cosine
+  freq_Hz: 1000
+  T_total_s: 0.08
+  G_Tm: 1.0
+  b_sm2: 72513674.15745951
+- waveform: ogse_cosine
+  freq_Hz: 1000
+  T_total_s: 0.08
+  G_Tm: 3.0
+  b_sm2: 652623067.4171356
+dmipy_sim_commit: 3b2ca58
+date: '2026-04-26'

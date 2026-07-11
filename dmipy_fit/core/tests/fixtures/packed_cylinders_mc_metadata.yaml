@@ -1,0 +1,18 @@
+date: '2026-04-15'
+description: Area-weighted MC mixture signal for DD1Gamma regression test
+parameters:
+  DELTA_s: 0.04
+  D_m2s: 2.0e-09
+  alpha: 4.0
+  b_values_sm2:
+  - 0.0
+  - 500000000.0
+  - 1000000000.0
+  - 2000000000.0
+  beta_r_m: 5.0e-07
+  delta_s: 0.0005
+  n_cyl: 50
+  n_walkers_per_cyl: 100000
+  seed: 42
+script: benchmarks/mc_vs_analytical/validate_packed_cylinders_vs_dd1gamma.py
+tolerance: 0.02
