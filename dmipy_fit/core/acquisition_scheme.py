@@ -275,7 +275,8 @@ class PGSEAcquisitionScheme:
             self.shell_qvalues,
             self.shell_gradient_strengths,
             self.shell_Delta,
-            self.shell_delta)
+            self.shell_delta,
+            self.shell_TE)
         if len(self.unique_dwi_indices) > 0:
             self.rotational_harmonics_scheme = (
                 RotationalHarmonicsAcquisitionScheme(self))
@@ -1406,13 +1407,16 @@ class SphericalMeanAcquisitionScheme:
     "Acquisition scheme for isotropic spherical mean models."
 
     def __init__(self, bvalues, qvalues,
-                 gradient_strengths, Deltas, deltas):
+                 gradient_strengths, Deltas, deltas, TE=None):
         self.bvalues = bvalues
         self.qvalues = qvalues
         self.gradient_strengths = gradient_strengths
         self.Delta = Deltas
         self.delta = deltas
-        self.TE = None
+        # Per-shell TE so occupancy-gated relaxation factors (T2 / surface
+        # relaxivity) apply in the spherical-mean path just as they do in the full
+        # signal. None when the scheme has no TE; diffusion-only models ignore it.
+        self.TE = TE
         self.number_of_measurements = len(bvalues)
 
 

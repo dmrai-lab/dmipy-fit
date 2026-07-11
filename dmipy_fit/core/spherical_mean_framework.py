@@ -275,7 +275,16 @@ class MultiCompartmentSphericalMeanModel(MultiCompartmentModelProperties):
         data_is_spherical_mean = (
             data_.shape[-1] == self.scheme.N_shells
             and data_.shape[-1] != self.scheme.number_of_measurements)
-        if data_is_spherical_mean:
+        t2_optimization_active = (
+            self.scheme.TE is not None and
+            any(v for k, v in self.parameter_optimization_flags.items()
+                if k.endswith('_T2')))
+        if t2_optimization_active:
+            # Fitting compartment T2: no b0 normalisation -- compare the raw per-shell
+            # signal to the raw (relaxation-carrying) model, exactly as
+            # MultiCompartmentModel does. Spherical-mean <-> full-framework parity.
+            S0 = np.ones(np.r_[data_.shape[:-1], self.scheme.N_shells])
+        elif data_is_spherical_mean:
             # b0 lives in the b0 shell(s) of the per-shell array
             S0 = np.mean(data_[..., self.scheme.shell_b0_mask], axis=-1)
         elif self.scheme.TE is None or len(np.unique(self.scheme.TE)) == 1:

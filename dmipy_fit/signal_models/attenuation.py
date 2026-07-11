@@ -59,6 +59,11 @@ class AttenuationFactor(object):
     parameter_ranges = {}
     parameter_scales = {}
     parameter_types = {}
+    # Orientation-INDEPENDENT factors (T2, surface relaxivity) are a scalar per
+    # shell, so they factor straight through the angular spherical mean. An
+    # orientation-DEPENDENT factor would set this False and be handled via the
+    # rotational-harmonics path instead of a scalar multiply in spherical_mean.
+    spherical_mean_separable = True
 
     def factor(self, acquisition_scheme, mu_cart, base_params, **params):
         raise NotImplementedError
@@ -206,3 +211,26 @@ class OccupancyGatedModel(ModelProperties, AnisotropicSignalModelProperties):
             fp = {k: kwargs.get(k) for k in f.parameter_ranges}
             E = E * f.factor(acquisition_scheme, mu_cart, base_params, **fp)
         return E
+
+    def spherical_mean(self, acquisition_scheme, **kwargs):
+        # The diffusion angular structure and any orientation-DEPENDENT factors go
+        # through the rotational-harmonics spherical mean (base-class behaviour).
+        # Orientation-INDEPENDENT factors (T2 / surface relaxivity) are a scalar per
+        # shell, so they factor straight through the angular mean -- applied here on
+        # every shell (b0 included) at the shell TE, which the rotational-harmonics
+        # scheme (no TE) drops. This gives spherical-mean <-> full-model parity for
+        # the separable factors.
+        E_mean = super(OccupancyGatedModel, self).spherical_mean(
+            acquisition_scheme, **kwargs)
+        base_params = {k: kwargs.get(k) for k in self._base_names}
+        for k in self._base_bypass:
+            base_params[k] = None
+        sms = acquisition_scheme.spherical_mean_scheme
+        mu = kwargs.get('mu', getattr(self.model, 'mu', None))
+        mu_cart = utils.unitsphere2cart_1d(mu) if mu is not None else None
+        for f in self.factors:
+            if not getattr(f, 'spherical_mean_separable', True):
+                continue        # orientation-dependent -> already in the rh mean
+            fp = {k: kwargs.get(k) for k in f.parameter_ranges}
+            E_mean = E_mean * f.factor(sms, mu_cart, base_params, **fp)
+        return E_mean
