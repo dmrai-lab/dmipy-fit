@@ -240,6 +240,14 @@ class PGSEAcquisitionScheme:
             _tm = getattr(self, 'TM', None)
             if _tm is not None:
                 self.shell_TM = np.asarray(_tm)[first_indices]
+            # Per-shell transverse occupancy time tau_perp (the window over which
+            # magnetisation is transverse: the two STE encoding lobes = 2*delta).
+            # None when unset -> the transverse gate falls back to TE (spin echo,
+            # where the whole echo is transverse). Carried like shell_TM/shell_TE.
+            self.shell_tau_perp = None
+            _tp = getattr(self, 'tau_perp', None)
+            if _tp is not None:
+                self.shell_tau_perp = np.asarray(_tp)[first_indices]
         else:
             self.shell_bvalues = bvalues
             self.shell_indices = np.r_[int(0)]
@@ -253,6 +261,7 @@ class PGSEAcquisitionScheme:
             self.shell_Delta = self.Delta
             self.shell_TE = self.TE
             self.shell_TM = getattr(self, 'TM', None)
+            self.shell_tau_perp = getattr(self, 'tau_perp', None)
 
         self.unique_b0_indices = np.unique(self.shell_indices[self.b0_mask])
         self.unique_dwi_indices = np.unique(self.shell_indices[~self.b0_mask])
@@ -285,7 +294,8 @@ class PGSEAcquisitionScheme:
             self.shell_Delta,
             self.shell_delta,
             self.shell_TE,
-            self.shell_TM)
+            self.shell_TM,
+            self.shell_tau_perp)
         if len(self.unique_dwi_indices) > 0:
             self.rotational_harmonics_scheme = (
                 RotationalHarmonicsAcquisitionScheme(self))
@@ -843,10 +853,14 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
         factor ($\\exp(-\\mathrm{TM}/T_1)$).
 
         The magnetisation is transverse only during the two encoding lobes, so the
-        transverse occupancy (echo time) is ``2*delta``; the ``TM`` window carries
-        no transverse relaxation or surface relaxivity, only $T_1$.  ``TE``
-        therefore defaults to ``2*delta`` -- the stimulated-echo transverse time --
-        rather than the full gradient-schedule duration; pass ``TE`` to override.
+        transverse occupancy time is ``tau_perp = 2*delta``; the ``TM`` window carries
+        no transverse relaxation or surface relaxivity, only $T_1$.  These are two
+        distinct physical times and are stored separately: ``tau_perp`` gates the
+        transverse factors ($T_2$ / surface relaxivity), while ``TE`` is the true
+        echo time.  In the idealised zero-width-pulse limit the echo forms after
+        both encoding lobes (transverse, ``2*delta``) plus the storage window
+        (longitudinal, ``TM``), so ``TE`` defaults to ``2*delta + TM``; pass ``TE``
+        to override.
 
         Instantaneous (hard) RF pulses only -- no finite-pulse or flip-angle
         parameters.  The stimulated echo's constant amplitude factor is absorbed
@@ -859,20 +873,25 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
         gradient_directions : array, shape (n_m, 3)
         delta : float, seconds -- encoding pulse duration (delta)
         TM : float, seconds -- mixing (longitudinal storage) time
-        TE : float, array, or None -- transverse echo time(s); default ``2*delta``
+        TE : float, array, or None -- echo time(s); default ``2*delta + TM``
         n_t : int -- waveform timesteps (default 1000)
         min_b_shell_distance, b0_threshold : float -- shell clustering params
 
         Returns
         -------
-        AcquisitionScheme with ``TM`` set, ``Delta = delta + TM`` and the
-        transverse echo time ``TE`` (2*delta by default).
+        AcquisitionScheme with ``TM`` set, ``Delta = delta + TM``, the transverse
+        occupancy time ``tau_perp = 2*delta`` and the echo time ``TE``
+        (``2*delta + TM`` by default).
         """
         bvalues = np.asarray(bvalues, dtype=float)
         n_m = len(bvalues)
         delta_arr = np.full(n_m, float(delta))
         Delta_arr = np.full(n_m, float(delta) + float(TM))
-        tau_perp = 2.0 * float(delta)               # STE transverse occupancy time
+        # Two distinct physical times: the transverse occupancy is the two encoding
+        # lobes (2*delta); the echo time is 2*delta transverse + TM longitudinal in
+        # the zero-width-pulse limit. Do NOT conflate them onto one TE field.
+        tau_perp_val = 2.0 * float(delta)           # STE transverse occupancy time
+        te_default = 2.0 * float(delta) + float(TM)  # echo time
         try:
             from dmipy_sim.sequences import Sequence  # noqa: F401  (availability check)
             # Forward-truth encoding waveform from dmipy-sim (via the PGSE lobes at
@@ -890,11 +909,12 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
                 bvalues, gradient_directions, delta_arr, Delta_arr, TE=None,
                 min_b_shell_distance=min_b_shell_distance,
                 b0_threshold=b0_threshold)
-        te_val = tau_perp if TE is None else TE
+        te_val = te_default if TE is None else TE
         scheme.TE = np.full(n_m, float(te_val)) if np.ndim(te_val) == 0 \
             else np.asarray(te_val, dtype=float)
         scheme._te_auto = False
         scheme.TM = np.full(n_m, float(TM))
+        scheme.tau_perp = np.full(n_m, tau_perp_val)
         scheme._compute_shells()
         return scheme
 
@@ -1372,6 +1392,24 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
             inst.tau_perp_SE = np.concatenate(parts)
         else:
             inst.tau_perp_SE = None
+        # tau_perp (transverse occupancy time; STE encoding = 2*delta): absent ->
+        # that scheme's TE (spin echo: the whole echo is transverse), so the T2 /
+        # surface-relaxivity gate keeps the correct transverse time across a union.
+        if any(getattr(s, 'tau_perp', None) is not None for s in schemes):
+            parts = []
+            for s in schemes:
+                n_m = s.number_of_measurements
+                tp = getattr(s, 'tau_perp', None)
+                if tp is None:
+                    te = getattr(s, 'TE', None)
+                    tp = (np.full(n_m, np.nan) if te is None
+                          else np.broadcast_to(np.asarray(te, float), (n_m,)).copy())
+                else:
+                    tp = np.broadcast_to(np.asarray(tp, float), (n_m,)).copy()
+                parts.append(tp)
+            inst.tau_perp = np.concatenate(parts)
+        else:
+            inst.tau_perp = None
 
         # Re-cluster with oscillation_frequency in grouping key when OGSE present
         if has_ogse:
@@ -1488,7 +1526,8 @@ class SphericalMeanAcquisitionScheme:
     "Acquisition scheme for isotropic spherical mean models."
 
     def __init__(self, bvalues, qvalues,
-                 gradient_strengths, Deltas, deltas, TE=None, TM=None):
+                 gradient_strengths, Deltas, deltas, TE=None, TM=None,
+                 tau_perp=None):
         self.bvalues = bvalues
         self.qvalues = qvalues
         self.gradient_strengths = gradient_strengths
@@ -1501,6 +1540,10 @@ class SphericalMeanAcquisitionScheme:
         # Per-shell mixing time TM so the longitudinal-relaxation factor
         # (exp(-TM/T1)) applies in the spherical-mean path; None for spin echo.
         self.TM = TM
+        # Per-shell transverse occupancy time tau_perp so the transverse gate uses
+        # the STE encoding window (2*delta) rather than TE in the spherical-mean
+        # path; None (spin echo) -> the gate falls back to TE.
+        self.tau_perp = tau_perp
         self.number_of_measurements = len(bvalues)
 
 

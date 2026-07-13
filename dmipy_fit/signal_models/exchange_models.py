@@ -153,7 +153,8 @@ def _karger_propagator_ste(D1, D2, T2_1, T2_2, T1_1, T1_2, kappa, f,
     delta : float — encoding duration (s)
     TM : float — mixing time (s)
     tau_90 : float — 90° RF pulse duration (s); 0 for instantaneous
-    dt6 : float — second encoding + echo tail duration (s): TE - 3*tau_90 - delta - TM
+    dt6 : float — second encoding lobe duration (s); = delta in the zero-width-pulse
+        limit (transverse encoding total = 2*delta)
 
     Returns
     -------
@@ -492,14 +493,15 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
                 De = float(D_arr[idx]) if hasattr(D_arr, '__len__') else float(D_arr)
 
                 if TM_ is not None:
-                    # PGSTE pathway
+                    # PGSTE pathway. Convention: TE is the echo time (2*delta + TM
+                    # in the zero-width-pulse limit); the transverse encoding is two
+                    # lobes of delta each (2*delta total) and TM is the longitudinal
+                    # storage window. Read the second encoding lobe from the geometry
+                    # directly -- dt6 = delta -- rather than back-computing a
+                    # transverse time from TE (delta and TM are unambiguous).
                     tm = (float(TM_[idx]) if hasattr(TM_, '__len__')
                           else float(TM_))
-                    te = (float(TE_[idx]) if TE_ is not None and hasattr(TE_, '__len__')
-                          else float(TE_) if TE_ is not None
-                          else 2 * d + tm)
-                    dt6 = te - 3.0 * tau_90 - d - tm
-                    dt6 = max(dt6, 0.0)
+                    dt6 = d
                     B1 = b / 2.0
                     B2 = b / 2.0
                     M_TE = _karger_propagator_ste(
