@@ -58,8 +58,8 @@ def scheme_to_jax(acquisition_scheme):
     if s.TE is not None:
         out['TE'] = jnp.array(s.TE)
         # transverse occupancy time for the T2 / surface-relaxivity factors
-        # (reuse the validated numpy gating). Magnetisation is transverse
-        # throughout, so tau_perp = TE.
+        # (reuse the validated numpy gating): scheme.tau_perp when set (STE encoding
+        # = 2*delta), else TE (spin echo, where the whole echo is transverse).
         from ..signal_models.attenuation import _tau_perp
         out['tau_perp'] = jnp.array(_tau_perp(s))
     # longitudinal (storage) occupancy time for the T1 factor: TM during a

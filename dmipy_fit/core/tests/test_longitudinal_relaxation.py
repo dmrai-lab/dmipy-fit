@@ -8,7 +8,8 @@ echo has no mixing time (TM unset), so the factor is the identity.
 
 These tests lock:
   * the factor is identity when TM is None and exp(-TM/T1) when TM is set,
-  * from_pgste carries TM (Delta = delta + TM, transverse TE = 2*delta),
+  * from_pgste carries TM (Delta = delta + TM, transverse tau_perp = 2*delta,
+    echo time TE = 2*delta + TM),
   * spherical-mean <-> full-model parity for a gated compartment including T1.
 """
 import numpy as np
@@ -58,13 +59,15 @@ def test_factor_is_exp_minus_TM_over_T1():
 
 
 def test_from_pgste_timing():
-    """PGSTE carries TM, Delta = delta + TM, and the transverse echo time = 2*delta."""
+    """PGSTE carries TM, Delta = delta + TM, transverse occupancy tau_perp = 2*delta,
+    and the (honest) echo time TE = 2*delta + TM."""
     delta, TM = 6e-3, 40e-3
     pgste = _pgste_scheme(delta=delta, TM=TM)
     npt.assert_allclose(pgste.TM, TM)
     npt.assert_allclose(pgste.Delta, delta + TM)
-    npt.assert_allclose(pgste.TE, 2.0 * delta)
-    # explicit TE overrides the 2*delta default
+    npt.assert_allclose(pgste.tau_perp, 2.0 * delta)
+    npt.assert_allclose(pgste.TE, 2.0 * delta + TM)
+    # explicit TE overrides the 2*delta + TM default
     bvals = np.array([0., 1e9]); bvecs = _dirs(2)
     ov = AcquisitionScheme.from_pgste(bvals, bvecs, delta=delta, TM=TM, TE=0.05)
     npt.assert_allclose(ov.TE, 0.05)
@@ -83,7 +86,8 @@ def test_spherical_mean_matches_full_model_with_T1():
     og_sm = np.asarray(og.spherical_mean(
         scheme, mu=np.array([0., 0.]), lambda_par=D, T2=T2, T1=T1)).ravel()
     sms = scheme.spherical_mean_scheme
-    expected = diff_sm * np.exp(-sms.TE / T2) * np.exp(-sms.TM / T1)
+    # transverse factor gates on tau_perp (2*delta), longitudinal on TM.
+    expected = diff_sm * np.exp(-sms.tau_perp / T2) * np.exp(-sms.TM / T1)
     npt.assert_allclose(og_sm, expected, atol=1e-10)
 
 

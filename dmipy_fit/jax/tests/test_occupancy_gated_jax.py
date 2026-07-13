@@ -52,8 +52,10 @@ def test_longitudinal_relaxation_jax_matches_numpy():
     Built analytically (b from the b-value, not integrated from a waveform) so the
     parity isolates the attenuation factors, matching the other cases above."""
     pgste = wu_minn_hcp_acquisition_scheme()
-    pgste.TE = 0.02                                    # STE transverse (2*delta) time
-    pgste.TM = np.full(pgste.number_of_measurements, 0.040)
+    n_m = pgste.number_of_measurements
+    pgste.tau_perp = np.full(n_m, 0.02)               # STE transverse occupancy (2*delta)
+    pgste.TE = np.full(n_m, 0.06)                     # echo time (2*delta + TM)
+    pgste.TM = np.full(n_m, 0.040)
     gated = OccupancyGatedModel(
         G2Zeppelin(), [TransverseRelaxation(), LongitudinalRelaxation()])
     params = dict(mu=[0.9, 0.3], lambda_par=1.7e-9, lambda_perp=0.4e-9,

@@ -147,27 +147,29 @@ def test_pgste_karger_matches_hand_ste_propagator():
     """PGSTE signal (both encoding lobes transverse) reproduces the hand STE
     propagator with distinct per-compartment T1 and T2.
 
-    TE is set to the full stimulated-echo history 2*delta + TM so the second
-    encoding lobe carries its own transverse time dt6 = TE - delta - TM = delta.
+    A plain ``from_pgste`` scheme is now correct out of the box: the second encoding
+    lobe carries its own transverse time dt6 = delta (the geometry), not a value
+    reconstructed from TE.
     """
-    TE = 2.0 * DELTA + TM
-    scheme = AcquisitionScheme.from_pgste(B, BVECS, delta=DELTA, TM=TM, TE=TE)
+    scheme = AcquisitionScheme.from_pgste(B, BVECS, delta=DELTA, TM=TM)
     npt.assert_allclose(scheme.TM, TM)
     E = np.asarray(_model()(scheme, **_kwargs()))
-    dt6 = TE - DELTA - TM                       # = delta
+    dt6 = DELTA                                 # second encoding lobe = delta
     expected = _hand_ste(B, DELTA, TM, dt6, T1_1, T1_2, T2_1, T2_2)
     npt.assert_allclose(E, expected, atol=1e-9)
 
 
-def test_pgste_default_te_gates_second_lobe():
-    """With the from_pgste default (TE = 2*delta) the propagator's second-lobe
-    transverse time dt6 = TE - delta - TM is negative and clamps to zero, so the
-    stimulated echo carries transverse relaxation over one encoding lobe only.
-    The model still matches the hand propagator with dt6 = 0."""
+def test_pgste_default_te_encodes_both_lobes():
+    """With the corrected from_pgste convention the echo time is the full
+    stimulated-echo history TE = 2*delta + TM and the transverse occupancy is
+    tau_perp = 2*delta, so the propagator's second encoding lobe carries its own
+    transverse time dt6 = delta (both lobes are encoded), not a clamped-to-zero
+    single lobe as under the old TE = 2*delta convention."""
     scheme = AcquisitionScheme.from_pgste(B, BVECS, delta=DELTA, TM=TM)
-    npt.assert_allclose(scheme.TE, 2.0 * DELTA)
+    npt.assert_allclose(scheme.TE, 2.0 * DELTA + TM)
+    npt.assert_allclose(scheme.tau_perp, 2.0 * DELTA)
     E = np.asarray(_model()(scheme, **_kwargs()))
-    expected = _hand_ste(B, DELTA, TM, 0.0, T1_1, T1_2, T2_1, T2_2)
+    expected = _hand_ste(B, DELTA, TM, DELTA, T1_1, T1_2, T2_1, T2_2)
     npt.assert_allclose(E, expected, atol=1e-9)
 
 
@@ -179,8 +181,7 @@ def test_pgste_longitudinal_weighting_over_mixing_time():
     Checked on the diffusion-weighted measurements; the exchange model forces the
     b0 signal to 1.0 (it operates on normalised attenuation), so b0 is excluded.
     """
-    TE = 2.0 * DELTA + TM
-    scheme = AcquisitionScheme.from_pgste(B, BVECS, delta=DELTA, TM=TM, TE=TE)
+    scheme = AcquisitionScheme.from_pgste(B, BVECS, delta=DELTA, TM=TM)
     m = _model()
     T1 = 1.1
     E_T1 = np.asarray(m(scheme, **_kwargs(T1_1_=T1, T1_2_=T1)))
@@ -196,11 +197,10 @@ def test_pgste_transverse_relaxation_gated_to_encoding():
     the model matches the hand propagator whose mixing factor excludes T2, and is
     strictly larger than the (counterfactual) variant that lets T2 accrue over TM.
     """
-    TE = 2.0 * DELTA + TM
-    scheme = AcquisitionScheme.from_pgste(B, BVECS, delta=DELTA, TM=TM, TE=TE)
+    scheme = AcquisitionScheme.from_pgste(B, BVECS, delta=DELTA, TM=TM)
     # T1 -> inf isolates the transverse behaviour of the mixing window.
     E = np.asarray(_model()(scheme, **_kwargs(T1_1_=INF, T1_2_=INF)))
-    dt6 = TE - DELTA - TM
+    dt6 = DELTA                                 # second encoding lobe = delta
     gated = _hand_ste(B, DELTA, TM, dt6, INF, INF, T2_1, T2_2,
                       t2_in_mixing=False)
     ungated = _hand_ste(B, DELTA, TM, dt6, INF, INF, T2_1, T2_2,

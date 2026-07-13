@@ -2,7 +2,8 @@ r"""Composable, occupancy-gated attenuation factors for compartment models.
 
 The physical attenuations that ride on top of the diffusion signal --- transverse
 ($T_2$) relaxation and surface relaxivity --- are multiplicative factors gated by the
-transverse occupancy ($\tau_\perp = \mathrm{TE}$ from the acquisition scheme). They are
+transverse occupancy $\tau_\perp$ (``tau_perp`` from the acquisition scheme, or TE
+when unset: a spin echo is transverse throughout). They are
 not diffusion models and not compartment-specific, so they are expressed here as
 composable *factors* that attach to any compartment via :class:`OccupancyGatedModel`,
 rather than baked into each compartment (which makes them opt-*out*) or multiplied out
@@ -41,8 +42,17 @@ __all__ = [
 
 
 def _tau_perp(scheme):
-    """Transverse occupancy time. Magnetisation is transverse throughout, so this
-    is the echo time TE."""
+    """Transverse occupancy time -- the window over which magnetisation is transverse
+    and thus subject to $T_2$ / surface relaxivity.
+
+    A plain spin echo keeps the magnetisation transverse for the whole echo, so the
+    transverse time equals the echo time TE (``tau_perp`` is unset). A stimulated
+    echo stores the magnetisation longitudinally during the mixing time, so its
+    transverse occupancy (the two encoding lobes, ``2*delta``) is shorter than TE;
+    such schemes carry an explicit ``tau_perp``. Falls back to TE when unset."""
+    tau_perp = getattr(scheme, 'tau_perp', None)
+    if tau_perp is not None:
+        return tau_perp
     return scheme.TE
 
 
