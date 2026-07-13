@@ -34,7 +34,8 @@ from ..core.modeling_framework import ModelProperties
 from ..core.signal_model_properties import AnisotropicSignalModelProperties
 
 __all__ = [
-    'OccupancyGatedModel', 'TransverseRelaxation', 'SurfaceRelaxivity',
+    'OccupancyGatedModel', 'TransverseRelaxation', 'LongitudinalRelaxation',
+    'SurfaceRelaxivity',
     'IntraPoreSurfaceRelaxivity', 'ExteriorSurfaceRelaxivity',
 ]
 
@@ -43,6 +44,15 @@ def _tau_perp(scheme):
     """Transverse occupancy time. Magnetisation is transverse throughout, so this
     is the echo time TE."""
     return scheme.TE
+
+
+def _tau_par(scheme):
+    """Longitudinal (storage) occupancy time.
+
+    During a stimulated-echo mixing time TM the magnetisation is stored along the
+    field, so only longitudinal ($T_1$) relaxation accrues. A plain spin echo has
+    no mixing time (``TM`` unset) and returns ``None`` -> the factor is identity."""
+    return getattr(scheme, 'TM', None)
 
 
 def _is_set(x):
@@ -79,6 +89,26 @@ class TransverseRelaxation(AttenuationFactor):
         if not _is_set(T2) or getattr(acquisition_scheme, 'TE', None) is None:
             return 1.0
         return np.exp(-_tau_perp(acquisition_scheme) / T2)
+
+
+class LongitudinalRelaxation(AttenuationFactor):
+    r"""Longitudinal relaxation $\exp(-\tau_\parallel/T_1)$ (gated by longitudinal storage).
+
+    The longitudinal sibling of :class:`TransverseRelaxation`.  During a
+    stimulated-echo mixing time the magnetisation is parked along the field, so
+    transverse effects ($T_2$, surface relaxivity) are switched off and only $T_1$
+    acts over the storage time $\tau_\parallel = \mathrm{TM}$.  A plain spin echo has
+    no mixing time (``TM`` unset -> ``_tau_par`` is None), so the factor is the
+    identity 1.0."""
+    parameter_ranges = {'T1': (1e-2, 10.)}
+    parameter_scales = {'T1': 1.}
+    parameter_types = {'T1': 'normal'}
+
+    def factor(self, acquisition_scheme, mu_cart, base_params, T1=None):
+        tau_par = _tau_par(acquisition_scheme)
+        if not _is_set(T1) or tau_par is None:
+            return 1.0
+        return np.exp(-tau_par / T1)
 
 
 class SurfaceRelaxivity(AttenuationFactor):

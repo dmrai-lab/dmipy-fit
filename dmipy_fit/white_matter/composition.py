@@ -5,15 +5,18 @@ The canonical white-matter substrate is not a special model class — it is an o
 diffusion compartments (``C1Stick`` intra-axonal, ``G2Zeppelin`` extra-axonal, ``S1Dot``
 stuck-myelin, optional ``G1Ball`` CSF), each wrapped in an
 :class:`~dmipy_fit.signal_models.attenuation.OccupancyGatedModel` carrying the *general*,
-opt-in occupancy-gated factors: transverse relaxation (``T2``) and surface relaxivity
+opt-in occupancy-gated factors: transverse relaxation (``T2``), longitudinal relaxation
+(``T1``, active only during a stimulated-echo mixing time ``TM``) and surface relaxivity
 (intra-pore + exterior).  Being a real ``MultiCompartmentModel`` it forward-simulates and
 fits through the standard machinery, exactly like NODDI.
 
 This is the **decoupled, diffusion-only** analytical model: it takes plain physical
-parameters (no ``dmipy_sim.Substrate`` inheritance) and carries no susceptibility,
-gradient-echo/stimulated-echo, cross-term, or T1 physics.  Per-compartment ``T2`` are the
-*bulk* (intrinsic) values; the surface factors supply the apparent-T2 shortening explicitly
-(no double count).
+parameters (no ``dmipy_sim.Substrate`` inheritance) and carries no susceptibility or
+cross-term physics.  Per-compartment ``T2`` are the *bulk* (intrinsic) values; the surface
+factors supply the apparent-T2 shortening explicitly (no double count).  The per-compartment
+``T1`` gate transverse-free longitudinal storage: for a plain spin echo (no ``TM``) they are
+inert, and on a PGSTE acquisition they apply $\\exp(-\\mathrm{TM}/T_1)$ while ``T2`` and
+surface relaxivity see only the encoding lobes.
 
 Defaults are canonical healthy white matter at 3 T; override any of them via keyword.
 """
@@ -24,7 +27,7 @@ from ..signal_models.cylinder_models import C1Stick
 from ..signal_models.gaussian_models import G2Zeppelin, G1Ball
 from ..signal_models.sphere_models import S1Dot
 from ..signal_models.attenuation import (
-    OccupancyGatedModel, TransverseRelaxation,
+    OccupancyGatedModel, TransverseRelaxation, LongitudinalRelaxation,
     IntraPoreSurfaceRelaxivity, ExteriorSurfaceRelaxivity)
 from .surface import exterior_surface_to_volume
 
@@ -72,8 +75,13 @@ def _catalogue_defaults():
         rho2=c['rho2'],
         # bulk transverse relaxation (s)
         T2_intra=c['T2_intra'], T2_extra=c['T2_extra'], T2_myelin=c['T2_myelin'],
+        # longitudinal relaxation (s). The public biophysical-constants catalogue does
+        # not (yet) resolve compartment-specific T1, so these are literature values for
+        # healthy WM at 3T -- a modelling default like M0/f_axon, override via keyword.
+        # They are inert unless the acquisition carries a mixing time TM (PGSTE).
+        T1_intra=1.2, T1_extra=1.0, T1_myelin=0.44,
         # CSF (only used when include_csf=True)
-        D_csf=c['D_csf'], T2_csf=c['T2_csf'],
+        D_csf=c['D_csf'], T2_csf=c['T2_csf'], T1_csf=4.0,
         # spin fractions -> partial volumes
         f_intra=s_i / tot, f_extra=s_e / tot, f_myelin=s_m / tot, f_csf=0.0,
         # global signal scale (not a physical constant)
@@ -113,16 +121,20 @@ def white_matter_compartments(include_csf: bool = False, *,
             gamma_scale_outer_diameter=gamma_scale_outer_diameter,
             volume_weighted=True),
         TransverseRelaxation(),
+        LongitudinalRelaxation(),
     ])
     extra = OccupancyGatedModel(G2Zeppelin(), [
         ExteriorSurfaceRelaxivity(S_ext_over_V=S_ext_over_V),
         TransverseRelaxation(),
+        LongitudinalRelaxation(),
     ])
     # myelin water is ~stuck (radial D ~ 0): a stationary Dot, short-T2 only
-    myelin = OccupancyGatedModel(S1Dot(), [TransverseRelaxation()])
+    myelin = OccupancyGatedModel(
+        S1Dot(), [TransverseRelaxation(), LongitudinalRelaxation()])
     compartments = [intra, extra, myelin]
     if include_csf:
-        compartments.append(OccupancyGatedModel(G1Ball(), [TransverseRelaxation()]))
+        compartments.append(OccupancyGatedModel(
+            G1Ball(), [TransverseRelaxation(), LongitudinalRelaxation()]))
     return compartments
 
 
@@ -141,14 +153,17 @@ def canonical_parameters(include_csf: bool = False, **overrides) -> dict:
         'OccupancyGatedModel_1_surface_relaxivity': p['rho2'],
         'OccupancyGatedModel_1_g_ratio': p['g_ratio'],
         'OccupancyGatedModel_1_T2': p['T2_intra'],
+        'OccupancyGatedModel_1_T1': p['T1_intra'],
         # extra-axonal zeppelin
         'OccupancyGatedModel_2_mu': _MU_Z,
         'OccupancyGatedModel_2_lambda_par': p['D_extra'],
         'OccupancyGatedModel_2_lambda_perp': p['lambda_perp_extra'],
         'OccupancyGatedModel_2_surface_relaxivity': p['rho2'],
         'OccupancyGatedModel_2_T2': p['T2_extra'],
+        'OccupancyGatedModel_2_T1': p['T1_extra'],
         # stuck myelin
         'OccupancyGatedModel_3_T2': p['T2_myelin'],
+        'OccupancyGatedModel_3_T1': p['T1_myelin'],
         # global scale + partial (spin) volumes
         'S0_global': p['M0'],
         'partial_volume_0': p['f_intra'],
@@ -158,6 +173,7 @@ def canonical_parameters(include_csf: bool = False, **overrides) -> dict:
     if include_csf:
         d['OccupancyGatedModel_4_lambda_iso'] = p['D_csf']
         d['OccupancyGatedModel_4_T2'] = p['T2_csf']
+        d['OccupancyGatedModel_4_T1'] = p['T1_csf']
         d['partial_volume_3'] = p['f_csf']
     return d
 

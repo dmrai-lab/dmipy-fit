@@ -62,6 +62,12 @@ def scheme_to_jax(acquisition_scheme):
         # throughout, so tau_perp = TE.
         from ..signal_models.attenuation import _tau_perp
         out['tau_perp'] = jnp.array(_tau_perp(s))
+    # longitudinal (storage) occupancy time for the T1 factor: TM during a
+    # stimulated-echo mixing time, else None (plain spin echo -> identity factor).
+    from ..signal_models.attenuation import _tau_par
+    _tau_par_val = _tau_par(s)
+    if _tau_par_val is not None:
+        out['tau_par'] = jnp.array(_tau_par_val)
     # Waveform fields (AcquisitionScheme only, not PGSEAcquisitionScheme)
     if hasattr(s, '_G') and s._G is not None:
         out['G_waveform'] = jnp.array(s._G)  # (n_m, n_t, 3)
