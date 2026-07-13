@@ -233,6 +233,13 @@ class PGSEAcquisitionScheme:
                     msg += "not defaulted to 0 for example."
                     raise ValueError(msg)
                 self.N_TE = len(self.shell_TE)
+            # Per-shell mixing time TM (stimulated-echo longitudinal storage);
+            # None for spin-echo schemes. Carried so the longitudinal-relaxation
+            # factor applies in the spherical-mean path just like TE does.
+            self.shell_TM = None
+            _tm = getattr(self, 'TM', None)
+            if _tm is not None:
+                self.shell_TM = np.asarray(_tm)[first_indices]
         else:
             self.shell_bvalues = bvalues
             self.shell_indices = np.r_[int(0)]
@@ -245,6 +252,7 @@ class PGSEAcquisitionScheme:
             self.shell_delta = self.delta
             self.shell_Delta = self.Delta
             self.shell_TE = self.TE
+            self.shell_TM = getattr(self, 'TM', None)
 
         self.unique_b0_indices = np.unique(self.shell_indices[self.b0_mask])
         self.unique_dwi_indices = np.unique(self.shell_indices[~self.b0_mask])
@@ -276,7 +284,8 @@ class PGSEAcquisitionScheme:
             self.shell_gradient_strengths,
             self.shell_Delta,
             self.shell_delta,
-            self.shell_TE)
+            self.shell_TE,
+            self.shell_TM)
         if len(self.unique_dwi_indices) > 0:
             self.rotational_harmonics_scheme = (
                 RotationalHarmonicsAcquisitionScheme(self))
@@ -816,6 +825,78 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
         seq = _Sequence.from_pgse(bvalues, gradient_directions, delta, Delta,
                                   TE=TE, n_t=n_t, slew_rate=slew_rate)
         return cls._wrap_sequence(seq, min_b_shell_distance, b0_threshold)
+
+    @classmethod
+    def from_pgste(cls, bvalues, gradient_directions, delta, TM, TE=None,
+                   n_t=1000, slew_rate=np.inf, min_b_shell_distance=50e6,
+                   b0_threshold=10e6):
+        """Build a PGSTE (pulsed-gradient stimulated-echo) AcquisitionScheme.
+
+        The stimulated echo splits the diffusion encoding around a mixing time
+        ``TM`` during which the magnetisation is stored longitudinally: a
+        dephasing gradient lobe of duration ``delta``, then the ``TM`` storage
+        window, then a rephasing lobe.  The effective pulse separation is
+        ``Delta = delta + TM`` (the diffusion time spans the storage), so the
+        b-value / q-value encoding is that of the equivalent PGSE.  The scheme
+        additionally carries ``TM``, which activates the longitudinal
+        :class:`~dmipy_fit.signal_models.attenuation.LongitudinalRelaxation`
+        factor ($\\exp(-\\mathrm{TM}/T_1)$).
+
+        The magnetisation is transverse only during the two encoding lobes, so the
+        transverse occupancy (echo time) is ``2*delta``; the ``TM`` window carries
+        no transverse relaxation or surface relaxivity, only $T_1$.  ``TE``
+        therefore defaults to ``2*delta`` -- the stimulated-echo transverse time --
+        rather than the full gradient-schedule duration; pass ``TE`` to override.
+
+        Instantaneous (hard) RF pulses only -- no finite-pulse or flip-angle
+        parameters.  The stimulated echo's constant amplitude factor is absorbed
+        by the global signal scale (``S0_global``) on the fit path and is not
+        applied here.
+
+        Parameters
+        ----------
+        bvalues : array, shape (n_m,), s/m^2
+        gradient_directions : array, shape (n_m, 3)
+        delta : float, seconds -- encoding pulse duration (delta)
+        TM : float, seconds -- mixing (longitudinal storage) time
+        TE : float, array, or None -- transverse echo time(s); default ``2*delta``
+        n_t : int -- waveform timesteps (default 1000)
+        min_b_shell_distance, b0_threshold : float -- shell clustering params
+
+        Returns
+        -------
+        AcquisitionScheme with ``TM`` set, ``Delta = delta + TM`` and the
+        transverse echo time ``TE`` (2*delta by default).
+        """
+        bvalues = np.asarray(bvalues, dtype=float)
+        n_m = len(bvalues)
+        delta_arr = np.full(n_m, float(delta))
+        Delta_arr = np.full(n_m, float(delta) + float(TM))
+        tau_perp = 2.0 * float(delta)               # STE transverse occupancy time
+        try:
+            from dmipy_sim.sequences import Sequence  # noqa: F401  (availability check)
+            # Forward-truth encoding waveform from dmipy-sim (via the PGSE lobes at
+            # Delta = delta + TM); the STE-specific transverse time and TM are set
+            # below so the transverse factors are gated to the encoding only.
+            scheme = cls.from_pgse(
+                bvalues, gradient_directions, delta_arr, Delta_arr, TE=None,
+                n_t=n_t, slew_rate=slew_rate,
+                min_b_shell_distance=min_b_shell_distance,
+                b0_threshold=b0_threshold)
+        except ImportError:
+            # dmipy-sim unavailable: build the pure-PGSE (waveform-free) scheme so
+            # the analytical factors still work without the simulator dependency.
+            scheme = acquisition_scheme_from_bvalues(
+                bvalues, gradient_directions, delta_arr, Delta_arr, TE=None,
+                min_b_shell_distance=min_b_shell_distance,
+                b0_threshold=b0_threshold)
+        te_val = tau_perp if TE is None else TE
+        scheme.TE = np.full(n_m, float(te_val)) if np.ndim(te_val) == 0 \
+            else np.asarray(te_val, dtype=float)
+        scheme._te_auto = False
+        scheme.TM = np.full(n_m, float(TM))
+        scheme._compute_shells()
+        return scheme
 
     @classmethod
     def from_cpmg(cls, n_echoes, TE, bvalues=None, gradient_directions=None,
@@ -1407,7 +1488,7 @@ class SphericalMeanAcquisitionScheme:
     "Acquisition scheme for isotropic spherical mean models."
 
     def __init__(self, bvalues, qvalues,
-                 gradient_strengths, Deltas, deltas, TE=None):
+                 gradient_strengths, Deltas, deltas, TE=None, TM=None):
         self.bvalues = bvalues
         self.qvalues = qvalues
         self.gradient_strengths = gradient_strengths
@@ -1417,6 +1498,9 @@ class SphericalMeanAcquisitionScheme:
         # relaxivity) apply in the spherical-mean path just as they do in the full
         # signal. None when the scheme has no TE; diffusion-only models ignore it.
         self.TE = TE
+        # Per-shell mixing time TM so the longitudinal-relaxation factor
+        # (exp(-TM/T1)) applies in the spherical-mean path; None for spin echo.
+        self.TM = TM
         self.number_of_measurements = len(bvalues)
 
 

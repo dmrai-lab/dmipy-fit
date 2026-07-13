@@ -50,6 +50,25 @@ def test_canonical_parameters_overridable():
     assert p['OccupancyGatedModel_2_surface_relaxivity'] == 20e-6
 
 
+def test_builder_exposes_compartment_T1():
+    """Each compartment carries a longitudinal-relaxation factor, so the model exposes
+    OccupancyGatedModel_<n>_T1 parameters (inert without a stimulated-echo TM)."""
+    model, params = build_white_matter_model()
+    t1_names = [n for n in model.parameter_names if n.endswith('_T1')]
+    assert t1_names == ['OccupancyGatedModel_1_T1',
+                        'OccupancyGatedModel_2_T1',
+                        'OccupancyGatedModel_3_T1']
+    for n in t1_names:
+        assert n in params
+    # T1 is overridable via keyword
+    p = canonical_parameters(T1_intra=1.5)
+    assert p['OccupancyGatedModel_1_T1'] == 1.5
+    # with CSF the ball also carries a T1
+    model_csf, params_csf = build_white_matter_model(include_csf=True)
+    assert 'OccupancyGatedModel_4_T1' in model_csf.parameter_names
+    assert 'OccupancyGatedModel_4_T1' in params_csf
+
+
 def test_exterior_sv_derived_from_gamma():
     """S_ext/V of the extra compartment is derived from the Gamma diameter distribution
     (the sim-consistent closed form), not hand-set, and is overridable."""
