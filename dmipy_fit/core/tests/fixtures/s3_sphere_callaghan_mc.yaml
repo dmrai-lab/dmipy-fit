@@ -1,0 +1,12 @@
+# Reflecting-sphere PGSE Monte-Carlo reference for _S3SphereCallaghan.
+# Regenerate: python tools/precompute_s3_sphere_mc.py  (needs a CUDA GPU).
+geometry: reflecting Sphere, radius 5e-6 m (impermeable)
+diffusion_constant_m2_s: 1.7e-09
+tau_s: 0.04          # Delta - delta/3
+q_targets_per_m: [40000.0, 60000.0, 80000.0, 100000.0]
+deltas_s: [0.0002, 0.0001, 5e-05]   # narrow-pulse sweep, square lobes
+n_walkers: 500000
+n_t: 12000
+seeds: [11, 22, 33, 44]       # seed-averaged; effective MC noise ~7e-4
+engine: dmipy-sim (GPU Bloch-Torrey random walk), GAMMA=267.513e6
+claim: E_MC -> E_S3 monotonically as delta -> 0 (finite-pulse SGP bias)
