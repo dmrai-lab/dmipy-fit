@@ -14,13 +14,10 @@ corrections and agent ergonomics.
 ### Added
 - **Agent guide** (`CLAUDE.md`) — how to drive the analytical inverse engine efficiently.
 
-> Note: the `## 1.0.0` heading below predates the `v2.0.0` tag/`pyproject` version and is
-> retained as historical record; the shipping version line is 2.x.
+## 2.0.0
 
-## 1.0.0
-
-Re-baselined from the inherited `2.0.0` to `1.0.0` for the first coordinated dmrai ecosystem
-release: dmipy-fit, dmipy-sim, and dmrai now version in lockstep.
+First coordinated public release of the dmrai ecosystem: dmipy-fit, dmipy-sim, and the
+`dmipy` umbrella version in lockstep (shipped as `2.0.0`; tag `v2.0.0`).
 
 Public-release overhaul focused on the white-matter physics and real-data ergonomics.
 
