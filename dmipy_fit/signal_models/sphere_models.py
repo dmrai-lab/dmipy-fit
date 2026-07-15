@@ -317,6 +317,30 @@ class S2SphereStejskalTannerApproximation(
         return E_sphere
 
 
+def _spherical_jn_prime_roots(n, n_roots):
+    """First ``n_roots`` positive roots of d/dx[j_n(x)] = 0.
+
+    These are the reflecting (Neumann) boundary-condition eigenvalues for a sphere,
+    one set per spherical-harmonic order ``n``. (Contrast with ``special.jnp_zeros``,
+    which returns *cylinder* Bessel-derivative roots — the bug this replaced.)
+    """
+    from scipy.optimize import brentq
+    xmax = (n_roots + n + 2) * np.pi
+    xs = np.linspace(1e-6, xmax, int(xmax * 6) + 2)
+    f = special.spherical_jn(n, xs, derivative=True)
+    roots = []
+    for i in range(len(xs) - 1):
+        if f[i] == 0.0:
+            roots.append(xs[i])
+        elif f[i] * f[i + 1] < 0:
+            roots.append(brentq(
+                lambda x: special.spherical_jn(n, x, derivative=True),
+                xs[i], xs[i + 1]))
+        if len(roots) >= n_roots:
+            break
+    return np.array(roots[:n_roots])
+
+
 class _S3SphereCallaghanApproximation(
         ModelProperties, IsotropicSignalModelProperties):
     r"""
@@ -376,40 +400,73 @@ class _S3SphereCallaghanApproximation(
         self,
         diameter=None,
         diffusion_constant=CONSTANTS['water_in_axons_diffusion_constant'],
-        number_of_roots=20,
-        number_of_functions=50,
+        number_of_roots=25,
+        number_of_functions=16,
         surface_relaxivity=None,
     ):
 
         self.diameter = diameter
         self.Dintra = diffusion_constant
         self.surface_relaxivity = surface_relaxivity
-        self.alpha = np.empty((number_of_roots, number_of_functions))
-        self.alpha[0, 0] = 0
-        if number_of_roots > 1:
-            self.alpha[1:, 0] = special.jnp_zeros(0, number_of_roots - 1)
-        for m in range(1, number_of_functions):
-            self.alpha[:, m] = special.jnp_zeros(m, number_of_roots)
+        # Neumann-BC eigenvalues alpha[n, k]: the k-th positive root of j_n'(x) = 0,
+        # one set of roots per spherical-harmonic order n. The n=0 order carries the
+        # alpha = 0 ground state (uniform mode) as its first entry — that term is the
+        # SGP long-time structure factor.
+        self.alpha = np.zeros((number_of_functions, number_of_roots))
+        for n in range(number_of_functions):
+            if n == 0:
+                self.alpha[0, 1:] = _spherical_jn_prime_roots(
+                    0, number_of_roots - 1)
+            else:
+                self.alpha[n, :] = _spherical_jn_prime_roots(n, number_of_roots)
 
     def sphere_attenuation(self, q, tau, diameter):
-        """Implements the finite time Callaghan model for planes."""
-        radius = diameter / 2.0
-        q_argument = 2 * np.pi * q * radius
-        q_argument_2 = q_argument ** 2
-        res = np.zeros_like(q)
+        r"""Finite-time Callaghan (1995) restricted-sphere echo attenuation (SGP).
 
-        # J = special.spherical_jn(q_argument)
-        Jder = special.spherical_jn(q_argument, derivative=True)
-        for k in range(0, self.alpha.shape[0]):
-            for n in range(0, self.alpha.shape[1]):
-                a_nk2 = self.alpha[k, n] ** 2
-                update = np.exp(-a_nk2 * self.Dintra * tau / radius ** 2)
-                update *= ((2 * n + 1) * a_nk2) / \
-                    (a_nk2 - (n - 0.5) ** 2 + 0.25)
-                update *= q_argument * Jder
-                update /= (q_argument_2 - a_nk2) ** 2
-                res += update
-        return res
+        .. math::
+            E(q,\tau) = |F(x)|^2 + 6 \sum_{n,k:\,\alpha_{nk}>0} (2n+1)
+            \frac{\alpha_{nk}^2}{\alpha_{nk}^2 - n(n+1)}
+            \left[\frac{x\,j_n'(x)}{x^2 - \alpha_{nk}^2}\right]^2
+            e^{-\alpha_{nk}^2 D \tau / R^2},
+
+        with :math:`x = 2\pi q R`, :math:`F(x) = 3(\sin x - x\cos x)/x^3` the
+        uniform-sphere structure factor (the :math:`\alpha=0` ground state, i.e. the
+        SGP long-time limit), :math:`\alpha_{nk}` the Neumann-BC roots of
+        :math:`j_n'`, and :math:`j_n` the spherical Bessel function. The prefactor 6
+        and the ground state together satisfy completeness: :math:`E(\tau\to 0)=1`.
+        """
+        radius = diameter / 2.0
+        radius2 = radius ** 2
+        D = self.Dintra
+        x = 2 * np.pi * q * radius
+        x2 = x ** 2
+
+        # ground state (alpha = 0): uniform-sphere structure factor, no decay
+        with np.errstate(divide='ignore', invalid='ignore'):
+            struct = np.where(x > 0,
+                              3.0 * (np.sin(x) - x * np.cos(x)) / x ** 3,
+                              1.0)
+        E = struct ** 2
+
+        for n in range(self.alpha.shape[0]):
+            jn = special.spherical_jn(n, x)
+            jn_prime = special.spherical_jn(n, x, derivative=True)
+            for k in range(self.alpha.shape[1]):
+                a = self.alpha[n, k]
+                if a == 0.0:
+                    continue
+                a2 = a * a
+                Cn = a2 / (a2 - n * (n + 1))
+                denom = x2 - a2
+                # x j_n'(x)/(x^2 - alpha^2) is 0/0 at the resonance x = alpha
+                # (alpha is a root of j_n'); use the L'Hopital limit there.
+                near = np.abs(denom) < 1e-9 * (1.0 + a2)
+                M_reg = x * jn_prime / np.where(near, 1.0, denom)
+                M_lim = -(a2 - n * (n + 1)) * jn / (2.0 * a2)
+                M = np.where(near, M_lim, M_reg)
+                E = E + 6.0 * (2 * n + 1) * Cn * M ** 2 * \
+                    np.exp(-a2 * D * tau / radius2)
+        return E
 
     def __call__(self, acquisition_scheme, **kwargs):
         r'''

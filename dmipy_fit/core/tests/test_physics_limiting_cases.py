@@ -1,7 +1,7 @@
 """
 Adversarial physics tests — limiting cases, boundary conditions, and known bugs.
 
-SC-023  _S3SphereCallaghanApproximation is broken (DP-006) — xfail
+SC-023  _S3SphereCallaghanApproximation fixed + MC-validated (DP-006)
 SC-025  SD1WatsonDistributed(C3Callaghan) agrees with numerical orientation average
 SC-026  T2 is silently ignored when acquisition scheme has TE=None
 SC-027  C3CylinderCallaghan(d→0) approaches C1Stick
@@ -234,41 +234,137 @@ class TestT2OccupancyGatedFactor:
 
 
 # =========================================================================
-# SC-023 / DP-006 — _S3SphereCallaghanApproximation is broken
+# SC-023 / DP-006 — _S3SphereCallaghanApproximation, fixed and validated
 # =========================================================================
 
-class TestS3SphereCallaghanBroken:
-    """SC-023, DP-006: _S3SphereCallaghanApproximation is broken.
+class TestS3SphereCallaghan:
+    """SC-023, DP-006: the finite-time Callaghan sphere, fixed and validated.
 
-    The model has three bugs documented in SC-023 and DP-006:
-      Bug 1: spherical_jn() called without the mandatory integer order arg.
-      Bug 2: Uses cylinder Bessel roots instead of sphere roots.
-      Bug 3: Wrong normalization factor in the Callaghan sum.
+    The model previously had three bugs (spherical_jn called without its order
+    argument; cylinder Bessel roots instead of sphere Neumann roots; wrong
+    normalization). It is now the correct finite-time SGP series
 
-    Bug 1 causes an immediate TypeError.  We xfail strict=True so the test
-    suite catches any "partial fix" that silences the error but still
-    produces physically wrong values (the test would then unexpectedly pass
-    and be flagged by pytest).
+        E(q, tau) = |F(x)|^2 + 6 sum_{n,k: alpha>0} (2n+1)
+                    alpha^2/(alpha^2 - n(n+1)) [x j_n'(x)/(x^2 - alpha^2)]^2
+                    exp(-alpha^2 D tau / R^2),
+
+    with x = 2*pi*q*R and F(x) = 3(sin x - x cos x)/x^3 the uniform-sphere
+    structure factor. We validate the two analytical limits it must satisfy:
+      (1) tau -> infinity  =>  the SGP long-time structure factor S2, exactly;
+      (2) tau -> 0         =>  E = 1 (completeness);
+    and agreement with the independent S4 Gaussian-Phase approximation in the
+    regime where both are valid (small delta, moderate Delta, small radius).
+
+    The finite-time excited-mode decay (not just the two limits) was validated
+    against a dmipy-sim reflecting-sphere PGSE Monte-Carlo in the *strongly
+    attenuated* regime (E ~ 0.47): as delta -> 0 the Monte-Carlo signal
+    converges onto this series to within Monte-Carlo noise (E_MC - E_S3 =
+    -0.0008 at delta = 0.1 ms, R = 5 um, q = 6e4, MC noise ~0.0018). The
+    strong-attenuation regression values below are pinned to that validated
+    curve so the series cannot silently regress.
     """
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=TypeError,
-        reason=(
-            "SC-023, DP-006: _S3SphereCallaghanApproximation is broken — "
-            "spherical_jn() called without the integer order argument. "
-            "Also has wrong Bessel roots and wrong normalization. "
-            "Do NOT remove this xfail without a complete fix and new MC validation."
-        ),
-    )
-    def test_s3_sphere_raises_type_error(self):
-        """Calling _S3SphereCallaghan raises TypeError (missing order arg)."""
-        from dmipy_fit.signal_models.sphere_models import _S3SphereCallaghanApproximation
-        bvals = np.array([1e9])
-        bvecs = np.array([[1., 0., 0.]])
+    D = 1.7e-9
+
+    def _s3(self):
+        from dmipy_fit.signal_models.sphere_models import (
+            _S3SphereCallaghanApproximation)
+        return _S3SphereCallaghanApproximation(diffusion_constant=self.D)
+
+    def test_s3_long_time_limit_is_s2_structure_factor(self):
+        """tau -> inf: S3 reduces to the SGP sphere structure factor (S2), exactly."""
+        from dmipy_fit.signal_models.sphere_models import (
+            S2SphereStejskalTannerApproximation)
+        s3 = self._s3()
+        s2 = S2SphereStejskalTannerApproximation()
+        for diameter in (4e-6, 8e-6, 12e-6):
+            q = np.linspace(1e4, 4e5, 12)
+            tau = np.full_like(q, 3.0)  # 3 s >> R^2/D: fully restricted
+            e3 = s3.sphere_attenuation(q, tau, diameter)
+            e2 = s2.sphere_attenuation(q, diameter)
+            assert np.max(np.abs(e3 - e2)) < 1e-4
+
+    def test_s3_short_time_limit_is_unity(self):
+        """tau -> 0: no attenuation, E -> 1 (eigenmode completeness)."""
+        s3 = self._s3()
+        q = np.array([5e4, 1e5, 2e5, 3e5])
+        tau = np.full_like(q, 1e-8)  # << R^2/D: high eigenmodes undamped
+        e3 = s3.sphere_attenuation(q, tau, 8e-6)
+        assert np.all(np.abs(e3 - 1.0) < 1e-3)
+
+    def test_s3_matches_s4_gpa_in_overlap_regime(self):
+        """S3 (SGP) and S4 (GPA) agree where both approximations are valid."""
+        from dmipy_fit.signal_models.sphere_models import (
+            S4SphereGaussianPhaseApproximation)
+        gamma = 2.6751525e8
+        s3 = self._s3()
+        for radius, delta, Delta in ((2e-6, 2e-3, 30e-3),
+                                     (3e-6, 2e-3, 40e-3)):
+            diameter = 2 * radius
+            G = np.linspace(0.02, 0.28, 6)
+            q = gamma * G * delta / (2 * np.pi)
+            tau = np.full_like(q, Delta - delta / 3.0)
+            s4 = S4SphereGaussianPhaseApproximation(
+                diffusion_constant=self.D, diameter=diameter)
+            e4 = np.array([float(np.asarray(
+                s4.sphere_attenuation(g, delta, Delta, diameter)).ravel()[0])
+                for g in G])
+            e3 = s3.sphere_attenuation(q, tau, diameter)
+            assert np.max(np.abs(e3 - e4)) < 0.03
+
+    def test_s3_strong_attenuation_regression(self):
+        """Pin the MC-validated strong-attenuation curve (E from 0.72 to 0.09)."""
+        s3 = self._s3()
+        q = np.array([4e4, 6e4, 8e4, 1.0e5])
+        tau = np.full_like(q, 40e-3)
+        E = s3.sphere_attenuation(q, tau, 1e-5)  # diameter 10 um
+        expected = np.array([0.723754, 0.471877, 0.245339, 0.092397])
+        assert np.allclose(E, expected, atol=1e-5)
+
+    def test_s3_converges_onto_reflecting_sphere_mc(self):
+        """Excited-mode decay matches a reflecting-sphere PGSE MC as delta->0.
+
+        Offline fixture (tools/precompute_s3_sphere_mc.py): seed-averaged dmipy-sim
+        reflecting-sphere PGSE signal at R=5um over a narrow-pulse sweep, in the
+        strongly-attenuated regime (E ~ 0.72 -> 0.09). The S3 series is SGP
+        (delta->0); the MC carries a finite-pulse bias that must vanish linearly
+        as delta shrinks and converge monotonically onto the analytic curve.
+        """
+        from dmipy_fit.signal_models.sphere_models import (
+            _S3SphereCallaghanApproximation)
+        fx = np.load(os.path.join(os.path.dirname(__file__), "fixtures",
+                                  "s3_sphere_callaghan_mc.npz"))
+        q, tau, diameter = fx["q"], float(fx["tau"]), 2 * float(fx["radius"])
+        deltas, E_mc = fx["deltas"], fx["E_mc"]
+
+        s3 = _S3SphereCallaghanApproximation(diffusion_constant=float(fx["D"]))
+        E_s3 = s3.sphere_attenuation(q, np.full_like(q, tau), diameter)
+
+        # (1) the analytic curve the fixture was measured against is reproduced
+        assert np.allclose(E_s3, fx["E_s3"], atol=1e-6)
+
+        # (2) monotone delta->0 convergence onto the series (deltas descending)
+        resid = np.max(np.abs(E_mc - E_s3), axis=1)
+        assert np.all(np.diff(resid) < 0), (
+            f"MC residual not shrinking as delta->0: {resid}")
+
+        # (3) at the smallest delta the MC agrees with S3 to <1e-3 (near MC noise)
+        assert resid[-1] < 1e-3, (
+            f"S3 disagrees with reflecting-sphere MC at delta={deltas[-1]:.2e}s: "
+            f"max|E_MC-E_S3|={resid[-1]:.2e}")
+
+    def test_s3_call_returns_finite_attenuation(self):
+        """The full __call__ path runs and returns physical (0, 1] attenuation."""
+        from dmipy_fit.signal_models.sphere_models import (
+            _S3SphereCallaghanApproximation)
+        bvals = np.array([0., 1e9, 2e9])
+        bvecs = np.array([[1., 0., 0.], [1., 0., 0.], [1., 0., 0.]])
         scheme = acquisition_scheme_from_bvalues(bvals, bvecs, 0.1e-3, 40e-3)
         s3 = _S3SphereCallaghanApproximation(diameter=10e-6)
-        s3(scheme, diameter=10e-6)  # Must raise TypeError
+        E = s3(scheme, diameter=10e-6)
+        assert np.all(np.isfinite(E))
+        assert np.all(E > 0) and np.all(E <= 1.0 + 1e-9)
+        assert E[0] == pytest.approx(1.0, abs=1e-9)  # b=0 unattenuated
 
 
 # =========================================================================
