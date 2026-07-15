@@ -1,9 +1,18 @@
-# dmipy-fit: Diffusion Microstructure Imaging in Python
+# dmipy-fit
 
-dmipy-fit is a Python toolbox for **biophysical modelling of diffusion MRI data**. Given an
-acquisition scheme and a multi-compartment tissue model, it fits the model parameters
-voxel-by-voxel and returns interpretable microstructure maps — axon density and dispersion,
-diffusivities, cell size, volume fractions, T2, and more.
+**Diffusion Microstructure Imaging in Python** — the analytical **inverse** engine: fit
+multi-compartment tissue models to diffusion-MRI data, voxel-by-voxel, and recover interpretable
+microstructure maps (axon density and dispersion, diffusivities, cell size, volume fractions, T2,
+and more).
+
+> One shared tissue-and-sequence description, read from both directions by two engines:
+> **dmipy-fit** · the analytical **inverse** (*fit* signals → tissue) *(you are here)*
+> &nbsp;·&nbsp; **[dmipy-sim](https://github.com/dmrai-lab/dmipy-sim)** · the Monte-Carlo
+> **forward** engine (*simulate* tissue → signals) &nbsp;·&nbsp;
+> **[dmipy](https://github.com/dmrai-lab/dmipy)** · umbrella + docs.
+>
+> Docs: **[dmipy.org](https://dmipy.org)** &nbsp;·&nbsp; coming from the 2019 toolbox?
+> [What's changed in 2.x](https://dmipy.org/migrating/)
 
 It models the diffusion signal **plus the transverse-relaxation contrasts that ride on it** —
 T2 and **surface relaxivity** — as composable, occupancy-gated factors that attach to any
