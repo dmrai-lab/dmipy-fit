@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.1.0
+
+Coordinated release alongside dmipy-sim 2.1.0 (mesh substrates). Fit-side changes are model
+corrections and agent ergonomics.
+
+### Fixed
+- **`_S3SphereCallaghanApproximation`** — corrected sphere Neumann roots and the finite-time
+  short-gradient-pulse (SGP) series.
+- **Multi-TE models** — expose per-compartment T2 in the `mte_*` models; dropped the redundant
+  `X2NEXIModel`.
+
+### Added
+- **Agent guide** (`CLAUDE.md`) — how to drive the analytical inverse engine efficiently.
+
+> Note: the `## 1.0.0` heading below predates the `v2.0.0` tag/`pyproject` version and is
+> retained as historical record; the shipping version line is 2.x.
+
 ## 1.0.0
 
 Re-baselined from the inherited `2.0.0` to `1.0.0` for the first coordinated dmrai ecosystem
