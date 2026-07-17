@@ -17,7 +17,7 @@ Requires ``scheme_jax`` to carry ``tau_perp`` -- added by
 import jax.numpy as jnp
 
 from ..signal_models.attenuation import (
-    TransverseRelaxation,
+    TransverseRelaxation, LongitudinalRelaxation,
     SurfaceRelaxivity, ExteriorSurfaceRelaxivity, IntraPoreSurfaceRelaxivity)
 
 __all__ = ['build_jax_factor', 'JAX_FACTOR_BUILDERS']
@@ -30,6 +30,16 @@ def _build_transverse_relaxation(factor):
         if T2 is None or tau_perp is None:
             return 1.0
         return jnp.where(jnp.isfinite(T2), jnp.exp(-tau_perp / T2), 1.0)
+    return fn
+
+
+def _build_longitudinal_relaxation(factor):
+    def fn(scheme_jax, mu_cart, params):
+        T1 = params.get('T1')
+        tau_par = scheme_jax.get('tau_par')
+        if T1 is None or tau_par is None:
+            return 1.0
+        return jnp.where(jnp.isfinite(T1), jnp.exp(-tau_par / T1), 1.0)
     return fn
 
 
@@ -109,6 +119,7 @@ def _build_intrapore_surface_relaxivity(factor, n_nodes=64):
 
 JAX_FACTOR_BUILDERS = {
     TransverseRelaxation: _build_transverse_relaxation,
+    LongitudinalRelaxation: _build_longitudinal_relaxation,
     ExteriorSurfaceRelaxivity: _build_exterior_surface_relaxivity,
     SurfaceRelaxivity: _build_surface_relaxivity,
     IntraPoreSurfaceRelaxivity: _build_intrapore_surface_relaxivity,
