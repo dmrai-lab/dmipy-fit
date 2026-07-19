@@ -5,10 +5,11 @@ multi-compartment tissue models to diffusion-MRI data, voxel-by-voxel, and recov
 microstructure maps (axon density and dispersion, diffusivities, cell size, volume fractions, T2,
 and more).
 
-> One shared tissue-and-sequence description, read from both directions by two engines:
-> **dmipy-fit** · the analytical **inverse** (*fit* signals → tissue) *(you are here)*
-> &nbsp;·&nbsp; **[dmipy-sim](https://github.com/dmrai-lab/dmipy-sim)** · the Monte-Carlo
-> **forward** engine (*simulate* tissue → signals) &nbsp;·&nbsp;
+> One shared `G(t)` + substrate across the whole loop — **design** the sequence, **simulate** the
+> signal, **fit** the tissue:
+> **[dmipy-design](https://github.com/dmrai-lab/dmipy-design)** · deliverable sequence **design**
+> &nbsp;·&nbsp; **[dmipy-sim](https://github.com/dmrai-lab/dmipy-sim)** · Monte-Carlo **forward**
+> &nbsp;·&nbsp; **dmipy-fit** · analytical **inverse** *(you are here)* &nbsp;·&nbsp;
 > **[dmipy](https://github.com/dmrai-lab/dmipy)** · umbrella + docs.
 >
 > Docs: **[dmipy.org](https://dmipy.org)** &nbsp;·&nbsp; coming from the 2019 toolbox?
