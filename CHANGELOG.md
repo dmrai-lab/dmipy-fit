@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.2.0
+
+**Compartment-wise T1 (gated longitudinal relaxation) + PGSTE** — the analytical, occupancy-gated
+sibling of `TransverseRelaxation`, coordinated with dmipy-sim 2.2.0.
+
+### Added
+- **`LongitudinalRelaxation`** factor (`signal_models/attenuation.py`, + pure-JAX builder) —
+  `exp(−τ∥/T1)` with `τ∥ = scheme.TM`, and the identity on a plain spin echo (no TM). During a
+  stimulated-echo mixing time the magnetisation is stored along the field, so T2 and surface
+  relaxivity gate off and only T1 acts. T1 range 1e-2…10 s.
+- **`AcquisitionScheme.from_pgste`** — stimulated-echo scheme constructor (`Δ = δ + TM`, transverse
+  `TE` default `2·δ`, hard pulses only); the spherical-mean scheme carries per-shell `TM` so the
+  factor flows through like `TE` does for the transverse factors.
+- **Per-compartment T1** in `white_matter/composition.py` (`OccupancyGatedModel_<n>_T1`).
+
+Magnetisation is treated as fully transverse on a spin echo (ideal instantaneous pulses); the fit
+path applies no constant stimulated-echo amplitude (degenerate with `S0`).
+
 ## 2.1.0
 
 Coordinated release alongside dmipy-sim 2.1.0 (mesh substrates). Fit-side changes are model
