@@ -281,17 +281,17 @@ def build_white_matter_model(include_csf: bool = False,
 def attach_mt_saturation(scheme, offset_hz, b1_hz):
     """Attach a qMT saturation block to an acquisition scheme (in place).
 
-    Sets per-measurement ``mt_offset_hz`` and ``mt_b1_hz`` (Hz) that
-    :class:`~dmipy_fit.signal_models.attenuation.MTSaturation` reads to predict the
-    free-water $M_z$ reduction.  Scalars broadcast to every measurement; a ``b1_hz``
-    of 0 marks an unsaturated measurement (its steady state is exactly 1).  A
-    Z-spectrum is a set of measurements at different ``offset_hz``.  Returns ``scheme``.
-
-    (Attributes only -- the core ``AcquisitionScheme`` class is untouched.  The
-    spherical-mean scheme does not carry the block, so qMT saturation is applied in
-    the full/SH forward path, not the spherical-mean one.)
+    Thin wrapper over ``scheme.with_mt_saturation`` (now first-class on the
+    acquisition scheme): sets per-measurement ``mt_offset_hz``/``mt_b1_hz`` (Hz),
+    rebuilds the shells so the block is part of the shell fingerprint, and propagates
+    it to ``spherical_mean_scheme`` -- so :class:`~dmipy_fit.signal_models.attenuation.
+    MTSaturation` applies in the full, SH and spherical-mean paths.  Scalars broadcast
+    to every measurement; ``b1_hz = 0`` marks an unsaturated measurement.  A Z-spectrum
+    is a set of measurements at different ``offset_hz``.  Returns ``scheme``.
     """
-    import numpy as np
+    if hasattr(scheme, 'with_mt_saturation'):
+        return scheme.with_mt_saturation(offset_hz, b1_hz)
+    import numpy as np           # fallback for a duck-typed scheme without the method
     n = len(np.atleast_1d(scheme.bvalues))
     scheme.mt_offset_hz = np.broadcast_to(np.asarray(offset_hz, float), (n,)).copy()
     scheme.mt_b1_hz = np.broadcast_to(np.asarray(b1_hz, float), (n,)).copy()

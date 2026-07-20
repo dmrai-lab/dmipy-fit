@@ -180,7 +180,15 @@ class PGSEAcquisitionScheme:
             # timing (OGSE, GRE) have delta/Delta = None, so filter None out — an
             # un-filtered None becomes a 0-d array and breaks the column_stack.
             osc_freq = getattr(self, 'oscillation_frequency', None)
-            cols = [c for c in (self.delta, self.Delta, self.TE, osc_freq)
+            # A qMT saturation block (per-measurement off-resonance offset + B1) is
+            # part of the shell fingerprint, so measurements that differ ONLY in the
+            # saturation (e.g. a Z-spectrum at one b) become distinct shells and the
+            # block survives the spherical-mean reduction.  None (the default) leaves
+            # the fingerprint -- and every existing scheme -- byte-identical.
+            _mt_off = getattr(self, 'mt_offset_hz', None)
+            _mt_b1 = getattr(self, 'mt_b1_hz', None)
+            cols = [c for c in (self.delta, self.Delta, self.TE, osc_freq,
+                                _mt_off, _mt_b1)
                     if c is not None]
             if cols:
                 deltas = np.column_stack(cols)
@@ -248,6 +256,16 @@ class PGSEAcquisitionScheme:
             _tp = getattr(self, 'tau_perp', None)
             if _tp is not None:
                 self.shell_tau_perp = np.asarray(_tp)[first_indices]
+            # Per-shell qMT saturation block (offset_hz, b1_hz) so the MTSaturation
+            # factor applies in the spherical-mean path; None when unset.
+            self.shell_mt_offset = None
+            _mo = getattr(self, 'mt_offset_hz', None)
+            if _mo is not None:
+                self.shell_mt_offset = np.asarray(_mo)[first_indices]
+            self.shell_mt_b1 = None
+            _mb = getattr(self, 'mt_b1_hz', None)
+            if _mb is not None:
+                self.shell_mt_b1 = np.asarray(_mb)[first_indices]
         else:
             self.shell_bvalues = bvalues
             self.shell_indices = np.r_[int(0)]
@@ -262,6 +280,8 @@ class PGSEAcquisitionScheme:
             self.shell_TE = self.TE
             self.shell_TM = getattr(self, 'TM', None)
             self.shell_tau_perp = getattr(self, 'tau_perp', None)
+            self.shell_mt_offset = getattr(self, 'mt_offset_hz', None)
+            self.shell_mt_b1 = getattr(self, 'mt_b1_hz', None)
 
         self.unique_b0_indices = np.unique(self.shell_indices[self.b0_mask])
         self.unique_dwi_indices = np.unique(self.shell_indices[~self.b0_mask])
@@ -295,10 +315,32 @@ class PGSEAcquisitionScheme:
             self.shell_delta,
             self.shell_TE,
             self.shell_TM,
-            self.shell_tau_perp)
+            self.shell_tau_perp,
+            self.shell_mt_offset,
+            self.shell_mt_b1)
         if len(self.unique_dwi_indices) > 0:
             self.rotational_harmonics_scheme = (
                 RotationalHarmonicsAcquisitionScheme(self))
+
+    def with_mt_saturation(self, offset_hz, b1_hz):
+        r"""Attach a qMT off-resonance saturation block to this scheme (in place).
+
+        Sets per-measurement ``mt_offset_hz`` and ``mt_b1_hz`` (Hz) and rebuilds the
+        shells, so the block is first-class: measurements differing only in the
+        saturation become distinct shells and it propagates to
+        ``spherical_mean_scheme`` (so :class:`~dmipy_fit.signal_models.attenuation.
+        MTSaturation` predicts the free-water $M_z$ reduction in the full, SH and
+        spherical-mean paths alike).  Scalars broadcast to every measurement; a
+        ``b1_hz`` of 0 marks an unsaturated measurement.  A Z-spectrum is a set of
+        measurements at different ``offset_hz``.  Returns ``self`` (chainable).
+        """
+        n = self.number_of_measurements
+        self.mt_offset_hz = np.broadcast_to(
+            np.asarray(offset_hz, dtype=float), (n,)).astype(float).copy()
+        self.mt_b1_hz = np.broadcast_to(
+            np.asarray(b1_hz, dtype=float), (n,)).astype(float).copy()
+        self._compute_shells()
+        return self
 
     @property
     def shell_fingerprints(self):
@@ -1527,7 +1569,7 @@ class SphericalMeanAcquisitionScheme:
 
     def __init__(self, bvalues, qvalues,
                  gradient_strengths, Deltas, deltas, TE=None, TM=None,
-                 tau_perp=None):
+                 tau_perp=None, mt_offset_hz=None, mt_b1_hz=None):
         self.bvalues = bvalues
         self.qvalues = qvalues
         self.gradient_strengths = gradient_strengths
@@ -1544,6 +1586,11 @@ class SphericalMeanAcquisitionScheme:
         # the STE encoding window (2*delta) rather than TE in the spherical-mean
         # path; None (spin echo) -> the gate falls back to TE.
         self.tau_perp = tau_perp
+        # Per-shell qMT saturation block (offset_hz, b1_hz) so MTSaturation predicts
+        # the free-water Mz reduction in the spherical-mean path; None (spin echo /
+        # no saturation) -> the factor is identity.
+        self.mt_offset_hz = mt_offset_hz
+        self.mt_b1_hz = mt_b1_hz
         self.number_of_measurements = len(bvalues)
 
 
