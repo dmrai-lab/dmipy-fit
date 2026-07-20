@@ -28,7 +28,8 @@ from ..signal_models.gaussian_models import G2Zeppelin, G1Ball
 from ..signal_models.sphere_models import S1Dot
 from ..signal_models.attenuation import (
     OccupancyGatedModel, TransverseRelaxation, LongitudinalRelaxation,
-    IntraPoreSurfaceRelaxivity, ExteriorSurfaceRelaxivity)
+    IntraPoreSurfaceRelaxivity, ExteriorSurfaceRelaxivity,
+    IntraPoreSurfaceMT, ExteriorSurfaceMT)
 from .surface import exterior_surface_to_volume
 
 # fibre axis +z in dmipy (theta, phi) spherical convention
@@ -73,6 +74,9 @@ def _catalogue_defaults():
         f_axon=f_axon, S_ext_over_V=None,               # None -> derive S_ext/V from gamma+f_axon
         # surface relaxivity (m/s), shared by intra + extra walls
         rho2=c['rho2'],
+        # MT surface reactivity (m/s), shared by intra + extra walls; 0 = MT off.
+        # Only used when build_white_matter_model(magnetization_transfer=True).
+        kappa_MT=0.0,
         # bulk transverse relaxation (s)
         T2_intra=c['T2_intra'], T2_extra=c['T2_extra'], T2_myelin=c['T2_myelin'],
         # longitudinal relaxation (s). The public biophysical-constants catalogue does
@@ -96,7 +100,8 @@ def white_matter_compartments(include_csf: bool = False, *,
                               gamma_shape=DEFAULTS['gamma_shape'],
                               gamma_scale_outer_diameter=DEFAULTS['gamma_scale_outer_diameter'],
                               f_axon=DEFAULTS['f_axon'],
-                              S_ext_over_V=DEFAULTS['S_ext_over_V']):
+                              S_ext_over_V=DEFAULTS['S_ext_over_V'],
+                              magnetization_transfer: bool = False):
     """Build the occupancy-gated compartments for the canonical WM substrate.
 
     Returns a list ``[intra, extra, myelin(, csf)]`` of ``OccupancyGatedModel``
@@ -115,16 +120,19 @@ def white_matter_compartments(include_csf: bool = False, *,
     if S_ext_over_V is None:
         S_ext_over_V = exterior_surface_to_volume(
             f_axon, gamma_shape, gamma_scale_outer_diameter)
+    # MT rides on the SAME wall as surface relaxivity: with magnetization_transfer the
+    # intra/extra surface factors also carry kappa_MT and attenuate by b_hat(rho+kappa_MT).
+    _Intra = IntraPoreSurfaceMT if magnetization_transfer else IntraPoreSurfaceRelaxivity
+    _Extra = ExteriorSurfaceMT if magnetization_transfer else ExteriorSurfaceRelaxivity
     intra = OccupancyGatedModel(C1Stick(), [
-        IntraPoreSurfaceRelaxivity(
-            gamma_shape=gamma_shape,
-            gamma_scale_outer_diameter=gamma_scale_outer_diameter,
-            volume_weighted=True),
+        _Intra(gamma_shape=gamma_shape,
+               gamma_scale_outer_diameter=gamma_scale_outer_diameter,
+               volume_weighted=True),
         TransverseRelaxation(),
         LongitudinalRelaxation(),
     ])
     extra = OccupancyGatedModel(G2Zeppelin(), [
-        ExteriorSurfaceRelaxivity(S_ext_over_V=S_ext_over_V),
+        _Extra(S_ext_over_V=S_ext_over_V),
         TransverseRelaxation(),
         LongitudinalRelaxation(),
     ])
@@ -138,7 +146,8 @@ def white_matter_compartments(include_csf: bool = False, *,
     return compartments
 
 
-def canonical_parameters(include_csf: bool = False, **overrides) -> dict:
+def canonical_parameters(include_csf: bool = False,
+                         magnetization_transfer: bool = False, **overrides) -> dict:
     """Canonical forward-parameter dict for :func:`build_white_matter_model`.
 
     Keyed by the ``MultiCompartmentModel`` parameter names.  Any physical value in
@@ -170,6 +179,10 @@ def canonical_parameters(include_csf: bool = False, **overrides) -> dict:
         'partial_volume_1': p['f_extra'],
         'partial_volume_2': p['f_myelin'],
     }
+    if magnetization_transfer:
+        # MT reactivity on the intra + extra walls (shares the surface-factor geometry)
+        d['OccupancyGatedModel_1_kappa_MT'] = p['kappa_MT']
+        d['OccupancyGatedModel_2_kappa_MT'] = p['kappa_MT']
     if include_csf:
         d['OccupancyGatedModel_4_lambda_iso'] = p['D_csf']
         d['OccupancyGatedModel_4_T2'] = p['T2_csf']
@@ -179,7 +192,8 @@ def canonical_parameters(include_csf: bool = False, **overrides) -> dict:
 
 
 def build_white_matter_model(include_csf: bool = False,
-                             tortuosity_constraint: bool = True, **overrides):
+                             tortuosity_constraint: bool = True,
+                             magnetization_transfer: bool = False, **overrides):
     """Build the canonical WM substrate as a fittable ``MultiCompartmentModel``.
 
     Returns ``(model, parameters)``: ``model`` is a standard ``MultiCompartmentModel``
@@ -203,12 +217,15 @@ def build_white_matter_model(include_csf: bool = False,
     geom = {k: overrides[k] for k in
             ('gamma_shape', 'gamma_scale_outer_diameter', 'f_axon', 'S_ext_over_V')
             if k in overrides}
-    compartments = white_matter_compartments(include_csf=include_csf, **geom)
+    compartments = white_matter_compartments(
+        include_csf=include_csf, magnetization_transfer=magnetization_transfer, **geom)
     model = MultiCompartmentModel(models=compartments, S0_global=True)
     # one coherent fibre: the extra-axonal orientation follows the intra-axonal
     model.set_equal_parameter('OccupancyGatedModel_1_mu',
                               'OccupancyGatedModel_2_mu')
-    parameters = canonical_parameters(include_csf=include_csf, **overrides)
+    parameters = canonical_parameters(
+        include_csf=include_csf, magnetization_transfer=magnetization_transfer,
+        **overrides)
     parameters.pop('OccupancyGatedModel_2_mu', None)   # linked to _1_mu
 
     if tortuosity_constraint:
