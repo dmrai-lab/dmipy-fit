@@ -29,7 +29,7 @@ from ..signal_models.sphere_models import S1Dot
 from ..signal_models.attenuation import (
     OccupancyGatedModel, TransverseRelaxation, LongitudinalRelaxation,
     IntraPoreSurfaceRelaxivity, ExteriorSurfaceRelaxivity,
-    IntraPoreSurfaceMT, ExteriorSurfaceMT)
+    IntraPoreSurfaceMT, ExteriorSurfaceMT, MTSaturation)
 from .surface import exterior_surface_to_volume
 
 # fibre axis +z in dmipy (theta, phi) spherical convention
@@ -77,6 +77,10 @@ def _catalogue_defaults():
         # MT surface reactivity (m/s), shared by intra + extra walls; 0 = MT off.
         # Only used when build_white_matter_model(magnetization_transfer=True).
         kappa_MT=0.0,
+        # MT bound-pool: mean residence dwell_time (s, k_r=1/dwell), T2/T1 of the
+        # bound (semisolid) pool.  Used by the qMT saturation observable (a scheme
+        # carrying an mt_offset_hz/mt_b1_hz block); inert for plain diffusion.
+        dwell_time=1.0 / 40.0, T2_bound=1e-5, T1_bound=1.0,
         # bulk transverse relaxation (s)
         T2_intra=c['T2_intra'], T2_extra=c['T2_extra'], T2_myelin=c['T2_myelin'],
         # longitudinal relaxation (s). The public biophysical-constants catalogue does
@@ -124,18 +128,28 @@ def white_matter_compartments(include_csf: bool = False, *,
     # intra/extra surface factors also carry kappa_MT and attenuate by b_hat(rho+kappa_MT).
     _Intra = IntraPoreSurfaceMT if magnetization_transfer else IntraPoreSurfaceRelaxivity
     _Extra = ExteriorSurfaceMT if magnetization_transfer else ExteriorSurfaceRelaxivity
-    intra = OccupancyGatedModel(C1Stick(), [
+    intra_factors = [
         _Intra(gamma_shape=gamma_shape,
                gamma_scale_outer_diameter=gamma_scale_outer_diameter,
                volume_weighted=True),
         TransverseRelaxation(),
         LongitudinalRelaxation(),
-    ])
-    extra = OccupancyGatedModel(G2Zeppelin(), [
+    ]
+    extra_factors = [
         _Extra(S_ext_over_V=S_ext_over_V),
         TransverseRelaxation(),
         LongitudinalRelaxation(),
-    ])
+    ]
+    if magnetization_transfer:
+        # qMT saturation (degeneracy-lifting) on the free-water pools; inert unless the
+        # scheme carries a saturation block (attach_mt_saturation).  Same wall geometry
+        # as the surface/MT transverse factor (interior <4/d> / exterior S_ext/V).
+        intra_factors.append(MTSaturation(
+            gamma_shape=gamma_shape,
+            gamma_scale_outer_diameter=gamma_scale_outer_diameter, volume_weighted=True))
+        extra_factors.append(MTSaturation(S_over_V=S_ext_over_V))
+    intra = OccupancyGatedModel(C1Stick(), intra_factors)
+    extra = OccupancyGatedModel(G2Zeppelin(), extra_factors)
     # myelin water is ~stuck (radial D ~ 0): a stationary Dot, short-T2 only
     myelin = OccupancyGatedModel(
         S1Dot(), [TransverseRelaxation(), LongitudinalRelaxation()])
@@ -183,6 +197,11 @@ def canonical_parameters(include_csf: bool = False,
         # MT reactivity on the intra + extra walls (shares the surface-factor geometry)
         d['OccupancyGatedModel_1_kappa_MT'] = p['kappa_MT']
         d['OccupancyGatedModel_2_kappa_MT'] = p['kappa_MT']
+        # bound-pool params for the qMT saturation observable (intra + extra)
+        for i in (1, 2):
+            d[f'OccupancyGatedModel_{i}_dwell_time'] = p['dwell_time']
+            d[f'OccupancyGatedModel_{i}_T2_bound'] = p['T2_bound']
+            d[f'OccupancyGatedModel_{i}_T1_bound'] = p['T1_bound']
     if include_csf:
         d['OccupancyGatedModel_4_lambda_iso'] = p['D_csf']
         d['OccupancyGatedModel_4_T2'] = p['T2_csf']
@@ -250,3 +269,23 @@ def build_white_matter_model(include_csf: bool = False,
             _d.pop('OccupancyGatedModel_2_lambda_perp', None)
         parameters.pop('OccupancyGatedModel_2_lambda_perp', None)   # now linked
     return model, parameters
+
+
+def attach_mt_saturation(scheme, offset_hz, b1_hz):
+    """Attach a qMT saturation block to an acquisition scheme (in place).
+
+    Sets per-measurement ``mt_offset_hz`` and ``mt_b1_hz`` (Hz) that
+    :class:`~dmipy_fit.signal_models.attenuation.MTSaturation` reads to predict the
+    free-water $M_z$ reduction.  Scalars broadcast to every measurement; a ``b1_hz``
+    of 0 marks an unsaturated measurement (its steady state is exactly 1).  A
+    Z-spectrum is a set of measurements at different ``offset_hz``.  Returns ``scheme``.
+
+    (Attributes only -- the core ``AcquisitionScheme`` class is untouched.  The
+    spherical-mean scheme does not carry the block, so qMT saturation is applied in
+    the full/SH forward path, not the spherical-mean one.)
+    """
+    import numpy as np
+    n = len(np.atleast_1d(scheme.bvalues))
+    scheme.mt_offset_hz = np.broadcast_to(np.asarray(offset_hz, float), (n,)).copy()
+    scheme.mt_b1_hz = np.broadcast_to(np.asarray(b1_hz, float), (n,)).copy()
+    return scheme
