@@ -14,11 +14,12 @@
 from . import surface
 from . import mwf
 from . import composition
+from . import magnetization_transfer
 from .mwf import t2_spectrum_mwf
 from .composition import (
     build_white_matter_model, white_matter_compartments, canonical_parameters)
 
 __all__ = [
-    "surface", "mwf", "composition", "t2_spectrum_mwf",
+    "surface", "mwf", "composition", "magnetization_transfer", "t2_spectrum_mwf",
     "build_white_matter_model", "white_matter_compartments", "canonical_parameters",
 ]
