@@ -38,7 +38,7 @@ __all__ = [
     'OccupancyGatedModel', 'TransverseRelaxation', 'LongitudinalRelaxation',
     'SurfaceRelaxivity',
     'IntraPoreSurfaceRelaxivity', 'ExteriorSurfaceRelaxivity',
-    'IntraPoreSurfaceMT', 'ExteriorSurfaceMT', 'MTSaturation',
+    'IntraPoreSurfaceMT', 'ExteriorSurfaceMT', 'MTSaturation', 'LongitudinalMT',
 ]
 
 
@@ -252,6 +252,53 @@ class ExteriorSurfaceMT(ExteriorSurfaceRelaxivity):
             return 1.0
         from ..white_matter.surface import b_hat_ea_long
         return b_hat_ea_long(total, self.S_ext_over_V, _tau_perp(acquisition_scheme))
+
+
+class LongitudinalMT(AttenuationFactor):
+    r"""MT loss of longitudinally-STORED magnetization during a mixing time (PGSTE).
+
+    Transverse effects -- susceptibility dephasing AND surface relaxivity, and the
+    transverse MT factor :class:`IntraPoreSurfaceMT`/:class:`ExteriorSurfaceMT` -- are
+    all gated OFF during longitudinal storage.  MT is the exception: the free water
+    keeps exchanging with the bound/semisolid pool ALONG z, so the stored
+    (stimulated-echo) magnetization carries an extra $\exp(-k_f\,\mathrm{TM})$ with the
+    SAME geometric forward rate $k_f=\kappa_{MT}(S/V)$ as the transverse/qMT MT.  This
+    is the ONE effect still active during the mixing time, hence the residual confound
+    for PGSTE-based permeability estimation (it mimics water-exchange attenuation over
+    TM).  Leading-order (saturated-bound / no-return) form -- exactly the regime of a
+    mixing-time bound-pool saturation; a plain spin echo (``TM`` unset) is inert.
+
+    Reads the SHARED ``kappa_MT`` (same value as the transverse/qMT MT factors)."""
+    parameter_ranges = {'kappa_MT': (0., 50e-6)}
+    parameter_scales = {'kappa_MT': 1e-6}
+    parameter_types = {'kappa_MT': 'normal'}
+
+    def __init__(self, S_over_V=None, gamma_shape=None,
+                 gamma_scale_outer_diameter=None, volume_weighted=True):
+        self.S_over_V = S_over_V
+        self.gamma_shape = gamma_shape
+        self.gamma_scale_outer_diameter = gamma_scale_outer_diameter
+        self.volume_weighted = volume_weighted
+        if gamma_shape is not None:                       # interior: expose g_ratio too
+            self.parameter_ranges = {**self.parameter_ranges, 'g_ratio': (0.5, 0.95)}
+            self.parameter_scales = {**self.parameter_scales, 'g_ratio': 1.}
+            self.parameter_types = {**self.parameter_types, 'g_ratio': 'normal'}
+
+    def factor(self, acquisition_scheme, mu_cart, base_params, kappa_MT=None,
+               g_ratio=None):
+        tau_par = _tau_par(acquisition_scheme)            # TM; None for a spin echo
+        if tau_par is None or not _is_set(kappa_MT):
+            return 1.0
+        from ..white_matter.surface import mean_inv_diameter_4
+        if self.S_over_V is not None:
+            sv = self.S_over_V
+        else:
+            g = float(g_ratio) if _is_set(g_ratio) else 1.0
+            sv = mean_inv_diameter_4(self.gamma_shape,
+                                     g * self.gamma_scale_outer_diameter,
+                                     self.volume_weighted)
+        k_f = float(kappa_MT) * sv
+        return np.exp(-k_f * tau_par)
 
 
 class MTSaturation(AttenuationFactor):
