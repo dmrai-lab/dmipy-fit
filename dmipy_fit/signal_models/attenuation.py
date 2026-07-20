@@ -38,7 +38,7 @@ __all__ = [
     'OccupancyGatedModel', 'TransverseRelaxation', 'LongitudinalRelaxation',
     'SurfaceRelaxivity',
     'IntraPoreSurfaceRelaxivity', 'ExteriorSurfaceRelaxivity',
-    'IntraPoreSurfaceMT', 'ExteriorSurfaceMT',
+    'IntraPoreSurfaceMT', 'ExteriorSurfaceMT', 'MTSaturation',
 ]
 
 
@@ -252,6 +252,78 @@ class ExteriorSurfaceMT(ExteriorSurfaceRelaxivity):
             return 1.0
         from ..white_matter.surface import b_hat_ea_long
         return b_hat_ea_long(total, self.S_ext_over_V, _tau_perp(acquisition_scheme))
+
+
+class MTSaturation(AttenuationFactor):
+    r"""qMT off-resonance saturation: the degeneracy-LIFTING observable.
+
+    For measurements carrying a saturation block on the scheme (``mt_offset_hz`` and
+    ``mt_b1_hz`` per measurement, e.g. via
+    :func:`dmipy_fit.white_matter.composition.attach_mt_saturation`), the free-water
+    signal is multiplied by the two-pool longitudinal steady state $M_{z,a}/M_{0a}$:
+    an off-resonance pulse saturates the broad (short-$T_2^b$) bound pool and transfers
+    to the free pool via exchange, reducing the excited magnetisation.  A pure
+    surface-relaxivity sink (no bound pool, $\kappa_{MT}=0$) produces NO off-resonance
+    saturation, so this is what separates $\kappa_{MT}$ from $\rho$ (which are
+    degenerate in the diffusion signal).
+
+    Steady-state (Sled--Pike / Henkelman) CW/long-pulse approximation.  ``k_f =
+    kappa_MT * (S/V)`` uses the SAME wall geometry as surface relaxivity; the factor
+    READS the shared ``kappa_MT``/``T1``/``T2`` (free pool) and OWNS the bound-pool
+    ``dwell_time`` (=1/k_r), ``T2_bound``, ``T1_bound``.  Returns 1.0 (identity) for
+    measurements with no saturation block, and exactly 1.0 when ``kappa_MT=0``."""
+    parameter_ranges = {'kappa_MT': (0., 50e-6), 'T1': (1e-2, 10.), 'T2': (1e-3, 10.),
+                        'dwell_time': (1e-4, 1.0), 'T2_bound': (1e-7, 1e-3),
+                        'T1_bound': (1e-2, 10.)}
+    parameter_scales = {'kappa_MT': 1e-6, 'T1': 1., 'T2': 1.,
+                        'dwell_time': 1e-3, 'T2_bound': 1e-5, 'T1_bound': 1.}
+    parameter_types = {k: 'normal' for k in parameter_ranges}
+
+    def __init__(self, S_over_V=None, gamma_shape=None,
+                 gamma_scale_outer_diameter=None, volume_weighted=True):
+        # exterior: pass a fixed S_over_V (1/m).  interior: pass gamma_shape +
+        # gamma_scale_outer_diameter -> S/V = <4/d_inner> uses the fittable g_ratio.
+        self.S_over_V = S_over_V
+        self.gamma_shape = gamma_shape
+        self.gamma_scale_outer_diameter = gamma_scale_outer_diameter
+        self.volume_weighted = volume_weighted
+        if gamma_shape is not None:                       # interior: expose g_ratio too
+            self.parameter_ranges = {**self.parameter_ranges, 'g_ratio': (0.5, 0.95)}
+            self.parameter_scales = {**self.parameter_scales, 'g_ratio': 1.}
+            self.parameter_types = {**self.parameter_types, 'g_ratio': 'normal'}
+
+    def factor(self, acquisition_scheme, mu_cart, base_params, kappa_MT=None,
+               T1=None, T2=None, dwell_time=None, T2_bound=None, T1_bound=None,
+               g_ratio=None):
+        off = getattr(acquisition_scheme, 'mt_offset_hz', None)
+        b1 = getattr(acquisition_scheme, 'mt_b1_hz', None)
+        if off is None or b1 is None:
+            return 1.0                                     # no saturation block
+        # need the bound-pool + free-pool T1 to solve the steady state; kappa_MT=0 is
+        # allowed (k_f=0 -> pure free-pool direct saturation, ~1 in the qMT regime).
+        if not (_is_set(kappa_MT) and _is_set(dwell_time)
+                and _is_set(T2_bound) and _is_set(T1_bound) and _is_set(T1)):
+            return 1.0
+        from ..white_matter.surface import mean_inv_diameter_4
+        from ..white_matter.magnetization_transfer import (
+            two_pool_steady_state, lorentzian_lineshape)
+        if self.S_over_V is not None:
+            sv = self.S_over_V
+        else:
+            g = float(g_ratio) if _is_set(g_ratio) else 1.0
+            sv = mean_inv_diameter_4(self.gamma_shape,
+                                     g * self.gamma_scale_outer_diameter,
+                                     self.volume_weighted)
+        k_f = float(kappa_MT) * sv
+        k_r = 1.0 / float(dwell_time)
+        off = np.asarray(off, dtype=float)
+        w1 = 2.0 * np.pi * np.asarray(b1, dtype=float)     # rad/s, per measurement
+        T2a = float(T2) if _is_set(T2) else 0.08
+        W_a = w1 ** 2 * lorentzian_lineshape(off, T2a)
+        W_b = w1 ** 2 * lorentzian_lineshape(off, float(T2_bound))
+        # b1=0 measurements -> W=0 -> two_pool_steady_state returns exactly 1.0
+        return two_pool_steady_state(k_f, k_r, 1.0 / float(T1), 1.0 / float(T1_bound),
+                                     W_a, W_b)
 
 
 class OccupancyGatedModel(ModelProperties, AnisotropicSignalModelProperties):
