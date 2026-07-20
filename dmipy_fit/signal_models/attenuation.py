@@ -38,6 +38,7 @@ __all__ = [
     'OccupancyGatedModel', 'TransverseRelaxation', 'LongitudinalRelaxation',
     'SurfaceRelaxivity',
     'IntraPoreSurfaceRelaxivity', 'ExteriorSurfaceRelaxivity',
+    'IntraPoreSurfaceMT', 'ExteriorSurfaceMT',
 ]
 
 
@@ -196,6 +197,61 @@ class ExteriorSurfaceRelaxivity(AttenuationFactor):
         from ..white_matter.surface import b_hat_ea_long
         return b_hat_ea_long(float(surface_relaxivity), self.S_ext_over_V,
                              _tau_perp(acquisition_scheme))
+
+
+class IntraPoreSurfaceMT(IntraPoreSurfaceRelaxivity):
+    r"""Intra-pore surface relaxivity **+ magnetization transfer** on the same wall.
+
+    MT is a second wall reactivity, so the free-water transverse factor is
+    $\hat B_{ia}(\rho + \kappa_{MT})$ -- a SINGLE Gamma-averaged Bessel evaluated at
+    the COMBINED reactivity, not a product $\hat B(\rho)\,\hat B(\kappa)$ (the
+    interior Bessel factor is not exponential, so it does not factorise).  This is
+    why MT is degenerate with surface relaxivity in the diffusion signal; only the
+    off-resonance qMT Z-spectrum (:mod:`dmipy_fit.white_matter.magnetization_transfer`)
+    separates them.  ``kappa_MT`` (m/s) defaults inert (0)."""
+    parameter_ranges = {**IntraPoreSurfaceRelaxivity.parameter_ranges,
+                        'kappa_MT': (0., 50e-6)}
+    parameter_scales = {**IntraPoreSurfaceRelaxivity.parameter_scales,
+                        'kappa_MT': 1e-6}
+    parameter_types = {**IntraPoreSurfaceRelaxivity.parameter_types,
+                       'kappa_MT': 'normal'}
+
+    def factor(self, acquisition_scheme, mu_cart, base_params,
+               surface_relaxivity=None, g_ratio=None, kappa_MT=None):
+        rho = float(surface_relaxivity) if _is_set(surface_relaxivity) else 0.0
+        kmt = float(kappa_MT) if _is_set(kappa_MT) else 0.0
+        total = rho + kmt
+        if total == 0.0 or getattr(acquisition_scheme, 'TE', None) is None:
+            return 1.0
+        from ..white_matter.surface import b_hat_ia
+        g = float(g_ratio) if _is_set(g_ratio) else 1.0
+        inner_scale = g * self.gamma_scale_outer_diameter      # inner = g x outer
+        return b_hat_ia(self.gamma_shape, inner_scale, total,
+                        _tau_perp(acquisition_scheme), self.volume_weighted)
+
+
+class ExteriorSurfaceMT(ExteriorSurfaceRelaxivity):
+    r"""Extra-axonal surface relaxivity **+ magnetization transfer**: the exterior
+    long-time factor $\exp(-(\rho+\kappa_{MT})(S_{ext}/V)\,\tau_\perp)$.  The exterior
+    factor IS exponential, so $\rho$ and $\kappa_{MT}$ add in the rate -- the same
+    combined wall reactivity as the interior factor.  ``kappa_MT`` (m/s) inert (0) by
+    default."""
+    parameter_ranges = {**ExteriorSurfaceRelaxivity.parameter_ranges,
+                        'kappa_MT': (0., 50e-6)}
+    parameter_scales = {**ExteriorSurfaceRelaxivity.parameter_scales,
+                        'kappa_MT': 1e-6}
+    parameter_types = {**ExteriorSurfaceRelaxivity.parameter_types,
+                       'kappa_MT': 'normal'}
+
+    def factor(self, acquisition_scheme, mu_cart, base_params,
+               surface_relaxivity=None, kappa_MT=None):
+        rho = float(surface_relaxivity) if _is_set(surface_relaxivity) else 0.0
+        kmt = float(kappa_MT) if _is_set(kappa_MT) else 0.0
+        total = rho + kmt
+        if total == 0.0 or getattr(acquisition_scheme, 'TE', None) is None:
+            return 1.0
+        from ..white_matter.surface import b_hat_ea_long
+        return b_hat_ea_long(total, self.S_ext_over_V, _tau_perp(acquisition_scheme))
 
 
 class OccupancyGatedModel(ModelProperties, AnisotropicSignalModelProperties):
