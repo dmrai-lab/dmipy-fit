@@ -29,7 +29,7 @@ from ..signal_models.sphere_models import S1Dot
 from ..signal_models.attenuation import (
     OccupancyGatedModel, TransverseRelaxation, LongitudinalRelaxation,
     IntraPoreSurfaceRelaxivity, ExteriorSurfaceRelaxivity,
-    IntraPoreSurfaceMT, ExteriorSurfaceMT, MTSaturation)
+    IntraPoreSurfaceMT, ExteriorSurfaceMT, MTSaturation, LongitudinalMT)
 from .surface import exterior_surface_to_volume
 
 # fibre axis +z in dmipy (theta, phi) spherical convention
@@ -148,6 +148,13 @@ def white_matter_compartments(include_csf: bool = False, *,
             gamma_shape=gamma_shape,
             gamma_scale_outer_diameter=gamma_scale_outer_diameter, volume_weighted=True))
         extra_factors.append(MTSaturation(S_over_V=S_ext_over_V))
+        # longitudinal MT during a PGSTE mixing time (exp(-k_f*TM)): the one effect still
+        # active during longitudinal storage (transverse effects are gated off).  Inert
+        # on a spin echo (no TM).
+        intra_factors.append(LongitudinalMT(
+            gamma_shape=gamma_shape,
+            gamma_scale_outer_diameter=gamma_scale_outer_diameter, volume_weighted=True))
+        extra_factors.append(LongitudinalMT(S_over_V=S_ext_over_V))
     intra = OccupancyGatedModel(C1Stick(), intra_factors)
     extra = OccupancyGatedModel(G2Zeppelin(), extra_factors)
     # myelin water is ~stuck (radial D ~ 0): a stationary Dot, short-T2 only
