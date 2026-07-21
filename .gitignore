@@ -42,3 +42,6 @@ coverage.xml
 *_speed_test_results.csv
 noise_comparison_outputs/
 _build/
+
+# Generated example figures (regenerate from the scripts)
+examples/*.png
