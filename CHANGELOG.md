@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — magnetization transfer (mt-staging)
+
+**Analytic two-pool MT kernel + occupancy-gated MT factors**, paired with dmipy-sim's
+emergent MT (the "three observables of one wall" + PGSTE/FEXI de-biasing work).
+
+### Added
+- **`white_matter/magnetization_transfer.py`** — two-pool qMT kernel: the degenerate
+  transverse limit (`b̂` with ρ→κ_MT, so MT is degenerate with surface relaxivity in the
+  diffusion signal) + the off-resonance `two_pool_steady_state` / `z_spectrum` / `mtr`.
+- **MT attenuation factors** (`signal_models/attenuation.py`): `IntraPoreSurfaceMT` /
+  `ExteriorSurfaceMT` (`b̂(ρ+κ_MT)`, one combined-reactivity call), `MTSaturation` (qMT
+  Z-spectrum `M_z` prefactor; reads a scheme saturation block), `LongitudinalMT`
+  (`exp(−k_f·TM)` — MT during PGSTE longitudinal storage, the one effect not gated off).
+- **`build_white_matter_model(…, magnetization_transfer=True)`** wires them (κ_MT,
+  dwell_time, T2_bound, T1_bound).
+- **`AcquisitionScheme.with_mt_saturation(offset_hz, b1_hz)`** — first-class qMT
+  saturation block: shell-fingerprinted (guarded → non-MT schemes byte-identical) and
+  propagated to `spherical_mean_scheme`, so `MTSaturation` applies in full / SH / SM paths.
+- `examples/{permeability_mt_deconfounding,joint_nexi_mt_fit,fexi_mt_debiasing}.py`.
+
 ## 2.2.0
 
 **Compartment-wise T1 (gated longitudinal relaxation) + PGSTE** — the analytical, occupancy-gated

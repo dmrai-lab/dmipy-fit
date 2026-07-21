@@ -82,14 +82,14 @@ model = build_white_matter_model(include_csf=False)
 | `core/modeling_framework.py` | `MultiCompartmentModel` + `.fit(scheme, data, solver=…, mask=…)` |
 | `core/spherical_mean_framework.py`, `core/spherical_harmonics_framework.py` | spherical-mean & SH (CSD/FOD) frameworks |
 | `core/fitted_modeling_framework.py` | fit result: `.fitted_parameters`, multi-tissue fractions |
-| `core/acquisition_scheme.py` | `AcquisitionScheme.from_*` (PGSE/PGSTE/CPMG/OGSE/waveform/b-tensor) |
+| `core/acquisition_scheme.py` | `AcquisitionScheme.from_*` (PGSE/PGSTE/CPMG/OGSE/waveform/b-tensor); `.with_mt_saturation(offset_hz, b1_hz)` attaches a first-class qMT block (shell-fingerprinted, flows to the spherical-mean scheme) |
 | `signal_models/` | `cylinder_models` (stick/cylinder/axcaliber), `gaussian_models` (ball/zeppelin), `sphere_models`, `plane_models`, `capped_cylinder_models`, `tissue_response_models`, `exchange_models` |
-| `signal_models/attenuation.py` | `OccupancyGatedModel` + `TransverseRelaxation`, `IntraPoreSurfaceRelaxivity`, `ExteriorSurfaceRelaxivity` |
+| `signal_models/attenuation.py` | `OccupancyGatedModel` + `TransverseRelaxation`, `IntraPoreSurfaceRelaxivity`, `ExteriorSurfaceRelaxivity`; **MT factors** `IntraPoreSurfaceMT`/`ExteriorSurfaceMT` (`b̂(ρ+κ_MT)`), `MTSaturation` (qMT Z-spectrum `M_z` prefactor), `LongitudinalMT` (`exp(−k_f·TM)` during storage) |
 | `distributions/` | Watson / Bingham dispersion, Gamma diameter distribution |
 | `optimizers/`, `optimizers_fod/` | brute2fine, MIX, multi-tissue NNLS; CSD (Tournier / cvxpy / OSQP-JAX) |
 | `custom_optimizers/reference_models.py` | named literature models (NODDI, NEXI, SANDI, VERDICT, IMPULSED, …) |
 | `jax/` | GPU signal models, `vmap_fit`, DTI/CSD/fractions — the `solver="jax"` backend |
-| `white_matter/` | `build_white_matter_model()`, `mwf.t2_spectrum_mwf()` |
+| `white_matter/` | `build_white_matter_model(…, magnetization_transfer=)`, `mwf.t2_spectrum_mwf()`, `magnetization_transfer.py` (two-pool qMT kernel: degenerate `b̂(ρ→κ)` + `z_spectrum`/`mtr`) |
 | `tissue_response/`, `audit/` (`biophysical_constants`), `utils/`, `_gpu_config.py` | responses, cited constants, helpers, GPU mem cap |
 
 ## Where to look for X
