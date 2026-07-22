@@ -392,7 +392,10 @@ def test_signal_lm_boundary_conditions():
     E_lm_b0 = c1.signal_lm(scheme_b0, lambda_par=lp)
     npt.assert_allclose(float(E_lm_b0[0, 0]), 2.0 * math.sqrt(math.pi),
                         rtol=1e-12, err_msg="b=0: E_lm[0] should be 2√π")
-    npt.assert_allclose(np.abs(E_lm_b0[0, 1:]).max(), 0.0, atol=1e-14,
+    # l>0 coefficients are analytically zero; the SH numerical integration
+    # leaves them at roundoff (~1e-14), so allow a machine-precision tolerance
+    # (still ~12 orders below the 2√π magnitude of the l=0 term).
+    npt.assert_allclose(np.abs(E_lm_b0[0, 1:]).max(), 0.0, atol=1e-12,
                         err_msg="b=0: E_lm[l>0] should be zero")
 
 

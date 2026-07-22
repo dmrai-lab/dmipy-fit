@@ -243,10 +243,6 @@ class TestComplexModelsViaMultiCompartment:
         from dmipy_fit.core.modeling_framework import MultiCompartmentModel
         s2 = S2SphereStejskalTannerApproximation()
         mc = MultiCompartmentModel(models=[s2])
-        # surface_relaxivity is a model parameter now; fix it to 0 (no wall
-        # relaxation) to keep this a pure diameter-recovery test.
-        mc.set_fixed_parameter(
-            'S2SphereStejskalTannerApproximation_1_surface_relaxivity', 0.0)
         gt_params = mc.parameters_to_parameter_vector(
             S2SphereStejskalTannerApproximation_1_diameter=DIAMETER)
         E = mc.simulate_signal(hcp_scheme, gt_params)
@@ -259,8 +255,6 @@ class TestComplexModelsViaMultiCompartment:
         from dmipy_fit.core.modeling_framework import MultiCompartmentModel
         c2 = C2CylinderStejskalTannerApproximation()
         mc = MultiCompartmentModel(models=[c2])
-        mc.set_fixed_parameter(
-            'C2CylinderStejskalTannerApproximation_1_surface_relaxivity', 0.0)
         gt_params = mc.parameters_to_parameter_vector(
             C2CylinderStejskalTannerApproximation_1_mu=MU,
             C2CylinderStejskalTannerApproximation_1_lambda_par=LAMBDA_PAR,
@@ -284,8 +278,6 @@ class TestComplexModelsViaMultiCompartment:
         # effect; signal at d=2µm and d=4µm differ by < 0.5%). Use d=8µm where
         # the signal is clearly diameter-dependent. Ns=10 for better grid coverage.
         DIAMETER_C4 = 8e-6
-        mc.set_fixed_parameter(
-            'C4CylinderGaussianPhaseApproximation_1_surface_relaxivity', 0.0)
         gt_params = mc.parameters_to_parameter_vector(
             C4CylinderGaussianPhaseApproximation_1_mu=MU,
             C4CylinderGaussianPhaseApproximation_1_lambda_par=LAMBDA_PAR,

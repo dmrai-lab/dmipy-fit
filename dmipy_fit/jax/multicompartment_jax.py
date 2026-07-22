@@ -83,20 +83,6 @@ def _apply_t2_weighting(E, scheme_jax, params):
     return E
 
 
-def _apply_surface_relaxivity(E, scheme_jax, params, sv_numerator):
-    """Apply exp(-TE * rho * sv_numerator / diameter) if surface_relaxivity is set.
-
-    sv_numerator : 4.0 for cylinders (S/V = 2/R = 4/d),
-                   6.0 for spheres   (S/V = 3/R = 6/d).
-    """
-    rho = params.get('surface_relaxivity')
-    TE = scheme_jax.get('TE')
-    if rho is None or TE is None:
-        return E
-    sv = sv_numerator / params['diameter']
-    return E * jnp.where(jnp.isfinite(rho), jnp.exp(-TE * rho * sv), 1.0)
-
-
 def _g1ball_jax_fn(scheme_jax, params):
     E = g1ball_signal(scheme_jax['bvalues'], params['lambda_iso'])
     return _apply_t2_weighting(E, scheme_jax, params)
@@ -148,8 +134,7 @@ def _g3temporal_zeppelin_jax_fn(scheme_jax, params):
 
 def _s2sphere_jax_fn(scheme_jax, params):
     E = s2sphere_signal(scheme_jax['qvalues'], params['diameter'])
-    E = _apply_t2_weighting(E, scheme_jax, params)
-    return _apply_surface_relaxivity(E, scheme_jax, params, sv_numerator=6.0)
+    return _apply_t2_weighting(E, scheme_jax, params)
 
 
 def _c2cylinder_jax_fn(scheme_jax, params):
@@ -162,8 +147,7 @@ def _c2cylinder_jax_fn(scheme_jax, params):
         params['lambda_par'],
         params['diameter'],
     )
-    E = _apply_t2_weighting(E, scheme_jax, params)
-    return _apply_surface_relaxivity(E, scheme_jax, params, sv_numerator=4.0)
+    return _apply_t2_weighting(E, scheme_jax, params)
 
 
 def _make_c4cylinder_jax_fn(model_obj, acquisition_scheme=None):
@@ -187,8 +171,7 @@ def _make_c4cylinder_jax_fn(model_obj, acquisition_scheme=None):
             gamma,
             roots_jax,
         )
-        E = _apply_t2_weighting(E, scheme_jax, params)
-        return _apply_surface_relaxivity(E, scheme_jax, params, sv_numerator=4.0)
+        return _apply_t2_weighting(E, scheme_jax, params)
     return _c4cylinder_jax_fn
 
 
@@ -234,8 +217,7 @@ def _make_s4sphere_ogse_jax_fn(model_obj, acquisition_scheme=None):
                     G_m, dt, diameter, D, roots_jax, gamma)
 
             E = jax.vmap(_single_measurement)(G_waveform)  # (n_m,)
-            E = _apply_t2_weighting(E, scheme_jax, params)
-            return _apply_surface_relaxivity(E, scheme_jax, params, sv_numerator=6.0)
+            return _apply_t2_weighting(E, scheme_jax, params)
 
         return _s4sphere_ogse_jax_fn
 
@@ -252,8 +234,7 @@ def _make_s4sphere_ogse_jax_fn(model_obj, acquisition_scheme=None):
                     g, d, D_big, diameter, D, roots_jax, gamma)
 
             E = jax.vmap(_single_meas)(gradient_strengths, delta, Delta)
-            E = _apply_t2_weighting(E, scheme_jax, params)
-            return _apply_surface_relaxivity(E, scheme_jax, params, sv_numerator=6.0)
+            return _apply_t2_weighting(E, scheme_jax, params)
 
         return _s4sphere_pgse_jax_fn
 
@@ -276,8 +257,7 @@ def _make_c3cylinder_jax_fn(model_obj, acquisition_scheme=None):
             params['lambda_par'],
             params['diameter'],
         )
-        E = _apply_t2_weighting(E, scheme_jax, params)
-        return _apply_surface_relaxivity(E, scheme_jax, params, sv_numerator=4.0)
+        return _apply_t2_weighting(E, scheme_jax, params)
     return _c3cylinder_jax_fn
 
 
@@ -601,7 +581,33 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
     1. G1Ball + G1Ball        — isotropic Gaussian Kärger (no orientation).
     2. S4Sphere + G1Ball      — generalized Kärger: R_i = -log(E_i).
     3. Oriented (Stick/Zepp)  — anisotropic Gaussian Kärger (legacy path).
+
+    All three use the scalar Kärger eigenvalue formula, valid only for pure
+    diffusion+exchange. Coupled relaxation-exchange (a per-compartment T2/T1
+    add-on via OccupancyGatedModel) needs the matrix-exponential propagator,
+    which exists only on the NumPy path — so this factory refuses a relaxation
+    add-on rather than silently dropping it. See GitHub issue #7 for JAX support.
     """
+    from ..signal_models.attenuation import OccupancyGatedModel
+
+    # Guard: the scalar JAX path cannot represent coupled relaxation-exchange.
+    has_relaxation_addon = (
+        isinstance(model_obj.model_intra, OccupancyGatedModel)
+        or isinstance(model_obj.model_extra, OccupancyGatedModel)
+        or any(k == 'T2' or k == 'T1' or k.endswith('_T2') or k.endswith('_T1')
+               for k in model_obj.parameter_ranges)
+    )
+    if has_relaxation_addon:
+        raise NotImplementedError(
+            "solver='jax' does not support X0GeneralizedKarger with a relaxation "
+            "add-on (compartment-wise T2/T1 via OccupancyGatedModel). The JAX path "
+            "uses the scalar Kärger formula and cannot represent coupled "
+            "relaxation-exchange, which requires the matrix-exponential propagator "
+            "(NumPy only). Use solver='brute2fine' for relaxation-gated exchange "
+            "models. Tracking JAX support: "
+            "https://github.com/dmrai-lab/dmipy-fit/issues/7"
+        )
+
     intra_type = type(model_obj.model_intra)
     extra_type = type(model_obj.model_extra)
 
@@ -617,7 +623,9 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
                 params['f'],
                 params['kappa'],
             )
-            return _apply_t2_weighting(E, scheme_jax, params)
+            # Pure diffusion+exchange fast path (no relaxation). Coupled
+            # relaxation-exchange is only available on the NumPy propagator.
+            return E
         return _ball_ball_jax_fn
 
     # ── Variant 2: S4Sphere + G1Ball (SANDIX / EXCHANGE-IMPULSED) ──────────
@@ -638,7 +646,7 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
             Re = -jnp.log(jnp.maximum(E_extra, EPS))
             t_d = scheme_jax['Delta'] - scheme_jax['delta'] / 3.0
             E = karger_from_Ri_Re(t_d, Ri, Re, params['f'], params['kappa'])
-            return _apply_t2_weighting(E, scheme_jax, params)
+            return E
         return _sphere_ball_jax_fn
 
     # ── Variant 3: Oriented anisotropic (legacy C1Stick/G2Zeppelin) ─────────
@@ -656,7 +664,7 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
             params['f'],
             params['kappa'],
         )
-        return _apply_t2_weighting(E, scheme_jax, params)
+        return E
     return _anisotropic_jax_fn
 
 
