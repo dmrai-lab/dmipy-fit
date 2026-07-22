@@ -654,8 +654,7 @@ class S4SphereGaussianPhaseApproximation(
             delta = acquisition_scheme.delta
             Delta = acquisition_scheme.Delta
             g_nonzero = g > 0
-            unique_deltas = np.unique([acquisition_scheme.shell_delta,
-                                       acquisition_scheme.shell_Delta], axis=1)
+            unique_deltas = np.unique([delta, Delta], axis=1)
             for delta_, Delta_ in zip(*unique_deltas):
                 mask = np.all([g_nonzero, delta == delta_, Delta == Delta_],
                               axis=0)
@@ -723,7 +722,6 @@ class S4SphereGaussianPhaseApproximation(
                             G_t, acquisition_scheme._dt, D, R,
                             self.SPHERE_TRASCENDENTAL_ROOTS)
 
-        return E_sphere
         rho = kwargs.get('surface_relaxivity', self.surface_relaxivity)
         if (rho is not None and not np.isnan(np.asarray(rho, dtype=float).flat[0])
                 and acquisition_scheme.TE is not None):
