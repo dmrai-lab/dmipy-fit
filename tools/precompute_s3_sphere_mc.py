@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Regenerate the reflecting-sphere Monte Carlo reference for _S3SphereCallaghan.
 
-The finite-time Callaghan sphere (``_S3SphereCallaghanApproximation``) is an SGP
+The finite-time Callaghan sphere (``S3SphereCallaghanApproximation``) is an SGP
 (narrow-pulse) series.  Its excited-mode decay — not just the tau->0 / tau->inf
 limits — is validated here against a dmipy-sim reflecting-sphere PGSE Monte-Carlo
 in the *strongly attenuated* regime (E from ~0.72 down to ~0.09).  As the pulse
@@ -28,7 +28,7 @@ os.environ.setdefault('XLA_PYTHON_CLIENT_PREALLOCATE', 'false')
 from dmipy_sim import simulate, Sphere
 from dmipy_sim.waveforms import pgse
 from dmipy_sim.constants import GAMMA
-from dmipy_fit.signal_models.sphere_models import _S3SphereCallaghanApproximation
+from dmipy_fit.signal_models.sphere_models import S3SphereCallaghanApproximation
 
 # --- physics (kept in sync with TestS3SphereCallaghan) -----------------------
 D = 1.7e-9                                  # m^2/s, water-in-axons default
@@ -47,7 +47,7 @@ OUT = os.path.abspath(os.path.join(
 
 
 def main():
-    s3 = _S3SphereCallaghanApproximation(diffusion_constant=D)
+    s3 = S3SphereCallaghanApproximation(diffusion_constant=D)
     E_s3 = s3.sphere_attenuation(Q_TARGETS, np.full_like(Q_TARGETS, TAU), DIAMETER)
     bvecs = np.tile([1., 0., 0.], (len(Q_TARGETS), 1))
 

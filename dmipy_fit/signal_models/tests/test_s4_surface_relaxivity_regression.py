@@ -1,28 +1,52 @@
-"""Regression tests for two bugs in S4SphereGaussianPhaseApproximation.
+"""Regression tests for surface-relaxivity handling on the bare sphere/cylinder
+compartments, and the S4 spherical-mean crash.
 
-Both were reported by a user against dmipy-fit 2.1.0 and are copy-paste
-artifacts isolated to the S4 sphere (S2 and S3 were correct):
+Reported by a user against dmipy-fit 2.1.0. Two distinct problems:
 
-1.  A stray ``return E_sphere`` sat before the surface-relaxivity block in
-    ``__call__``, making the block unreachable. ``surface_relaxivity`` was
-    exposed as a fittable parameter but had zero effect on the signal.
+1.  ``surface_relaxivity`` had been baked into the bare S2/S3/S4 spheres and
+    C2/C3/C4 cylinders as a fittable parameter. That is wrong by design: bare
+    signal models expose only their own diffusion parameters. Relaxivity is a
+    composable, occupancy-gated *factor* (``attenuation.SurfaceRelaxivity``)
+    layered on via :class:`OccupancyGatedModel` -- the only place a
+    ``surface_relaxivity`` parameter should appear. (On S4 the baked-in block
+    was additionally unreachable behind an early ``return`` -- a copy-paste
+    artifact -- but the fix is to remove it from the bare model entirely, not
+    to make it reachable.)
 
-2.  The PGSE branch of ``__call__`` fetched ``acquisition_scheme.shell_delta`` /
-    ``shell_Delta``, attributes that ``SphericalMeanAcquisitionScheme`` never
-    defines. Because the spherical-mean framework always calls the model with a
-    ``SphericalMeanAcquisitionScheme``, any spherical-mean use of S4 raised
-    ``AttributeError``. The fix reuses the per-measurement ``delta``/``Delta``
-    arrays fetched two lines earlier (present on every scheme type).
+2.  The S4 PGSE branch fetched ``acquisition_scheme.shell_delta``/``shell_Delta``,
+    attributes that ``SphericalMeanAcquisitionScheme`` never defines, so any
+    spherical-mean use of S4 raised ``AttributeError``. Fixed by reusing the
+    per-measurement ``delta``/``Delta`` arrays (present on every scheme type).
 """
 import numpy as np
+import pytest
 
 from dmipy_fit.core.acquisition_scheme import acquisition_scheme_from_bvalues
 from dmipy_fit.core.spherical_mean_framework import (
     MultiCompartmentSphericalMeanModel,
 )
 from dmipy_fit.signal_models.sphere_models import (
+    S2SphereStejskalTannerApproximation,
+    S3SphereCallaghanApproximation,
     S4SphereGaussianPhaseApproximation,
 )
+from dmipy_fit.signal_models.cylinder_models import (
+    C2CylinderStejskalTannerApproximation,
+    C3CylinderCallaghanApproximation,
+    C4CylinderGaussianPhaseApproximation,
+)
+from dmipy_fit.signal_models.attenuation import (
+    OccupancyGatedModel, SurfaceRelaxivity,
+)
+
+BARE_MODELS = [
+    S2SphereStejskalTannerApproximation,
+    S3SphereCallaghanApproximation,
+    S4SphereGaussianPhaseApproximation,
+    C2CylinderStejskalTannerApproximation,
+    C3CylinderCallaghanApproximation,
+    C4CylinderGaussianPhaseApproximation,
+]
 
 
 def _scheme(TE=0.05):
@@ -33,34 +57,35 @@ def _scheme(TE=0.05):
     return acquisition_scheme_from_bvalues(b, g, delta, Delta, TE=TE)
 
 
-def test_s4_surface_relaxivity_affects_signal():
-    """Bug 1: changing surface_relaxivity must change the simulated signal."""
+@pytest.mark.parametrize('model_cls', BARE_MODELS)
+def test_bare_compartment_has_no_surface_relaxivity(model_cls):
+    """Bug 1: bare compartments must not expose surface_relaxivity."""
+    m = model_cls()
+    assert 'surface_relaxivity' not in m.parameter_names
+    assert 'surface_relaxivity' not in m._parameter_ranges
+    assert not hasattr(m, 'surface_relaxivity')
+
+
+def test_surface_relaxivity_available_via_occupancy_gated_model():
+    """The supported route: relaxivity is a factor on OccupancyGatedModel, and
+    it actually attenuates the signal when TE is present."""
     acq = _scheme(TE=0.05)
-    m = S4SphereGaussianPhaseApproximation()
-    sig0 = m(acq, diameter=8e-6, surface_relaxivity=0.0)
-    sig1 = m(acq, diameter=8e-6, surface_relaxivity=1e-5)
+    gated = OccupancyGatedModel(S4SphereGaussianPhaseApproximation(),
+                                [SurfaceRelaxivity()])
+    assert 'surface_relaxivity' in gated.parameter_names
+    sig0 = np.asarray(gated(acq, diameter=8e-6, surface_relaxivity=0.0))
+    sig1 = np.asarray(gated(acq, diameter=8e-6, surface_relaxivity=20e-6))
     assert not np.allclose(sig0, sig1)
-    # relaxivity attenuates, so the non-b0 signal must drop
     assert np.all(sig1[1:] < sig0[1:])
 
 
-def test_s4_surface_relaxivity_noop_without_TE():
-    """No TE on the scheme -> relaxivity is silently ignored (unchanged)."""
-    acq = _scheme(TE=None)
-    m = S4SphereGaussianPhaseApproximation()
-    sig0 = m(acq, diameter=8e-6, surface_relaxivity=0.0)
-    sig1 = m(acq, diameter=8e-6, surface_relaxivity=1e-5)
-    assert np.allclose(sig0, sig1)
-
-
 def test_s4_spherical_mean_simulate_signal():
-    """Bug 2: spherical-mean simulation with S4 must not raise."""
+    """Bug 2: spherical-mean simulation with the bare S4 sphere must not raise."""
     acq = _scheme(TE=0.05)
-    sph = S4SphereGaussianPhaseApproximation()
-    sm = MultiCompartmentSphericalMeanModel(models=[sph])
+    sm = MultiCompartmentSphericalMeanModel(
+        models=[S4SphereGaussianPhaseApproximation()])
     out = sm.simulate_signal(acq, {
         'S4SphereGaussianPhaseApproximation_1_diameter': 6e-6,
-        'S4SphereGaussianPhaseApproximation_1_surface_relaxivity': 0.0,
     })
     out = np.asarray(out).ravel()
     assert out.shape[0] == acq.spherical_mean_scheme.number_of_measurements

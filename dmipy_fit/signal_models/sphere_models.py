@@ -5,11 +5,11 @@ from scipy import special
 import numpy as np
 
 DIAMETER_SCALING = 1e-6
-RELAXIVITY_SCALING = 1e-3  # mm/s → m/s; range (0,1) covers 0–1 mm/s
 
 __all__ = [
     'S1Dot',
     'S2SphereStejskalTannerApproximation',
+    'S3SphereCallaghanApproximation',
     'S4SphereGaussianPhaseApproximation',
 ]
 
@@ -250,21 +250,17 @@ class S2SphereStejskalTannerApproximation(
 
     _parameter_ranges = {
         'diameter': (1e-2, 20),
-        'surface_relaxivity': (0., 1.),
     }
     _parameter_scales = {
         'diameter': DIAMETER_SCALING,
-        'surface_relaxivity': RELAXIVITY_SCALING,
     }
     _parameter_types = {
         'diameter': 'sphere',
-        'surface_relaxivity': 'normal',
     }
     _model_type = 'CompartmentModel'
 
-    def __init__(self, diameter=None, surface_relaxivity=None):
+    def __init__(self, diameter=None):
         self.diameter = diameter
-        self.surface_relaxivity = surface_relaxivity
 
     def sphere_attenuation(self, q, diameter):
         "The signal attenuation for the sphere model."
@@ -310,10 +306,6 @@ class S2SphereStejskalTannerApproximation(
         q_nonzero = q > 0  # only q>0 attenuate
         E_sphere[q_nonzero] = self.sphere_attenuation(
             q[q_nonzero], diameter)
-        rho = kwargs.get('surface_relaxivity', self.surface_relaxivity)
-        if (rho is not None and not np.isnan(np.asarray(rho, dtype=float).flat[0])
-                and acquisition_scheme.TE is not None):
-            E_sphere = E_sphere * np.exp(-acquisition_scheme.TE * rho * 6.0 / diameter)
         return E_sphere
 
 
@@ -341,7 +333,7 @@ def _spherical_jn_prime_roots(n, n_roots):
     return np.array(roots[:n_roots])
 
 
-class _S3SphereCallaghanApproximation(
+class S3SphereCallaghanApproximation(
         ModelProperties, IsotropicSignalModelProperties):
     r"""
     The Callaghan model of diffusion inside a sphere.
@@ -382,17 +374,14 @@ class _S3SphereCallaghanApproximation(
 
     _parameter_ranges = {
         'diameter': (1e-2, 20),
-        'surface_relaxivity': (0., 1.),
     }
 
     _parameter_scales = {
         'diameter': DIAMETER_SCALING,
-        'surface_relaxivity': RELAXIVITY_SCALING,
     }
 
     _parameter_types = {
         'diameter': 'sphere',
-        'surface_relaxivity': 'normal',
     }
     _model_type = 'CompartmentModel'
 
@@ -402,12 +391,10 @@ class _S3SphereCallaghanApproximation(
         diffusion_constant=CONSTANTS['water_in_axons_diffusion_constant'],
         number_of_roots=25,
         number_of_functions=16,
-        surface_relaxivity=None,
     ):
 
         self.diameter = diameter
         self.Dintra = diffusion_constant
-        self.surface_relaxivity = surface_relaxivity
         # Neumann-BC eigenvalues alpha[n, k]: the k-th positive root of j_n'(x) = 0,
         # one set of roots per spherical-harmonic order n. The n=0 order carries the
         # alpha = 0 ground state (uniform mode) as its first entry — that term is the
@@ -493,10 +480,6 @@ class _S3SphereCallaghanApproximation(
         E_sphere[q_nonzero] = self.sphere_attenuation(
             q[q_nonzero], tau[q_nonzero], diameter
         )
-        rho = kwargs.get('surface_relaxivity', self.surface_relaxivity)
-        if (rho is not None and not np.isnan(np.asarray(rho, dtype=float).flat[0])
-                and acquisition_scheme.TE is not None):
-            E_sphere = E_sphere * np.exp(-acquisition_scheme.TE * rho * 6.0 / diameter)
         return E_sphere
 
 
@@ -531,15 +514,12 @@ class S4SphereGaussianPhaseApproximation(
 
     _parameter_ranges = {
         'diameter': (1e-2, 20),
-        'surface_relaxivity': (0., 1.),
     }
     _parameter_scales = {
         'diameter': DIAMETER_SCALING,
-        'surface_relaxivity': RELAXIVITY_SCALING,
     }
     _parameter_types = {
         'diameter': 'sphere',
-        'surface_relaxivity': 'normal',
     }
     _model_type = 'CompartmentModel'
 
@@ -579,12 +559,10 @@ class S4SphereGaussianPhaseApproximation(
     def __init__(
         self, diameter=None,
         diffusion_constant=CONSTANTS['water_in_axons_diffusion_constant'],
-        surface_relaxivity=None,
     ):
         self.diffusion_constant = diffusion_constant
         self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
         self.diameter = diameter
-        self.surface_relaxivity = surface_relaxivity
 
     def sphere_attenuation(
         self, gradient_strength, delta, Delta, diameter
@@ -722,9 +700,5 @@ class S4SphereGaussianPhaseApproximation(
                             G_t, acquisition_scheme._dt, D, R,
                             self.SPHERE_TRASCENDENTAL_ROOTS)
 
-        rho = kwargs.get('surface_relaxivity', self.surface_relaxivity)
-        if (rho is not None and not np.isnan(np.asarray(rho, dtype=float).flat[0])
-                and acquisition_scheme.TE is not None):
-            E_sphere = E_sphere * np.exp(-acquisition_scheme.TE * rho * 6.0 / diameter)
         return E_sphere
 

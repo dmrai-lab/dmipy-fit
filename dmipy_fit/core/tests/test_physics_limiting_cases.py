@@ -1,7 +1,7 @@
 """
 Adversarial physics tests — limiting cases, boundary conditions, and known bugs.
 
-SC-023  _S3SphereCallaghanApproximation fixed + MC-validated (DP-006)
+SC-023  S3SphereCallaghanApproximation fixed + MC-validated (DP-006)
 SC-025  SD1WatsonDistributed(C3Callaghan) agrees with numerical orientation average
 SC-026  T2 is silently ignored when acquisition scheme has TE=None
 SC-027  C3CylinderCallaghan(d→0) approaches C1Stick
@@ -234,7 +234,7 @@ class TestT2OccupancyGatedFactor:
 
 
 # =========================================================================
-# SC-023 / DP-006 — _S3SphereCallaghanApproximation, fixed and validated
+# SC-023 / DP-006 — S3SphereCallaghanApproximation, fixed and validated
 # =========================================================================
 
 class TestS3SphereCallaghan:
@@ -268,8 +268,8 @@ class TestS3SphereCallaghan:
 
     def _s3(self):
         from dmipy_fit.signal_models.sphere_models import (
-            _S3SphereCallaghanApproximation)
-        return _S3SphereCallaghanApproximation(diffusion_constant=self.D)
+            S3SphereCallaghanApproximation)
+        return S3SphereCallaghanApproximation(diffusion_constant=self.D)
 
     def test_s3_long_time_limit_is_s2_structure_factor(self):
         """tau -> inf: S3 reduces to the SGP sphere structure factor (S2), exactly."""
@@ -331,13 +331,13 @@ class TestS3SphereCallaghan:
         as delta shrinks and converge monotonically onto the analytic curve.
         """
         from dmipy_fit.signal_models.sphere_models import (
-            _S3SphereCallaghanApproximation)
+            S3SphereCallaghanApproximation)
         fx = np.load(os.path.join(os.path.dirname(__file__), "fixtures",
                                   "s3_sphere_callaghan_mc.npz"))
         q, tau, diameter = fx["q"], float(fx["tau"]), 2 * float(fx["radius"])
         deltas, E_mc = fx["deltas"], fx["E_mc"]
 
-        s3 = _S3SphereCallaghanApproximation(diffusion_constant=float(fx["D"]))
+        s3 = S3SphereCallaghanApproximation(diffusion_constant=float(fx["D"]))
         E_s3 = s3.sphere_attenuation(q, np.full_like(q, tau), diameter)
 
         # (1) the analytic curve the fixture was measured against is reproduced
@@ -356,11 +356,11 @@ class TestS3SphereCallaghan:
     def test_s3_call_returns_finite_attenuation(self):
         """The full __call__ path runs and returns physical (0, 1] attenuation."""
         from dmipy_fit.signal_models.sphere_models import (
-            _S3SphereCallaghanApproximation)
+            S3SphereCallaghanApproximation)
         bvals = np.array([0., 1e9, 2e9])
         bvecs = np.array([[1., 0., 0.], [1., 0., 0.], [1., 0., 0.]])
         scheme = acquisition_scheme_from_bvalues(bvals, bvecs, 0.1e-3, 40e-3)
-        s3 = _S3SphereCallaghanApproximation(diameter=10e-6)
+        s3 = S3SphereCallaghanApproximation(diameter=10e-6)
         E = s3(scheme, diameter=10e-6)
         assert np.all(np.isfinite(E))
         assert np.all(E > 0) and np.all(E <= 1.0 + 1e-9)

@@ -16,7 +16,6 @@ numba, have_numba, _ = optional_package("numba")
 DIFFUSIVITY_SCALING = 1e-9
 DIAMETER_SCALING = 1e-6
 A_SCALING = 1e-12
-RELAXIVITY_SCALING = 1e-3  # mm/s → m/s; range (0,1) covers 0–1 mm/s
 
 # ---------------------------------------------------------------------------
 # Sphere quadrature grid for SH dispersion integrals.
@@ -305,31 +304,27 @@ class C2CylinderStejskalTannerApproximation(
         'mu': ([0, np.pi], [-np.pi, np.pi]),
         'lambda_par': (.1, 3),
         'diameter': (1e-2, 20),
-        'surface_relaxivity': (0., 1.),
     }
     _parameter_scales = {
         'mu': np.r_[1., 1.],
         'lambda_par': DIFFUSIVITY_SCALING,
         'diameter': DIAMETER_SCALING,
-        'surface_relaxivity': RELAXIVITY_SCALING,
     }
     _parameter_types = {
         'mu': 'orientation',
         'lambda_par': 'normal',
         'diameter': 'cylinder',
-        'surface_relaxivity': 'normal',
     }
     _model_type = 'CompartmentModel'
 
     def __init__(
         self,
         mu=None, lambda_par=None,
-        diameter=None, surface_relaxivity=None,
+        diameter=None,
     ):
         self.mu = mu
         self.lambda_par = lambda_par
         self.diameter = diameter
-        self.surface_relaxivity = surface_relaxivity
 
     def perpendicular_attenuation(
         self, q, diameter
@@ -389,10 +384,6 @@ class C2CylinderStejskalTannerApproximation(
             q_perp[q_nonzero], diameter
         )
         E = E_parallel * E_perpendicular
-        rho = kwargs.get('surface_relaxivity', self.surface_relaxivity)
-        if (rho is not None and not np.isnan(np.asarray(rho, dtype=float).flat[0])
-                and acquisition_scheme.TE is not None):
-            E = E * np.exp(-acquisition_scheme.TE * rho * 4.0 / diameter)
         return E
 
 
@@ -453,19 +444,16 @@ class C3CylinderCallaghanApproximation(
         'mu': ([0, np.pi], [-np.pi, np.pi]),
         'lambda_par': (.1, 3),
         'diameter': (1e-2, 20),
-        'surface_relaxivity': (0., 1.),
     }
     _parameter_scales = {
         'mu': np.r_[1., 1.],
         'lambda_par': DIFFUSIVITY_SCALING,
         'diameter': DIAMETER_SCALING,
-        'surface_relaxivity': RELAXIVITY_SCALING,
     }
     _parameter_types = {
         'mu': 'orientation',
         'lambda_par': 'normal',
         'diameter': 'cylinder',
-        'surface_relaxivity': 'normal',
     }
     _model_type = 'CompartmentModel'
 
@@ -476,13 +464,11 @@ class C3CylinderCallaghanApproximation(
         diffusion_perpendicular=CONSTANTS['water_in_axons_diffusion_constant'],
         number_of_roots=20,
         number_of_functions=50,
-        surface_relaxivity=None,
     ):
         self.mu = mu
         self.lambda_par = lambda_par
         self.diffusion_perpendicular = diffusion_perpendicular
         self.diameter = diameter
-        self.surface_relaxivity = surface_relaxivity
 
         self.alpha = np.empty((number_of_roots, number_of_functions))
         self.alpha[0, 0] = 0
@@ -576,10 +562,6 @@ class C3CylinderCallaghanApproximation(
             q_perp[q_nonzero], tau[q_nonzero], diameter
         )
         E = E_parallel * E_perpendicular
-        rho = kwargs.get('surface_relaxivity', self.surface_relaxivity)
-        if (rho is not None and not np.isnan(np.asarray(rho, dtype=float).flat[0])
-                and acquisition_scheme.TE is not None):
-            E = E * np.exp(-acquisition_scheme.TE * rho * 4.0 / diameter)
         return E
 
 
@@ -634,19 +616,16 @@ class C4CylinderGaussianPhaseApproximation(
         'mu': ([0, np.pi], [-np.pi, np.pi]),
         'lambda_par': (.1, 3),
         'diameter': (1e-2, 20),
-        'surface_relaxivity': (0., 1.),
     }
     _parameter_scales = {
         'mu': np.r_[1., 1.],
         'lambda_par': DIFFUSIVITY_SCALING,
         'diameter': DIAMETER_SCALING,
-        'surface_relaxivity': RELAXIVITY_SCALING,
     }
     _parameter_types = {
         'mu': 'orientation',
         'lambda_par': 'normal',
         'diameter': 'cylinder',
-        'surface_relaxivity': 'normal',
     }
     _model_type = 'CompartmentModel'
     _CYLINDER_TRASCENDENTAL_ROOTS = np.sort(special.jnp_zeros(1, 100))
@@ -656,14 +635,12 @@ class C4CylinderGaussianPhaseApproximation(
         mu=None, lambda_par=None,
         diameter=None,
         diffusion_perpendicular=CONSTANTS['water_in_axons_diffusion_constant'],
-        surface_relaxivity=None,
     ):
         self.mu = mu
         self.lambda_par = lambda_par
         self.diffusion_perpendicular = diffusion_perpendicular
         self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
         self.diameter = diameter
-        self.surface_relaxivity = surface_relaxivity
 
     def perpendicular_attenuation(
         self, gradient_strength, delta, Delta, diameter
@@ -743,10 +720,6 @@ class C4CylinderGaussianPhaseApproximation(
             b_par = bvals * np.dot(n, mu_cart) ** 2
             E = _cylinder_signal_from_gamma_lm(
                 gamma_lm, b_par, C_geom, mu_cart, lambda_par)
-            rho = kwargs.get('surface_relaxivity', self.surface_relaxivity)
-            if (rho is not None and not np.isnan(np.asarray(rho, dtype=float).flat[0])
-                    and acquisition_scheme.TE is not None):
-                E = E * np.exp(-acquisition_scheme.TE * rho * 4.0 / diameter)
             return E
 
         g = acquisition_scheme.gradient_strengths
@@ -828,10 +801,6 @@ class C4CylinderGaussianPhaseApproximation(
                             self._CYLINDER_TRASCENDENTAL_ROOTS)
 
         E = E_parallel * E_perpendicular
-        rho = kwargs.get('surface_relaxivity', self.surface_relaxivity)
-        if (rho is not None and not np.isnan(np.asarray(rho, dtype=float).flat[0])
-                and acquisition_scheme.TE is not None):
-            E = E * np.exp(-acquisition_scheme.TE * rho * 4.0 / diameter)
         return E
 
     def signal_from_gamma_lm(self, acquisition_scheme, **kwargs):
