@@ -254,3 +254,23 @@ def test_karger_relaxation_via_occupancy_gated_addon():
         scheme, G1Ball_1_lambda_iso=D1, G1Ball_2_lambda_iso=D2, f=F, kappa=KAPPA,
         G1Ball_1_T2=T2_1, G1Ball_2_T2=INF, G1Ball_1_T1=INF, G1Ball_2_T1=INF))
     npt.assert_allclose(E_relax, E_direct, atol=1e-9)
+
+
+def test_jax_karger_refuses_relaxation_addon():
+    """solver='jax' can't represent coupled relaxation-exchange (scalar formula,
+    no matrix propagator). Building the JAX fn for a relaxation-gated Karger must
+    raise loudly rather than silently drop relaxation. See issue #7."""
+    import pytest
+    pytest.importorskip("jax")
+    from dmipy_fit.signal_models.attenuation import (
+        OccupancyGatedModel, TransverseRelaxation)
+    from dmipy_fit.jax.multicompartment_jax import _make_x1karger_jax_fn
+
+    gated = X0GeneralizedKarger(
+        OccupancyGatedModel(G1Ball(), [TransverseRelaxation()]), G1Ball())
+    with pytest.raises(NotImplementedError, match="relaxation add-on"):
+        _make_x1karger_jax_fn(gated)
+
+    # Relaxation-free Karger is unaffected (still builds a scalar fast path).
+    plain = X0GeneralizedKarger(G1Ball(), G1Ball())
+    assert _make_x1karger_jax_fn(plain) is not None

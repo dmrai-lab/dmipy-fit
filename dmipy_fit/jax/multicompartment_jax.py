@@ -581,7 +581,33 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
     1. G1Ball + G1Ball        — isotropic Gaussian Kärger (no orientation).
     2. S4Sphere + G1Ball      — generalized Kärger: R_i = -log(E_i).
     3. Oriented (Stick/Zepp)  — anisotropic Gaussian Kärger (legacy path).
+
+    All three use the scalar Kärger eigenvalue formula, valid only for pure
+    diffusion+exchange. Coupled relaxation-exchange (a per-compartment T2/T1
+    add-on via OccupancyGatedModel) needs the matrix-exponential propagator,
+    which exists only on the NumPy path — so this factory refuses a relaxation
+    add-on rather than silently dropping it. See GitHub issue #7 for JAX support.
     """
+    from ..signal_models.attenuation import OccupancyGatedModel
+
+    # Guard: the scalar JAX path cannot represent coupled relaxation-exchange.
+    has_relaxation_addon = (
+        isinstance(model_obj.model_intra, OccupancyGatedModel)
+        or isinstance(model_obj.model_extra, OccupancyGatedModel)
+        or any(k == 'T2' or k == 'T1' or k.endswith('_T2') or k.endswith('_T1')
+               for k in model_obj.parameter_ranges)
+    )
+    if has_relaxation_addon:
+        raise NotImplementedError(
+            "solver='jax' does not support X0GeneralizedKarger with a relaxation "
+            "add-on (compartment-wise T2/T1 via OccupancyGatedModel). The JAX path "
+            "uses the scalar Kärger formula and cannot represent coupled "
+            "relaxation-exchange, which requires the matrix-exponential propagator "
+            "(NumPy only). Use solver='brute2fine' for relaxation-gated exchange "
+            "models. Tracking JAX support: "
+            "https://github.com/dmrai-lab/dmipy-fit/issues/7"
+        )
+
     intra_type = type(model_obj.model_intra)
     extra_type = type(model_obj.model_extra)
 
