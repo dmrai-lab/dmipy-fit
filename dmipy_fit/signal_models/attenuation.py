@@ -37,7 +37,8 @@ from ..core.signal_model_properties import AnisotropicSignalModelProperties
 __all__ = [
     'OccupancyGatedModel', 'TransverseRelaxation', 'LongitudinalRelaxation',
     'SurfaceRelaxivity',
-    'IntraPoreSurfaceRelaxivity', 'ExteriorSurfaceRelaxivity',
+    'IntraPoreSurfaceRelaxivity', 'IntraSphereSurfaceRelaxivity',
+    'ExteriorSurfaceRelaxivity',
 ]
 
 
@@ -190,6 +191,42 @@ class IntraPoreSurfaceRelaxivity(AttenuationFactor):
         inner_scale = g * self.gamma_scale_outer_diameter      # inner = g x outer
         return b_hat_ia(self.gamma_shape, inner_scale, float(surface_relaxivity),
                         _tau_perp(acquisition_scheme), self.volume_weighted)
+
+
+class IntraSphereSurfaceRelaxivity(AttenuationFactor):
+    r"""Intra-sphere surface relaxivity for a compartment modelled as a Gamma
+    distribution of spheres (e.g. a soma / cell-body pool) -- the sphere analog
+    of :class:`IntraPoreSurfaceRelaxivity`.
+
+    Returns the Gamma-averaged surface attenuation
+    ``B = E_d[exp(-rho (6/d) tau_perp)]`` for a sphere diameter
+    ``d ~ Gamma(gamma_shape, gamma_scale_diameter)`` in closed form
+    (:func:`white_matter.surface.b_hat_sphere`): a sphere has ``S/V = 6/d`` and
+    its water content ~ volume ``d^3`` (volume weighting -> shape ``alpha+3``).
+
+    Like :class:`IntraPoreSurfaceRelaxivity`, the Gamma parameters are fixed
+    substrate constants supplied at construction; ``surface_relaxivity`` is the
+    fittable parameter.  Being a scalar per shell, it is spherical-mean
+    separable.  (No g-ratio: spheres carry no myelin sheath.)"""
+    parameter_ranges = {'surface_relaxivity': (0., 50e-6)}
+    parameter_scales = {'surface_relaxivity': 1e-6}
+    parameter_types = {'surface_relaxivity': 'normal'}
+
+    def __init__(self, gamma_shape=2.0, gamma_scale_diameter=1.0e-6,
+                 volume_weighted=True):
+        self.gamma_shape = gamma_shape
+        self.gamma_scale_diameter = gamma_scale_diameter
+        self.volume_weighted = volume_weighted
+
+    def factor(self, acquisition_scheme, mu_cart, base_params,
+               surface_relaxivity=None):
+        if not _is_set(surface_relaxivity) \
+                or getattr(acquisition_scheme, 'TE', None) is None:
+            return 1.0
+        from ..white_matter.surface import b_hat_sphere
+        return b_hat_sphere(self.gamma_shape, self.gamma_scale_diameter,
+                            float(surface_relaxivity),
+                            _tau_perp(acquisition_scheme), self.volume_weighted)
 
 
 class ExteriorSurfaceRelaxivity(AttenuationFactor):

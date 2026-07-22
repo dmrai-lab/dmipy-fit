@@ -18,7 +18,8 @@ import jax.numpy as jnp
 
 from ..signal_models.attenuation import (
     TransverseRelaxation, LongitudinalRelaxation,
-    SurfaceRelaxivity, ExteriorSurfaceRelaxivity, IntraPoreSurfaceRelaxivity)
+    SurfaceRelaxivity, ExteriorSurfaceRelaxivity, IntraPoreSurfaceRelaxivity,
+    IntraSphereSurfaceRelaxivity)
 
 __all__ = ['build_jax_factor', 'JAX_FACTOR_BUILDERS']
 
@@ -122,12 +123,47 @@ def _build_intrapore_surface_relaxivity(factor, n_nodes=64):
     return fn
 
 
+def _build_intrasphere_surface_relaxivity(factor, n_nodes=64):
+    r"""Gamma-averaged intra-sphere surface attenuation B = E_d[exp(-6 rho tau/d)]
+    for a sphere diameter d ~ Gamma(shape a, rate beta) -- the sphere analog of
+    :func:`_build_intrapore_surface_relaxivity`.
+
+    The numpy form (white_matter.surface.b_hat_sphere) is the Bessel-K closed
+    form with S/V coefficient 6 and volume-weight shift +3. JAX has no Bessel-K,
+    so we use the same generalized Gauss-Laguerre quadrature:
+
+        B = (1/Gamma(a)) sum_k w_k exp(-c beta / x_k),   c = 6 rho tau.
+    """
+    from scipy.special import roots_genlaguerre, gamma as _gamma
+    a_eff = factor.gamma_shape + (3.0 if factor.volume_weighted else 0.0)
+    _x, _w = roots_genlaguerre(n_nodes, a_eff - 1.0)
+    x = jnp.asarray(_x)
+    w = jnp.asarray(_w)
+    inv_gamma_a = 1.0 / float(_gamma(a_eff))
+    beta = 1.0 / factor.gamma_scale_diameter            # rate (1/m), constant
+
+    def fn(scheme_jax, mu_cart, params):
+        rho = params.get('surface_relaxivity')
+        tau_perp = scheme_jax.get('tau_perp')
+        if rho is None or tau_perp is None:
+            return 1.0
+        c = jnp.asarray(6.0 * rho * tau_perp)            # scalar or (N,), m
+        xr = x.reshape((-1,) + (1,) * c.ndim)
+        wr = w.reshape((-1,) + (1,) * c.ndim)
+        arg = -(c[None, ...] * beta) / xr
+        B = (wr * jnp.exp(arg)).sum(0) * inv_gamma_a
+        B = jnp.where(c <= 0, 1.0, B)
+        return jnp.where(jnp.isfinite(rho), B, 1.0)
+    return fn
+
+
 JAX_FACTOR_BUILDERS = {
     TransverseRelaxation: _build_transverse_relaxation,
     LongitudinalRelaxation: _build_longitudinal_relaxation,
     ExteriorSurfaceRelaxivity: _build_exterior_surface_relaxivity,
     SurfaceRelaxivity: _build_surface_relaxivity,
     IntraPoreSurfaceRelaxivity: _build_intrapore_surface_relaxivity,
+    IntraSphereSurfaceRelaxivity: _build_intrasphere_surface_relaxivity,
 }
 
 
