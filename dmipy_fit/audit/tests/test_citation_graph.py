@@ -8,7 +8,7 @@ from dmipy_fit.signal_models.cylinder_models import (
     C4CylinderGaussianPhaseApproximation)
 from dmipy_fit.signal_models.sphere_models import (
     S1Dot, S2SphereStejskalTannerApproximation,
-    _S3SphereCallaghanApproximation,
+    S3SphereCallaghanApproximation,
     S4SphereGaussianPhaseApproximation)
 from dmipy_fit.signal_models.plane_models import (
     P2PlaneStejskalTannerApproximation,
@@ -47,7 +47,7 @@ SIGNAL_MODEL_CLASSES = [
     C3CylinderCallaghanApproximation,
     C4CylinderGaussianPhaseApproximation,
     S1Dot, S2SphereStejskalTannerApproximation,
-    _S3SphereCallaghanApproximation,
+    S3SphereCallaghanApproximation,
     S4SphereGaussianPhaseApproximation,
     P2PlaneStejskalTannerApproximation,
     P3PlaneCallaghanApproximation,
@@ -242,7 +242,7 @@ def test_constraints_present():
         C3CylinderCallaghanApproximation,
         C4CylinderGaussianPhaseApproximation,
         S2SphereStejskalTannerApproximation,
-        _S3SphereCallaghanApproximation,
+        S3SphereCallaghanApproximation,
         S4SphereGaussianPhaseApproximation,
         P2PlaneStejskalTannerApproximation,
         P3PlaneCallaghanApproximation,
