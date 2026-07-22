@@ -208,3 +208,49 @@ def test_pgste_transverse_relaxation_gated_to_encoding():
     npt.assert_allclose(E, gated, atol=1e-9)
     dw = B > 1e3
     assert np.all(E[dw] > ungated[dw])
+
+
+# ---------------------------------------------------------------------------
+# Relaxation is an opt-in add-on, not baked into the bare model
+# ---------------------------------------------------------------------------
+
+def test_bare_karger_has_no_relaxation_parameter():
+    """The bare exchange model is pure diffusion+exchange: no T2/T1 own-param."""
+    names = _model().parameter_names
+    assert 'T2' not in names and 'T1' not in names
+    assert not any(n.endswith('_T2') or n.endswith('_T1') for n in names)
+
+
+def test_karger_relaxation_via_occupancy_gated_addon():
+    """Compartment-wise T2 is supplied the same way as everywhere else: by
+    wrapping a sub-model in OccupancyGatedModel. The factor's T2 becomes a
+    fittable parameter, is folded into the coupled propagator, and gives the
+    exact same signal as feeding that compartment's T2 in directly -- proving
+    the wrapped sub-model stays diffusion-only (relaxation is not double-counted)."""
+    from dmipy_fit.signal_models.attenuation import (
+        OccupancyGatedModel, TransverseRelaxation)
+
+    TE = 2.0 * DELTA + TM
+    scheme = AcquisitionScheme.from_pgse(
+        B, BVECS, delta=DELTA, Delta=DELTA + TM, TE=TE)
+
+    gated = X0GeneralizedKarger(
+        OccupancyGatedModel(G1Ball(), [TransverseRelaxation()]), G1Ball())
+    # the add-on exposes a fittable T2 on the wrapped (intra) compartment
+    assert 'OccupancyGatedModel_1_T2' in gated.parameter_names
+
+    common = dict(OccupancyGatedModel_1_lambda_iso=D1, G1Ball_1_lambda_iso=D2,
+                  f=F, kappa=KAPPA)
+    E_relax = np.asarray(gated(scheme, OccupancyGatedModel_1_T2=T2_1, **common))
+    E_norelax = np.asarray(gated(scheme, **common))  # T2 unset -> no relaxation
+
+    dw = B > 1e3
+    assert np.all(E_relax[dw] < E_norelax[dw])   # T2 add-on attenuates the signal
+
+    # Same signal as routing intra T2 in through the bare per-compartment path
+    # (extra compartment: no relaxation) -> the OccupancyGatedModel factor did
+    # not additionally apply T2 to the sub-model signal.
+    E_direct = np.asarray(_model()(
+        scheme, G1Ball_1_lambda_iso=D1, G1Ball_2_lambda_iso=D2, f=F, kappa=KAPPA,
+        G1Ball_1_T2=T2_1, G1Ball_2_T2=INF, G1Ball_1_T1=INF, G1Ball_2_T1=INF))
+    npt.assert_allclose(E_relax, E_direct, atol=1e-9)

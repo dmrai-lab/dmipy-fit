@@ -597,7 +597,9 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
                 params['f'],
                 params['kappa'],
             )
-            return _apply_t2_weighting(E, scheme_jax, params)
+            # Pure diffusion+exchange fast path (no relaxation). Coupled
+            # relaxation-exchange is only available on the NumPy propagator.
+            return E
         return _ball_ball_jax_fn
 
     # ── Variant 2: S4Sphere + G1Ball (SANDIX / EXCHANGE-IMPULSED) ──────────
@@ -618,7 +620,7 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
             Re = -jnp.log(jnp.maximum(E_extra, EPS))
             t_d = scheme_jax['Delta'] - scheme_jax['delta'] / 3.0
             E = karger_from_Ri_Re(t_d, Ri, Re, params['f'], params['kappa'])
-            return _apply_t2_weighting(E, scheme_jax, params)
+            return E
         return _sphere_ball_jax_fn
 
     # ── Variant 3: Oriented anisotropic (legacy C1Stick/G2Zeppelin) ─────────
@@ -636,7 +638,7 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
             params['f'],
             params['kappa'],
         )
-        return _apply_t2_weighting(E, scheme_jax, params)
+        return E
     return _anisotropic_jax_fn
 
 
