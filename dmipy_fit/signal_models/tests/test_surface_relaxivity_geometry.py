@@ -97,3 +97,64 @@ def test_numpy_jax_parity_sphere_surface_relaxivity():
     fac = np.asarray(jax_factor(sj, None, {'surface_relaxivity': RHO,
                                            'diameter': D}))
     np.testing.assert_allclose(E_np, E_base * fac, rtol=1e-5, atol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Gamma-averaged sphere surface relaxivity (IntraSphereSurfaceRelaxivity),
+# the sphere analog of IntraPoreSurfaceRelaxivity.
+# ---------------------------------------------------------------------------
+
+def _trap():
+    return getattr(np, 'trapezoid', None) or np.trapz
+
+
+def test_b_hat_sphere_matches_numerical_integral():
+    """Closed form E_d[exp(-6 rho tau/d)] over the volume-weighted (alpha+3)
+    Gamma distribution matches direct numerical integration."""
+    from scipy.stats import gamma as gamma_dist
+    from dmipy_fit.white_matter.surface import b_hat_sphere
+    trap = _trap()
+    alpha, scale, rho, tau = 2.5, 1.2e-6, 18e-6, 0.045
+    d = np.linspace(1e-9, 60e-6, 500000)
+    pdf = gamma_dist.pdf(d, alpha + 3.0, scale=scale)      # volume-weighted d^3
+    pdf /= trap(pdf, d)
+    numeric = trap(pdf * np.exp(-rho * (6.0 / d) * tau), d)   # sphere S/V = 6/d
+    closed = float(b_hat_sphere(alpha, scale, rho, tau, volume_weighted=True))
+    np.testing.assert_allclose(closed, numeric, rtol=2e-3)
+
+
+def test_b_hat_sphere_differs_from_cylinder():
+    """Sphere (6/d, +3) and cylinder (4/d, +2) forms are genuinely different."""
+    from dmipy_fit.white_matter.surface import b_hat_sphere, b_hat_ia
+    args = (2.5, 1.2e-6, 18e-6, 0.045)
+    assert not np.isclose(b_hat_sphere(*args), b_hat_ia(*args), rtol=1e-3)
+
+
+def test_intrasphere_factor_applies_and_varies_with_relaxivity():
+    from dmipy_fit.signal_models.attenuation import IntraSphereSurfaceRelaxivity
+    acq = _scheme()
+    og = OccupancyGatedModel(
+        sphere_models.S4SphereGaussianPhaseApproximation(),
+        [IntraSphereSurfaceRelaxivity(gamma_shape=2.5, gamma_scale_diameter=1.2e-6)])
+    assert 'surface_relaxivity' in og.parameter_names
+    E0 = np.asarray(og(acq, diameter=D, surface_relaxivity=0.0))
+    E1 = np.asarray(og(acq, diameter=D, surface_relaxivity=25e-6))
+    assert np.all(E1[1:] < E0[1:])          # gamma-averaged relaxivity attenuates
+
+    # matches the closed form directly (tau_perp falls back to TE)
+    from dmipy_fit.white_matter.surface import b_hat_sphere
+    b = float(b_hat_sphere(2.5, 1.2e-6, 25e-6, TE))
+    np.testing.assert_allclose(E1 / E0, b, rtol=1e-9)
+
+
+def test_intrasphere_numpy_jax_parity():
+    pytest.importorskip("jax")
+    from dmipy_fit.signal_models.attenuation import IntraSphereSurfaceRelaxivity
+    from dmipy_fit.jax.attenuation_jax import build_jax_factor
+    from dmipy_fit.jax.jax_compat import scheme_to_jax
+    acq = _scheme()
+    f = IntraSphereSurfaceRelaxivity(gamma_shape=2.5, gamma_scale_diameter=1.2e-6)
+    b_np = np.asarray(f.factor(acq, None, {}, surface_relaxivity=25e-6))
+    sj = scheme_to_jax(acq)
+    b_jax = np.asarray(build_jax_factor(f)(sj, None, {'surface_relaxivity': 25e-6}))
+    np.testing.assert_allclose(b_np, b_jax, rtol=1e-4, atol=1e-6)

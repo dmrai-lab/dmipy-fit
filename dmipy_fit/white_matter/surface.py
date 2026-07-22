@@ -27,8 +27,28 @@ import numpy as np
 from scipy.special import kv, gamma as gamma_fn
 
 
+def _b_hat_gamma_closed_form(a, beta, c):
+    r"""Gamma-averaged surface attenuation ``E_d[exp(-c/d)]`` for
+    ``d ~ Gamma(shape a, rate beta)`` in closed form:
+
+    .. math:: B = \frac{2 (\beta c)^{a/2}}{\Gamma(a)} K_a(2\sqrt{\beta c}),
+
+    the Bessel-K result of ``\int_0^\infty x^{a-1} e^{-\beta x - c/x} dx``.
+    ``c -> 0`` gives 1 (no relaxation).  Shared by the cylinder
+    (:func:`b_hat_ia`) and sphere (:func:`b_hat_sphere`) forms, which differ
+    only in ``a`` (volume-weight shift) and ``c`` (S/V coefficient)."""
+    c = np.asarray(c, dtype=float)
+    z = 2.0 * np.sqrt(beta * c)
+    with np.errstate(over='ignore', invalid='ignore'):
+        B = 2.0 * (beta * c) ** (a / 2.0) / gamma_fn(a) * kv(a, z)
+    return np.where(c <= 0, 1.0, B)
+
+
 def b_hat_ia(alpha, scale_diameter, rho_int, tau_perp, volume_weighted=True):
-    """Intra-pore Gamma-averaged surface attenuation (eq:b_hat_int_dist).
+    """Intra-pore (cylinder) Gamma-averaged surface attenuation (eq:b_hat_int_dist).
+
+    ``E_d[exp(-rho (4/d) tau)]`` for a cylinder lumen ``d ~ Gamma``: S/V = 4/d,
+    water content per cylinder ~ cross-sectional area d^2.
 
     Parameters
     ----------
@@ -39,17 +59,35 @@ def b_hat_ia(alpha, scale_diameter, rho_int, tau_perp, volume_weighted=True):
     volume_weighted : bool   Use d^2 P(d) (shape alpha+2) to match spin/area
                              weighting.  False = paper's number-weighted form.
     """
-    a = alpha + 2.0 if volume_weighted else alpha
-    beta = 1.0 / scale_diameter                       # rate (1/m)
-    tau_perp = np.asarray(tau_perp, dtype=float)
-    c = 4.0 * rho_int * tau_perp                       # m
-    z = 2.0 * np.sqrt(beta * c)                         # dimensionless
-    # B = 2 (beta c)^(a/2) / Gamma(a) * K_a(z); stable for z>0
-    with np.errstate(over='ignore', invalid='ignore'):
-        B = 2.0 * (beta * c) ** (a / 2.0) / gamma_fn(a) * kv(a, z)
-    # c -> 0 limit is 1 (no relaxation)
-    B = np.where(c <= 0, 1.0, B)
-    return B
+    a = alpha + 2.0 if volume_weighted else alpha      # cylinder: water ~ d^2
+    beta = 1.0 / scale_diameter                        # rate (1/m)
+    c = 4.0 * rho_int * np.asarray(tau_perp, dtype=float)   # S/V = 4/d
+    return _b_hat_gamma_closed_form(a, beta, c)
+
+
+def b_hat_sphere(alpha, scale_diameter, rho_int, tau_perp, volume_weighted=True):
+    """Intra-sphere Gamma-averaged surface attenuation -- the sphere analog of
+    :func:`b_hat_ia`.
+
+    ``E_d[exp(-rho (6/d) tau)]`` for a sphere diameter ``d ~ Gamma``: a sphere
+    has S/V = 3/R = 6/d, and its water content ~ volume d^3, so the spin-average
+    uses the volume-weighted distribution d^3 P(d) -> Gamma(alpha+3).  Same
+    closed form as the cylinder with the coefficient 4->6 and the weight
+    shift +2->+3.
+
+    Parameters
+    ----------
+    alpha : float            Gamma shape over diameter.
+    scale_diameter : float   Gamma scale beta_d (m); rate beta = 1/scale.
+    rho_int : float          Interior surface relaxivity (m/s).
+    tau_perp : float or array  Transverse occupancy time (s).
+    volume_weighted : bool   Use d^3 P(d) (shape alpha+3) to match spin/volume
+                             weighting.  False = number-weighted form.
+    """
+    a = alpha + 3.0 if volume_weighted else alpha      # sphere: water ~ d^3
+    beta = 1.0 / scale_diameter                        # rate (1/m)
+    c = 6.0 * rho_int * np.asarray(tau_perp, dtype=float)   # S/V = 6/d
+    return _b_hat_gamma_closed_form(a, beta, c)
 
 
 def mean_inv_diameter_4(alpha, scale_diameter, volume_weighted=True):
