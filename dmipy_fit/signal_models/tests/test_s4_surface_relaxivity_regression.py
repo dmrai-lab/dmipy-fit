@@ -18,6 +18,8 @@ Reported by a user against dmipy-fit 2.1.0. Two distinct problems:
     spherical-mean use of S4 raised ``AttributeError``. Fixed by reusing the
     per-measurement ``delta``/``Delta`` arrays (present on every scheme type).
 """
+import types
+
 import numpy as np
 import pytest
 
@@ -90,3 +92,29 @@ def test_s4_spherical_mean_simulate_signal():
     out = np.asarray(out).ravel()
     assert out.shape[0] == acq.spherical_mean_scheme.number_of_measurements
     assert np.all(out > 0) and np.all(out <= 1.0 + 1e-9)
+
+
+def test_c4_cylinder_pgse_independent_of_shell_delta():
+    """C4's PGSE branch had the same shell_delta/shell_Delta reach as S4. It was
+    latent (C4 is anisotropic, so it never sees a SphericalMeanAcquisitionScheme,
+    and the rotational-harmonics scheme happens to carry shell_delta). Assert the
+    PGSE branch now depends only on the per-measurement delta/Delta arrays: a
+    scheme stub that exposes everything C4 reads *except* shell_delta must give
+    the same signal as the full scheme."""
+    acq = _scheme(TE=None)
+    c4 = C4CylinderGaussianPhaseApproximation()
+    kw = dict(mu=[0., 0.], lambda_par=1.7e-9, diameter=6e-6)
+    E_full = np.asarray(c4(acq, **kw))
+
+    # Duck-typed scheme with NO shell_delta/shell_Delta attributes.
+    stub = types.SimpleNamespace(
+        bvalues=acq.bvalues,
+        gradient_directions=acq.gradient_directions,
+        gradient_strengths=acq.gradient_strengths,
+        delta=acq.delta,
+        Delta=acq.Delta,
+        number_of_measurements=acq.number_of_measurements,
+    )
+    assert not hasattr(stub, 'shell_delta')
+    E_stub = np.asarray(c4(stub, **kw))
+    np.testing.assert_allclose(E_stub, E_full, rtol=1e-12, atol=1e-12)

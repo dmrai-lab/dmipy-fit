@@ -740,8 +740,7 @@ class C4CylinderGaussianPhaseApproximation(
             # ----------------------------------------------------------------
             g_perp = g * magnitude_perpendicular
             g_nonzero = g_perp > 0
-            unique_deltas = np.unique([acquisition_scheme.shell_delta,
-                                       acquisition_scheme.shell_Delta], axis=1)
+            unique_deltas = np.unique([delta, Delta], axis=1)
             for delta_, Delta_ in zip(*unique_deltas):
                 mask = np.all([g_nonzero, delta == delta_, Delta == Delta_],
                               axis=0)
