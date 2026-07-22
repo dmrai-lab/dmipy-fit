@@ -57,7 +57,12 @@ def _build_exterior_surface_relaxivity(factor):
 
 
 def _build_surface_relaxivity(factor):
+    from ..signal_models.attenuation import SURFACE_TO_VOLUME_OVER_DIAMETER
     sv_fixed = factor.surface_to_volume
+    # Geometry bound at OccupancyGatedModel build time (sphere 6/d, cylinder
+    # 4/d, plane 2/d); defaults to cylinder when unknown, matching NumPy.
+    coeff = SURFACE_TO_VOLUME_OVER_DIAMETER.get(
+        getattr(factor, 'geometry', None), 4.0)
 
     def fn(scheme_jax, mu_cart, params):
         rho = params.get('surface_relaxivity')
@@ -70,7 +75,7 @@ def _build_surface_relaxivity(factor):
             d = params.get('diameter')
             if d is None:
                 return 1.0
-            sv = 4.0 / d
+            sv = coeff / d
         return jnp.where(jnp.isfinite(rho), jnp.exp(-rho * sv * tau_perp), 1.0)
     return fn
 
