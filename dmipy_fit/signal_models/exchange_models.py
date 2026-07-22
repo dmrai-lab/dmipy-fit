@@ -250,7 +250,15 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
             one sub-model is anisotropic.
     f     : float — intra-compartment volume fraction (0 < f < 1).
     kappa : float — intra→extra exchange rate (s⁻¹).
-    T2    : float — global transverse relaxation time (s), passive by default.
+
+    This is a pure diffusion+exchange model: it does not expose any relaxation
+    parameter of its own. Compartment-wise T2/T1 are an opt-in add-on, exactly
+    as for the bare compartments — wrap a sub-model in
+    :class:`~dmipy_fit.signal_models.attenuation.OccupancyGatedModel` with a
+    ``TransverseRelaxation`` / ``LongitudinalRelaxation`` factor, and its
+    ``…_T2`` / ``…_T1`` parameter is read here and folded into the coupled
+    relaxation–exchange propagator (the sub-model itself is evaluated
+    diffusion-only, so relaxation is never double-counted).
 
     Sub-model parameters
     --------------------
@@ -263,8 +271,9 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
     -----
     - Requires a PGSE acquisition scheme (delta and Delta must be set) for
       the exchange diffusion time t_d = Delta − delta/3.
-    - Sub-model T2 parameters are removed from the combined namespace; a
-      single global T2 is applied after the exchange formula.
+    - Relaxation and exchange do not factorise: a sub-model's ``…_T2`` / ``…_T1``
+      is read here and applied inside the matrix-exponential propagator (coupled
+      to exchange), not multiplied on afterwards.
     - Compatible with ``SD1WatsonDistributed`` and ``SD2BinghamDistributed``
       (rotational harmonics via 32-point Gauss-Legendre quadrature).
 
@@ -304,18 +313,18 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
     _required_acquisition_parameters = [
         'bvalues', 'gradient_directions', 'delta', 'Delta']
 
-    # Ranges / scales / types for own parameters
+    # Ranges / scales / types for own parameters (pure diffusion+exchange;
+    # relaxation is an opt-in add-on via OccupancyGatedModel on a sub-model).
     _own_ranges = {
         'mu':    ([0, np.pi], [-np.pi, np.pi]),
         'f':     (0.01, 0.99),
         'kappa': (0.1, 200.0),
-        'T2':    (1e-3, 10.),
     }
-    _own_scales = {'mu': np.r_[1., 1.], 'f': 1., 'kappa': 1., 'T2': 1.}
+    _own_scales = {'mu': np.r_[1., 1.], 'f': 1., 'kappa': 1.}
     _own_types  = {
-        'mu': 'orientation', 'f': 'normal', 'kappa': 'normal', 'T2': 'normal'
+        'mu': 'orientation', 'f': 'normal', 'kappa': 'normal'
     }
-    _own_cards  = {'mu': 2, 'f': 1, 'kappa': 1, 'T2': 1}
+    _own_cards  = {'mu': 2, 'f': 1, 'kappa': 1}
 
     def __init__(self, model_intra, model_extra, parameter_links=None):
         self.models = [model_intra, model_extra]
@@ -324,20 +333,14 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
         self.parameter_links = list(parameter_links or [])
 
         # ── 1. Build combined namespace from both sub-models ──────────────
+        # Any relaxation parameters a sub-model exposes (e.g. an
+        # OccupancyGatedModel's T2/T1) are kept in the namespace: they are the
+        # opt-in relaxation add-on, read in __call__ and folded into the
+        # coupled propagator. They are simply not forwarded to the sub-model
+        # (see _sub_kwargs), so the sub-model stays diffusion-only.
         self._prepare_parameters([model_intra, model_extra])
 
-        # ── 2. Drop per-compartment T2 (single global T2 is used instead) ─
-        for model_name in self.model_names:
-            key = model_name + 'T2'
-            if key in self.parameter_ranges:
-                del self.parameter_ranges[key]
-                del self.parameter_scales[key]
-                del self.parameter_types[key]
-                del self.parameter_cardinality[key]
-                # Leave _parameter_map/_inverted_parameter_map intact so
-                # we can explicitly NOT pass T2 to sub-models.
-
-        # ── 3. Remove sub-model orientation params; add shared mu ─────────
+        # ── 2. Remove sub-model orientation params; add shared mu ─────────
         has_orientation = any(
             ptype == 'orientation'
             for m in self.models
@@ -352,8 +355,8 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
                     if ptype == 'orientation':
                         self._inverted_parameter_map[(model, param)] = 'mu'
 
-        # ── 4. Add own parameters ─────────────────────────────────────────
-        own_names = (['mu'] if has_orientation else []) + ['f', 'kappa', 'T2']
+        # ── 3. Add own parameters ─────────────────────────────────────────
+        own_names = (['mu'] if has_orientation else []) + ['f', 'kappa']
         for name in own_names:
             self.parameter_ranges[name] = self._own_ranges[name]
             self.parameter_scales[name] = self._own_scales[name]
@@ -362,7 +365,7 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
             self._parameter_map[name] = (None, name)
             self._inverted_parameter_map[(None, name)] = name
 
-        # ── 5. Process parameter links ────────────────────────────────────
+        # ── 4. Process parameter links ────────────────────────────────────
         self._prepare_parameter_links()
 
     # ------------------------------------------------------------------
@@ -377,8 +380,9 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
         """Build keyword arguments for one sub-model from the combined dict."""
         params = {}
         for param in model.parameter_ranges:
-            if param == 'T2':
-                # T2 handled globally; don't pass to sub-models
+            if param in ('T2', 'T1'):
+                # Relaxation is folded into the coupled propagator in __call__;
+                # keep the sub-model diffusion-only so it is never double-counted.
                 continue
             key = self._inverted_parameter_map.get((model, param))
             if key is not None:
@@ -443,14 +447,6 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
                     T2_2 = float(t2_v)
                 if t1_v is not None and not np.isnan(float(t1_v)):
                     T1_2 = float(t1_v)
-        # Also check global T2 (backward compatibility)
-        T2_global = kwargs.get('T2')
-        if T2_global is not None and not np.isnan(float(np.asarray(T2_global).flat[0])):
-            T2_global = float(T2_global)
-            if T2_1 == _INF:
-                T2_1 = T2_global
-            if T2_2 == _INF:
-                T2_2 = T2_global
 
         # Sub-model signals (T2 handled inside models via tau_perp_SE or TE,
         # so sub-models receive no T2 keyword — _sub_kwargs already excludes T2)
