@@ -111,6 +111,14 @@ model = build_white_matter_model(include_csf=False)
   `fit.fitted_parameters`, don't guess.
 - **Spherical-mean vs full**: the spherical-mean framework fits orientation-invariant
   parameters (no dispersion/orientation); use the full or SH framework when you need those.
+- **Scheme timing attributes** (`delta`/`Delta` vs `shell_delta`/`shell_Delta`): a model's
+  `__call__` runs *per measurement* → use `.delta`/`.Delta` (present on every scheme; derive
+  unique-timing groups locally with `np.unique([delta, Delta], axis=1)`). Only *per-shell* code
+  paths (`spherical_mean` / `rotational_harmonics_representation` overrides) may use
+  `.shell_delta`/`.shell_Delta`. Reaching for `.shell_delta` inside `__call__` is a category
+  error — it works on the full/RH scheme but raises on the `SphericalMeanAcquisitionScheme`
+  (which is already per-shell: its `.delta`/`.Delta` hold the shell values and it has no
+  `.shell_delta`).
 - **`solver="jax"` needs the `[jax]` extra**; without a GPU it runs on CPU JAX (slower, still
   correct).
 - Don't re-implement NODDI/NEXI/SANDI — call `reference_models`.
