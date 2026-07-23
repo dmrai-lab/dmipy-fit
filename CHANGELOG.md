@@ -1,5 +1,50 @@
 # Changelog
 
+## 2.3.0
+
+**Relaxation–exchange on GPU, b-tensor encoding for restricted models, and a full-spectrum
+compatibility test.** Relaxation and surface relaxivity are now consistently opt-in
+`OccupancyGatedModel` factors across the whole model zoo, and a registry-driven stress test
+exercises every compartment × scheme × framework × wrapper combination.
+
+### Added
+- **Coupled compartment-wise T2/T1 relaxation–exchange** in `X0GeneralizedKarger` on the JAX
+  backend — a dimension-agnostic (N-pool-ready) matrix-exponential SE/STE propagator; relaxation is
+  supplied per compartment via `OccupancyGatedModel`. Fast scalar path retained for the
+  no-relaxation case; finite-RF combinations are refused rather than silently approximated.
+- **Gaussian-phase models on multidimensional b-tensor encoding** — `S4SphereGaussianPhaseApproximation`
+  (per-Cartesian-component GPA, validated to the analytic PGSE colinear limit) and
+  `C4CylinderGaussianPhaseApproximation` (existing gamma_lm path, unblocked) now evaluate STE/PTE and
+  arbitrary waveforms on both the NumPy and JAX engines.
+- **Gamma-averaged sphere surface relaxivity** `IntraSphereSurfaceRelaxivity` (+ `white_matter.surface.b_hat_sphere`),
+  the sphere sibling of `IntraPoreSurfaceRelaxivity`.
+- **Geometry-aware `SurfaceRelaxivity`** — S/V follows the base compartment (sphere 6/d, cylinder 4/d,
+  plane 2/d), auto-bound via `OccupancyGatedModel`; `exterior_surface_to_volume` now takes a required
+  `geometry`.
+- **Robust multi-modal scheme concatenation** — `AcquisitionScheme.concatenate` resamples every
+  waveform onto a common `dt`, so PGSE + PGSTE + OGSE + b-tensor STE/PTE combine without corrupting
+  the b-tensor blocks.
+- **Fittable capped-cylinder `length`**; `tau` on the spherical-mean scheme; full-spectrum
+  initialization + nesting stress tests (`core/tests/test_full_spectrum_*`).
+
+### Fixed
+- Spherical-mean crashes for isotropic restricted models: `S4`/`S3` (missing `shell_delta`/`tau`) and
+  `DD1Gamma`/`DD2Poisson` around a sphere/dot (`mu_param`); latent `shell_delta` reach in `C4`.
+- `CC3CappedCylinderCallaghanApproximation` construction (stale `n_roots` kwarg); zero-parameter models
+  (e.g. a lone `S1Dot`) now simulate.
+- `AcquisitionScheme.btensor()` uses the exact analytic rank-1 b for colinear PGSE/PGSTE (removes an
+  O(1/n_t) quadrature error that mis-scaled anisotropic Gaussian models).
+
+### Changed (breaking)
+- **Relaxation/relaxivity are opt-in factors only.** `surface_relaxivity` (and `T2`/`T1`) are no longer
+  baked into bare compartments (`S2/S3/S4`, `C2/C3/C4`) or `X0GeneralizedKarger`; add them via
+  `OccupancyGatedModel([... , TransverseRelaxation()/SurfaceRelaxivity()])`.
+- `_S3SphereCallaghanApproximation` → **`S3SphereCallaghanApproximation`** (underscore dropped).
+- `DD2Poisson` mean-diameter parameter renamed `mu` → **`mean_diameter`** (avoids colliding with the
+  fibre orientation, so Poisson distributions work on anisotropic compartments).
+- `SurfaceRelaxivity` with neither a base `diameter` nor an explicit `surface_to_volume` now raises
+  (was a silent no-op).
+
 ## 2.2.0
 
 **Compartment-wise T1 (gated longitudinal relaxation) + PGSTE** — the analytical, occupancy-gated
