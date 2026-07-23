@@ -137,6 +137,20 @@ def exterior_surface_to_volume(f_cell, gamma_shape, gamma_scale_outer_diameter,
     from the extra-cellular compartment, so there is deliberately no default (a
     silent cylinder value would be wrong by 1.5× for a soma/sphere population).
 
+    Single population only.  This returns ``S_ext/V_EA = f·<S/V>_cell / (1-f)``
+    for **one** cell population.  A substrate with more than one cell type
+    (e.g. axons + somas) sharing a single extra-cellular space is **not** the sum
+    of two calls -- the surfaces add but the extra-cellular volume in the
+    denominator is shared:
+
+    .. math::
+        \frac{S_{\mathrm{ext}}}{V_{\mathrm{EA}}}
+        = \frac{\sum_i f_i\,\langle S/V\rangle_i}{1 - \sum_i f_i},
+        \qquad \langle S/V\rangle_i = \frac{k_i}{\beta_i\,(\alpha_i + m_i - 1)}.
+
+    Summing per-population calls uses the wrong per-population ``(1-f_i)``
+    denominators; combine at the surface level with the shared ``(1-\sum_i f_i)``.
+
     Parameters
     ----------
     f_cell : float
