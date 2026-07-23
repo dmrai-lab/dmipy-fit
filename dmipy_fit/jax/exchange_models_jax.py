@@ -156,6 +156,72 @@ def _build_K_jax(kappa, f):
                       [kappa, -kee]])
 
 
+def build_exchange_matrix(kappa, f):
+    """N-pool exchange generator with detailed balance, as an (N,N) matrix.
+
+    For the current two-pool model, ``kappa`` is the intra->extra rate and
+    ``f`` the intra fraction; the reverse rate is ``kappa*f/(1-f)``. Written to
+    accept an (N,N) off-diagonal rate matrix + fractions unchanged when the
+    model becomes N-pool (see issue on the N-pool exchange model); the
+    propagators below are already dimension-agnostic.
+    """
+    kee = kappa * f / (1.0 - f)
+    return jnp.array([[-kappa, kee],
+                      [kappa, -kee]])
+
+
+def karger_matrix_se_signal(K, M0, D, T2, T1, b, dt1, dt2,
+                            tau_exc=0.0, tau_180=0.0):
+    r"""Dimension-agnostic finite-RF **SE** Kärger propagator (one measurement).
+
+    Signal = ``sum(P_fp2 P_180 P_fp1 P_exc M0)`` with each ``P = expm((K - R) t
+    - B*RD)``. ``expm`` is N-agnostic, so this is identical code for N=2, 3, ...
+
+    Parameters
+    ----------
+    K : (N, N)  exchange generator (columns sum to 0).
+    M0 : (N,)   initial magnetisation (= volume fractions).
+    D, T2, T1 : (N,)  per-pool effective diffusivity (m^2/s) and relaxation
+                times (s); use a large sentinel (1e10) for "no relaxation".
+    b : scalar total b-value; split equally B1=B2=b/2.
+    dt1, dt2 : scalar free-precession durations (s).
+    tau_exc, tau_180 : scalar RF-pulse durations (s); 0 = instantaneous.
+    """
+    RT2 = jnp.diag(1.0 / T2)
+    RT1 = jnp.diag(1.0 / T1)
+    RD  = jnp.diag(D)
+    R12 = (2.0 / jnp.pi) * (RT2 + RT1)
+    B = b / 2.0
+    P_exc = jsl.expm((K - R12) * tau_exc)
+    P_fp1 = jsl.expm((K - RT2) * dt1 - B * RD)
+    P_180 = jsl.expm((K - R12) * tau_180)
+    P_fp2 = jsl.expm((K - RT2) * dt2 - B * RD)
+    return jnp.sum(P_fp2 @ P_180 @ P_fp1 @ P_exc @ M0)
+
+
+def karger_matrix_ste_signal(K, M0, D, T2, T1, b, delta, TM, dt6,
+                             tau_90=0.0):
+    r"""Dimension-agnostic finite-RF **STE** Kärger propagator (one measurement).
+
+    Two transverse encoding lobes (``delta``, ``dt6``) bracket a longitudinal
+    mixing window ``TM`` (T1 only); includes the 0.5 stimulated-echo factor.
+    Same N-agnostic structure as :func:`karger_matrix_se_signal`.
+    """
+    RT2 = jnp.diag(1.0 / T2)
+    RT1 = jnp.diag(1.0 / T1)
+    RD  = jnp.diag(D)
+    R12 = (2.0 / jnp.pi) * (RT2 + RT1)
+    B = b / 2.0
+    P_exc   = jsl.expm((K - R12) * tau_90)
+    P_enc1  = jsl.expm((K - RT2) * delta - B * RD)
+    P_store = jsl.expm((K - R12) * tau_90)
+    P_mix   = jsl.expm((K - RT1) * TM)
+    P_rec   = jsl.expm((K - R12) * tau_90)
+    P_enc2  = jsl.expm((K - RT2) * dt6 - B * RD)
+    M_TE = 0.5 * P_enc2 @ P_rec @ P_mix @ P_store @ P_enc1 @ P_exc @ M0
+    return jnp.sum(M_TE)
+
+
 def _karger_matrix_se_jax(D1, D2, T2_1, T2_2, T1_1, T1_2, kappa, f,
                            b, dt1, dt2, tau_exc, tau_180):
     """JAX finite-RF SE Kärger propagator for a single measurement.

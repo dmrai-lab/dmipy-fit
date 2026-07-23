@@ -26,7 +26,9 @@ from .signal_models_jax import (
     c1stick_spherical_mean,
     g2zeppelin_spherical_mean,
 )
-from .exchange_models_jax import karger_signal, karger_isotropic_signal, karger_from_Ri_Re
+from .exchange_models_jax import (
+    karger_signal, karger_isotropic_signal, karger_from_Ri_Re,
+    build_exchange_matrix, karger_matrix_se_signal, karger_matrix_ste_signal)
 from ..signal_models.gaussian_models import G1Ball, G2Zeppelin, G3TemporalZeppelin
 from ..signal_models.exchange_models import X0GeneralizedKarger
 # Backward-compat alias: X1KargerModel was renamed to X0GeneralizedKarger
@@ -575,22 +577,124 @@ def _make_dd2poisson_jax_fn(model_obj, acquisition_scheme=None):
     return dd2poisson_jax_fn
 
 
+def _resolve_karger_diffusion_fn(sub_model, karger_model, acquisition_scheme):
+    """Diffusion-only JAX fn + relaxation keys for one Karger sub-model.
+
+    Returns ``(diff_fn, T2_key, T1_key)`` where ``diff_fn(scheme_jax, params)``
+    is the sub-model's diffusion-only signal. Mirrors NumPy ``_sub_kwargs``: an
+    OccupancyGatedModel is unwrapped to its *base* diffusion model (so no
+    relaxation factor is applied), and the base's diffusion params are mapped
+    from the Karger combined namespace via ``_inverted_parameter_map``. The
+    per-pool ``…_T2`` / ``…_T1`` combined keys are returned for the propagator
+    (None when the pool has no such parameter).
+    """
+    from ..signal_models.attenuation import OccupancyGatedModel
+    inv = karger_model._inverted_parameter_map
+    if isinstance(sub_model, OccupancyGatedModel):
+        base = sub_model.model
+        diff_param_names = list(sub_model._base_names)
+    else:
+        base = sub_model
+        diff_param_names = [p for p in sub_model.parameter_ranges
+                            if p not in ('T2', 'T1')]
+    base_type = type(base)
+    if base_type in _JAX_MODEL_FNS:
+        base_fn = _JAX_MODEL_FNS[base_type]
+    elif base_type in _JAX_MODEL_FACTORIES:
+        base_fn = _JAX_MODEL_FACTORIES[base_type](base, acquisition_scheme)
+    else:
+        raise NotImplementedError(
+            "No JAX implementation for Karger sub-model base {}.".format(
+                base_type.__name__))
+    key_map = {p: inv[(sub_model, p)] for p in diff_param_names}
+    T2_key = inv.get((sub_model, 'T2'))
+    T1_key = inv.get((sub_model, 'T1'))
+
+    def diff_fn(scheme_jax, params):
+        return base_fn(scheme_jax, {p: params[k] for p, k in key_map.items()})
+    return diff_fn, T2_key, T1_key
+
+
+def _make_karger_matrix_jax_fn(model_obj, acquisition_scheme):
+    """Relaxation-coupled (and finite-RF) Kärger via the dimension-agnostic
+    matrix-exponential propagator — the general path.
+
+    Model is two-pool (matching NumPy X0GeneralizedKarger); the propagator is
+    N-agnostic (issue #7 / the N-pool model issue). Each sub-model is evaluated
+    diffusion-only (R_i = -log E_i -> D_i_eff = R_i / b); per-compartment T2/T1
+    are read from the namespace and folded into the SE/STE propagator, which is
+    vmapped over measurements. b0 measurements are normalised to 1.
+    """
+    # Physics guard: the JAX propagator assumes instantaneous RF (tau=0). No
+    # standard scheme constructor sets finite RF durations, but if one is present
+    # the NumPy propagator models it and JAX would silently ignore it -> refuse
+    # rather than misrepresent. (See NumPy X0GeneralizedKarger.__call__.)
+    for _tau in ('tau_exc', 'tau_180', 'tau_90'):
+        _v = getattr(acquisition_scheme, _tau, None)
+        if _v is not None and np.any(np.asarray(_v, dtype=float) > 0):
+            raise NotImplementedError(
+                "solver='jax' Karger relaxation path assumes instantaneous RF, "
+                "but the scheme has finite {} > 0 (modelled only by the NumPy "
+                "propagator). Use solver='brute2fine'.".format(_tau))
+
+    intra_fn, intra_T2k, intra_T1k = _resolve_karger_diffusion_fn(
+        model_obj.model_intra, model_obj, acquisition_scheme)
+    extra_fn, extra_T2k, extra_T1k = _resolve_karger_diffusion_fn(
+        model_obj.model_extra, model_obj, acquisition_scheme)
+    has_TM = getattr(acquisition_scheme, 'TM', None) is not None
+    INF = 1e10
+    B0_THRESH = 1e3   # b < this -> b0, signal normalised to 1 (NumPy convention)
+
+    def _T(params, key):
+        if key is None:
+            return INF
+        v = params.get(key)
+        if v is None:
+            return INF
+        return jnp.where(jnp.isfinite(v), v, INF)
+
+    def fn(scheme_jax, params):
+        b = scheme_jax['bvalues']
+        Delta = scheme_jax['Delta']
+        f = params['f']
+        K = build_exchange_matrix(params['kappa'], f)
+        M0 = jnp.array([f, 1.0 - f])
+
+        EPS = 1e-10
+        Ri = -jnp.log(jnp.maximum(intra_fn(scheme_jax, params), EPS))
+        Re = -jnp.log(jnp.maximum(extra_fn(scheme_jax, params), EPS))
+        bpos = jnp.maximum(b, 1.0)
+        D = jnp.stack([Ri / bpos, Re / bpos], axis=-1)         # (n_m, 2)
+        T2 = jnp.array([_T(params, intra_T2k), _T(params, extra_T2k)])
+        T1 = jnp.array([_T(params, intra_T1k), _T(params, extra_T1k)])
+
+        if has_TM:
+            TM = scheme_jax['tau_par']                          # per-measurement
+            delta = scheme_jax['delta']
+            E = jax.vmap(lambda Dm, bm, dm, tm: karger_matrix_ste_signal(
+                K, M0, Dm, T2, T1, bm, dm, tm, dm))(D, b, delta, TM)
+        else:
+            te = scheme_jax.get('TE')
+            te = (2.0 * Delta) if te is None else te            # fallback 2*Delta
+            dt = te / 2.0                                       # instantaneous RF
+            E = jax.vmap(lambda Dm, bm, dtm: karger_matrix_se_signal(
+                K, M0, Dm, T2, T1, bm, dtm, dtm))(D, b, dt)
+        return jnp.where(b < B0_THRESH, 1.0, E)
+    return fn
+
+
 def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
-    """Factory for X0GeneralizedKarger.  Three variants dispatched at build time:
+    """Factory for X0GeneralizedKarger.
 
-    1. G1Ball + G1Ball        — isotropic Gaussian Kärger (no orientation).
-    2. S4Sphere + G1Ball      — generalized Kärger: R_i = -log(E_i).
-    3. Oriented (Stick/Zepp)  — anisotropic Gaussian Kärger (legacy path).
-
-    All three use the scalar Kärger eigenvalue formula, valid only for pure
-    diffusion+exchange. Coupled relaxation-exchange (a per-compartment T2/T1
-    add-on via OccupancyGatedModel) needs the matrix-exponential propagator,
-    which exists only on the NumPy path — so this factory refuses a relaxation
-    add-on rather than silently dropping it. See GitHub issue #7 for JAX support.
+    No relaxation / instantaneous RF -> fast scalar Kärger eigenvalue formula,
+    dispatched on the sub-model pair (Ball+Ball, S4Sphere+Ball, oriented
+    Stick/Zeppelin). With a compartment-wise T2/T1 add-on (via
+    OccupancyGatedModel), relaxation and exchange do not factor -> route to the
+    general matrix-exponential propagator (``_make_karger_matrix_jax_fn``), which
+    handles arbitrary JAX-supported sub-models. See issue #7.
     """
     from ..signal_models.attenuation import OccupancyGatedModel
 
-    # Guard: the scalar JAX path cannot represent coupled relaxation-exchange.
     has_relaxation_addon = (
         isinstance(model_obj.model_intra, OccupancyGatedModel)
         or isinstance(model_obj.model_extra, OccupancyGatedModel)
@@ -598,15 +702,7 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
                for k in model_obj.parameter_ranges)
     )
     if has_relaxation_addon:
-        raise NotImplementedError(
-            "solver='jax' does not support X0GeneralizedKarger with a relaxation "
-            "add-on (compartment-wise T2/T1 via OccupancyGatedModel). The JAX path "
-            "uses the scalar Kärger formula and cannot represent coupled "
-            "relaxation-exchange, which requires the matrix-exponential propagator "
-            "(NumPy only). Use solver='brute2fine' for relaxation-gated exchange "
-            "models. Tracking JAX support: "
-            "https://github.com/dmrai-lab/dmipy-fit/issues/7"
-        )
+        return _make_karger_matrix_jax_fn(model_obj, acquisition_scheme)
 
     intra_type = type(model_obj.model_intra)
     extra_type = type(model_obj.model_extra)
