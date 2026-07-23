@@ -77,7 +77,8 @@ def test_exterior_sv_derived_from_gamma():
     comps = white_matter_compartments()
     sv = comps[1].factors[0].S_ext_over_V           # extra Zeppelin, ExteriorSurfaceRelaxivity
     expected = exterior_surface_to_volume(
-        DEFAULTS['f_axon'], DEFAULTS['gamma_shape'], DEFAULTS['gamma_scale_outer_diameter'])
+        DEFAULTS['f_axon'], DEFAULTS['gamma_shape'],
+        DEFAULTS['gamma_scale_outer_diameter'], geometry='cylinder')
     assert abs(sv - expected) < 1e-6 * expected
     # explicit override wins
     assert white_matter_compartments(S_ext_over_V=7e5)[1].factors[0].S_ext_over_V == 7e5

@@ -158,3 +158,31 @@ def test_intrasphere_numpy_jax_parity():
     sj = scheme_to_jax(acq)
     b_jax = np.asarray(build_jax_factor(f)(sj, None, {'surface_relaxivity': 25e-6}))
     np.testing.assert_allclose(b_np, b_jax, rtol=1e-4, atol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Exterior (extra-cellular) S/V is geometry-dependent and REQUIRES an explicit
+# geometry -- it cannot be inferred from the extra-cellular compartment, so a
+# silent cylinder default (wrong by 1.5x for a soma population) is disallowed.
+# ---------------------------------------------------------------------------
+
+def test_exterior_surface_to_volume_requires_geometry():
+    from dmipy_fit.white_matter.surface import exterior_surface_to_volume
+    with pytest.raises(TypeError):
+        exterior_surface_to_volume(0.6, 3.0, 1.2e-6)          # missing geometry
+    with pytest.raises(ValueError):
+        exterior_surface_to_volume(0.6, 3.0, 1.2e-6, geometry='blob')
+
+
+def test_exterior_surface_to_volume_geometry_values():
+    """Closed form matches (coeff, alpha+m-1) per geometry; sphere != cylinder."""
+    from dmipy_fit.white_matter.surface import exterior_surface_to_volume
+    f, alpha, s = 0.6, 3.0, 1.2e-6
+    cyl = exterior_surface_to_volume(f, alpha, s, geometry='cylinder')
+    sph = exterior_surface_to_volume(f, alpha, s, geometry='sphere')
+    pln = exterior_surface_to_volume(f, alpha, s, geometry='plane')
+    fac = f / ((1 - f) * s)
+    np.testing.assert_allclose(cyl, 4.0 * fac / (alpha + 1), rtol=1e-12)
+    np.testing.assert_allclose(sph, 6.0 * fac / (alpha + 2), rtol=1e-12)
+    np.testing.assert_allclose(pln, 2.0 * fac / (alpha + 0), rtol=1e-12)
+    assert sph > cyl        # soma EA has higher exterior S/V than axon EA here
