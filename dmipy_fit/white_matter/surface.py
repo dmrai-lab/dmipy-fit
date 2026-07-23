@@ -27,8 +27,28 @@ import numpy as np
 from scipy.special import kv, gamma as gamma_fn
 
 
+def _b_hat_gamma_closed_form(a, beta, c):
+    r"""Gamma-averaged surface attenuation ``E_d[exp(-c/d)]`` for
+    ``d ~ Gamma(shape a, rate beta)`` in closed form:
+
+    .. math:: B = \frac{2 (\beta c)^{a/2}}{\Gamma(a)} K_a(2\sqrt{\beta c}),
+
+    the Bessel-K result of ``\int_0^\infty x^{a-1} e^{-\beta x - c/x} dx``.
+    ``c -> 0`` gives 1 (no relaxation).  Shared by the cylinder
+    (:func:`b_hat_ia`) and sphere (:func:`b_hat_sphere`) forms, which differ
+    only in ``a`` (volume-weight shift) and ``c`` (S/V coefficient)."""
+    c = np.asarray(c, dtype=float)
+    z = 2.0 * np.sqrt(beta * c)
+    with np.errstate(over='ignore', invalid='ignore'):
+        B = 2.0 * (beta * c) ** (a / 2.0) / gamma_fn(a) * kv(a, z)
+    return np.where(c <= 0, 1.0, B)
+
+
 def b_hat_ia(alpha, scale_diameter, rho_int, tau_perp, volume_weighted=True):
-    """Intra-pore Gamma-averaged surface attenuation (eq:b_hat_int_dist).
+    """Intra-pore (cylinder) Gamma-averaged surface attenuation (eq:b_hat_int_dist).
+
+    ``E_d[exp(-rho (4/d) tau)]`` for a cylinder lumen ``d ~ Gamma``: S/V = 4/d,
+    water content per cylinder ~ cross-sectional area d^2.
 
     Parameters
     ----------
@@ -39,17 +59,35 @@ def b_hat_ia(alpha, scale_diameter, rho_int, tau_perp, volume_weighted=True):
     volume_weighted : bool   Use d^2 P(d) (shape alpha+2) to match spin/area
                              weighting.  False = paper's number-weighted form.
     """
-    a = alpha + 2.0 if volume_weighted else alpha
-    beta = 1.0 / scale_diameter                       # rate (1/m)
-    tau_perp = np.asarray(tau_perp, dtype=float)
-    c = 4.0 * rho_int * tau_perp                       # m
-    z = 2.0 * np.sqrt(beta * c)                         # dimensionless
-    # B = 2 (beta c)^(a/2) / Gamma(a) * K_a(z); stable for z>0
-    with np.errstate(over='ignore', invalid='ignore'):
-        B = 2.0 * (beta * c) ** (a / 2.0) / gamma_fn(a) * kv(a, z)
-    # c -> 0 limit is 1 (no relaxation)
-    B = np.where(c <= 0, 1.0, B)
-    return B
+    a = alpha + 2.0 if volume_weighted else alpha      # cylinder: water ~ d^2
+    beta = 1.0 / scale_diameter                        # rate (1/m)
+    c = 4.0 * rho_int * np.asarray(tau_perp, dtype=float)   # S/V = 4/d
+    return _b_hat_gamma_closed_form(a, beta, c)
+
+
+def b_hat_sphere(alpha, scale_diameter, rho_int, tau_perp, volume_weighted=True):
+    """Intra-sphere Gamma-averaged surface attenuation -- the sphere analog of
+    :func:`b_hat_ia`.
+
+    ``E_d[exp(-rho (6/d) tau)]`` for a sphere diameter ``d ~ Gamma``: a sphere
+    has S/V = 3/R = 6/d, and its water content ~ volume d^3, so the spin-average
+    uses the volume-weighted distribution d^3 P(d) -> Gamma(alpha+3).  Same
+    closed form as the cylinder with the coefficient 4->6 and the weight
+    shift +2->+3.
+
+    Parameters
+    ----------
+    alpha : float            Gamma shape over diameter.
+    scale_diameter : float   Gamma scale beta_d (m); rate beta = 1/scale.
+    rho_int : float          Interior surface relaxivity (m/s).
+    tau_perp : float or array  Transverse occupancy time (s).
+    volume_weighted : bool   Use d^3 P(d) (shape alpha+3) to match spin/volume
+                             weighting.  False = number-weighted form.
+    """
+    a = alpha + 3.0 if volume_weighted else alpha      # sphere: water ~ d^3
+    beta = 1.0 / scale_diameter                        # rate (1/m)
+    c = 6.0 * rho_int * np.asarray(tau_perp, dtype=float)   # S/V = 6/d
+    return _b_hat_gamma_closed_form(a, beta, c)
 
 
 def mean_inv_diameter_4(alpha, scale_diameter, volume_weighted=True):
@@ -76,27 +114,48 @@ def b_hat_ea_short(rho_ext, S_ext_over_V, D_inf, TE):
     return np.exp(-kappa_ext * np.sqrt(D_inf * TE / np.pi))
 
 
-def exterior_surface_to_volume(f_axon, gamma_shape, gamma_scale_outer_diameter):
-    r"""Extra-axonal exterior surface-to-volume ratio ``S_ext/V_EA`` (1/m) from the
-    axon **outer** (fibre) diameter Gamma distribution — the same closed form the
-    Monte-Carlo substrate uses (its inner-scale form
-    ``4 f g / ((1-f)(alpha+1) beta_inner)`` re-expressed on the outer scale
-    ``beta_outer = beta_inner / g``, where the g-ratio cancels):
+# Exterior surface-to-volume of a packed cell population, per cell geometry:
+# (coeff, volume-weight power m).  Cell S/V = coeff/d (sphere 6, cylinder 4,
+# plane 2); water content ~ d^m (sphere d^3, cylinder d^2, plane d^1). The
+# volume-weighted <coeff/d> = coeff / (scale (alpha + m - 1)).
+_EXTERIOR_GEOMETRY = {'sphere': (6.0, 3), 'cylinder': (4.0, 2), 'plane': (2.0, 1)}
+
+
+def exterior_surface_to_volume(f_cell, gamma_shape, gamma_scale_outer_diameter,
+                               *, geometry):
+    r"""Exterior surface-to-volume ratio ``S_ext/V_EA`` (1/m) of the extra-cellular
+    space around a packed population of cells with **outer**-diameter Gamma
+    distribution.
 
     .. math::
         \frac{S_{\mathrm{ext}}}{V_{\mathrm{EA}}}
-        = \frac{4\, f_{\mathrm{axon}}}{(1-f_{\mathrm{axon}})\,(\alpha+1)\,\beta_{\mathrm{outer}}}
+        = \frac{k\, f_{\mathrm{cell}}}{(1-f_{\mathrm{cell}})\,(\alpha+m-1)\,\beta_{\mathrm{outer}}}
+
+    with ``(k, m)`` set by the cell geometry: cylinder (axons) ``(4, 2)`` → ``(α+1)``,
+    sphere (somas) ``(6, 3)`` → ``(α+2)``, plane ``(2, 1)`` → ``α``.  ``geometry``
+    is **required** — the exterior S/V depends on cell shape and cannot be inferred
+    from the extra-cellular compartment, so there is deliberately no default (a
+    silent cylinder value would be wrong by 1.5× for a soma/sphere population).
 
     Parameters
     ----------
-    f_axon : float
-        Fibre (OUTER) volume fraction -- the total axon+myelin packing fraction, so
-        ``1 - f_axon`` is the extra-axonal volume.  (Not the lumen fraction.)
+    f_cell : float
+        Cell (OUTER) volume fraction; ``1 - f_cell`` is the extra-cellular volume.
+        For myelinated axons this is the fibre (axon+myelin) packing fraction.
     gamma_shape : float
-        Shape ``alpha`` of the axon diameter Gamma distribution (same for inner/outer).
+        Shape ``alpha`` of the cell outer-diameter Gamma distribution.
     gamma_scale_outer_diameter : float
-        Scale ``beta`` (m) of the **outer** (fibre) diameter Gamma distribution
+        Scale ``beta`` (m) of the outer-diameter Gamma distribution
         (mean outer diameter = ``alpha * beta``).
+    geometry : {'sphere', 'cylinder', 'plane'}
+        Cell shape (required).
     """
-    return (4.0 * f_axon
-            / ((1.0 - f_axon) * (gamma_shape + 1.0) * gamma_scale_outer_diameter))
+    try:
+        coeff, m = _EXTERIOR_GEOMETRY[geometry]
+    except KeyError:
+        raise ValueError(
+            "geometry must be one of {}; got {!r}".format(
+                sorted(_EXTERIOR_GEOMETRY), geometry))
+    return (coeff * f_cell
+            / ((1.0 - f_cell) * (gamma_shape + m - 1.0)
+               * gamma_scale_outer_diameter))

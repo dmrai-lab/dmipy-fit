@@ -37,7 +37,8 @@ from ..core.signal_model_properties import AnisotropicSignalModelProperties
 __all__ = [
     'OccupancyGatedModel', 'TransverseRelaxation', 'LongitudinalRelaxation',
     'SurfaceRelaxivity',
-    'IntraPoreSurfaceRelaxivity', 'ExteriorSurfaceRelaxivity',
+    'IntraPoreSurfaceRelaxivity', 'IntraSphereSurfaceRelaxivity',
+    'ExteriorSurfaceRelaxivity',
 ]
 
 
@@ -121,17 +122,30 @@ class LongitudinalRelaxation(AttenuationFactor):
         return np.exp(-tau_par / T1)
 
 
+# Surface-to-volume ratio of a restricted pore as a multiple of 1/diameter,
+# keyed by the compartment's ``diameter`` parameter geometry. Sphere S/V = 3/R =
+# 6/d; (infinite) cylinder S/V = 2/R = 4/d; plane (slab of thickness d) S/V = 2/d.
+SURFACE_TO_VOLUME_OVER_DIAMETER = {'sphere': 6.0, 'cylinder': 4.0, 'plane': 2.0}
+
+
 class SurfaceRelaxivity(AttenuationFactor):
     r"""Surface relaxivity $\exp(-\rho\,(S/V)\,\tau_\perp)$ (transverse-gated).
 
-    ``S/V`` is taken from ``surface_to_volume`` if given (1/m), else from a base
-    ``diameter`` parameter (``S/V = 4/d`` for a cylinder) when present."""
+    ``S/V`` is taken from ``surface_to_volume`` (1/m) if given. Otherwise it is
+    derived from the base compartment's ``diameter`` parameter as ``coeff / d``,
+    where ``coeff`` depends on the pore geometry: 6 for a sphere, 4 for a
+    cylinder, 2 for a plane. When this factor is attached via
+    :class:`OccupancyGatedModel`, the geometry is read automatically from the
+    base compartment's ``diameter`` parameter type; pass ``geometry`` explicitly
+    to override, or ``surface_to_volume`` to bypass the diameter entirely.
+    Defaults to cylinder (``4/d``) when the geometry is unknown."""
     parameter_ranges = {'surface_relaxivity': (0., 50e-6)}
     parameter_scales = {'surface_relaxivity': 1e-6}
     parameter_types = {'surface_relaxivity': 'normal'}
 
-    def __init__(self, surface_to_volume=None):
+    def __init__(self, surface_to_volume=None, geometry=None):
         self.surface_to_volume = surface_to_volume
+        self.geometry = geometry
 
     def factor(self, acquisition_scheme, mu_cart, base_params, surface_relaxivity=None):
         if not _is_set(surface_relaxivity) \
@@ -142,7 +156,8 @@ class SurfaceRelaxivity(AttenuationFactor):
             d = base_params.get('diameter')
             if not _is_set(d):
                 return 1.0
-            sv = 4.0 / d
+            coeff = SURFACE_TO_VOLUME_OVER_DIAMETER.get(self.geometry, 4.0)
+            sv = coeff / d
         return np.exp(-surface_relaxivity * sv * _tau_perp(acquisition_scheme))
 
 
@@ -176,6 +191,42 @@ class IntraPoreSurfaceRelaxivity(AttenuationFactor):
         inner_scale = g * self.gamma_scale_outer_diameter      # inner = g x outer
         return b_hat_ia(self.gamma_shape, inner_scale, float(surface_relaxivity),
                         _tau_perp(acquisition_scheme), self.volume_weighted)
+
+
+class IntraSphereSurfaceRelaxivity(AttenuationFactor):
+    r"""Intra-sphere surface relaxivity for a compartment modelled as a Gamma
+    distribution of spheres (e.g. a soma / cell-body pool) -- the sphere analog
+    of :class:`IntraPoreSurfaceRelaxivity`.
+
+    Returns the Gamma-averaged surface attenuation
+    ``B = E_d[exp(-rho (6/d) tau_perp)]`` for a sphere diameter
+    ``d ~ Gamma(gamma_shape, gamma_scale_diameter)`` in closed form
+    (:func:`white_matter.surface.b_hat_sphere`): a sphere has ``S/V = 6/d`` and
+    its water content ~ volume ``d^3`` (volume weighting -> shape ``alpha+3``).
+
+    Like :class:`IntraPoreSurfaceRelaxivity`, the Gamma parameters are fixed
+    substrate constants supplied at construction; ``surface_relaxivity`` is the
+    fittable parameter.  Being a scalar per shell, it is spherical-mean
+    separable.  (No g-ratio: spheres carry no myelin sheath.)"""
+    parameter_ranges = {'surface_relaxivity': (0., 50e-6)}
+    parameter_scales = {'surface_relaxivity': 1e-6}
+    parameter_types = {'surface_relaxivity': 'normal'}
+
+    def __init__(self, gamma_shape=2.0, gamma_scale_diameter=1.0e-6,
+                 volume_weighted=True):
+        self.gamma_shape = gamma_shape
+        self.gamma_scale_diameter = gamma_scale_diameter
+        self.volume_weighted = volume_weighted
+
+    def factor(self, acquisition_scheme, mu_cart, base_params,
+               surface_relaxivity=None):
+        if not _is_set(surface_relaxivity) \
+                or getattr(acquisition_scheme, 'TE', None) is None:
+            return 1.0
+        from ..white_matter.surface import b_hat_sphere
+        return b_hat_sphere(self.gamma_shape, self.gamma_scale_diameter,
+                            float(surface_relaxivity),
+                            _tau_perp(acquisition_scheme), self.volume_weighted)
 
 
 class ExteriorSurfaceRelaxivity(AttenuationFactor):
@@ -216,6 +267,18 @@ class OccupancyGatedModel(ModelProperties, AnisotropicSignalModelProperties):
         # delegate acquisition requirements to the base diffusion model
         self._required_acquisition_parameters = list(getattr(
             model, '_required_acquisition_parameters', []))
+
+        # Bind the base compartment's pore geometry onto a SurfaceRelaxivity
+        # factor that didn't specify one, so its S/V = coeff/d uses the right
+        # coefficient (sphere 6, cylinder 4, plane 2) for THIS compartment. A
+        # user-set geometry or explicit surface_to_volume is left untouched.
+        base_diameter_geometry = getattr(
+            model, 'parameter_types', {}).get('diameter')
+        if base_diameter_geometry is not None:
+            for f in self.factors:
+                if (type(f) is SurfaceRelaxivity and f.geometry is None
+                        and f.surface_to_volume is None):
+                    f.geometry = base_diameter_geometry
 
         fr, fs, ft = OrderedDict(), OrderedDict(), OrderedDict()
         for f in self.factors:
