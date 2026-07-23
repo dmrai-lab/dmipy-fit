@@ -511,6 +511,9 @@ class S4SphereGaussianPhaseApproximation(
          'severity': 'info'},
     ]
     _required_acquisition_parameters = ['gradient_strengths', 'delta', 'Delta']
+    # Can evaluate a stored gradient waveform (_G) directly, including
+    # multidimensional b-tensor schemes, via the per-component GPA path.
+    _supports_waveform_scheme = True
 
     _parameter_ranges = {
         'diameter': (1e-2, 20),
@@ -624,11 +627,60 @@ class S4SphereGaussianPhaseApproximation(
         n_m = acquisition_scheme.number_of_measurements
         E_sphere = np.ones(n_m, dtype=float)
 
+        has_waveform = getattr(acquisition_scheme, '_G', None) is not None
+
+        # Route to the general-waveform path when the scheme contains any genuine
+        # multidimensional (non-rank-1) b-tensor measurement -- pure STE/PTE, or
+        # a mixed concatenation of PGSE + b-tensor where a scalar
+        # gradient_strengths is ill-defined on the b-tensor block. Detected from
+        # the b-tensor rank so mixed schemes are handled per measurement rather
+        # than silently treated as b0. Pure colinear PGSE/OGSE schemes keep
+        # their (faster) analytic/OGSE branches below.
+        if has_waveform:
+            Bten = acquisition_scheme.btensor()          # (n_m, 3, 3), s/m^2
+            evals = np.linalg.eigvalsh(Bten)             # ascending
+            bmax = max(float(evals[:, -1].max()), 1.0)
+            multidim = evals[:, -2] > 1e-3 * bmax
+        else:
+            multidim = np.zeros(n_m, dtype=bool)
+
+        def _general_waveform_signal():
+            # Isotropic sphere factorises: the GPA phase variance sums over the
+            # three Cartesian gradient components, so E = prod_i E_1D(G_i(t)).
+            # This reduces exactly to the colinear (single-projection) result
+            # when a measurement's waveform is 1-D, so it is applied uniformly to
+            # b-tensor, mixed, and colinear-without-scalar-strength schemes.
+            dt = float(acquisition_scheme._dt)
+            E = np.ones(n_m, dtype=float)
+            for m in range(n_m):
+                G_vec = np.asarray(acquisition_scheme._G[m], dtype=np.float64)
+                if not np.any(G_vec):        # b0 / no gradient
+                    continue
+                Em = 1.0
+                for i in range(3):
+                    Em *= _ogse_numerical_sphere_signal(
+                        G_vec[:, i], dt, D, R,
+                        self.SPHERE_TRASCENDENTAL_ROOTS)
+                E[m] = Em
+            return E
+
+        if np.any(multidim):
+            # Any genuine multidimensional (b-tensor) measurement present -- pure
+            # STE/PTE or a mixed PGSE+b-tensor concatenation -- so evaluate every
+            # measurement from its waveform rather than a (b-tensor-undefined)
+            # scalar gradient_strengths, which would silently read as b0.
+            return _general_waveform_signal()
+
         if osc_freq is None or np.all(osc_freq == 0):
             # ----------------------------------------------------------------
             # Pure PGSE path — original Murday-Cotts GPA (unchanged)
             # ----------------------------------------------------------------
             g = acquisition_scheme.gradient_strengths
+            if g is None and has_waveform:
+                # Colinear waveform with no scalar gradient_strengths (e.g. a
+                # general from_waveform scheme): use the per-component path,
+                # which reduces to the analytic PGSE result for a 1-D waveform.
+                return _general_waveform_signal()
             delta = acquisition_scheme.delta
             Delta = acquisition_scheme.Delta
             g_nonzero = g > 0

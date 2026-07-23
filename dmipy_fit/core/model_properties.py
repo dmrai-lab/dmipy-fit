@@ -727,10 +727,28 @@ class MultiCompartmentModelProperties:
         self._inverted_parameter_map.update(
             {(None, 'fraction'): parameter_name})
 
+    # PGSE-scalar acquisition parameters that a stored gradient waveform (_G)
+    # encodes implicitly; a model that evaluates the waveform directly does not
+    # need them as separate scheme attributes.
+    _WAVEFORM_SUPERSEDED_PARAMS = ('gradient_strengths', 'delta', 'Delta')
+
     def _check_model_params_with_acquisition_params(self, acquisition_scheme):
+        has_waveform = getattr(acquisition_scheme, '_G', None) is not None
         for model in self.models:
+            waveform_capable = has_waveform and getattr(
+                model, '_supports_waveform_scheme', False)
             for parameter in model._required_acquisition_parameters:
                 if getattr(acquisition_scheme, parameter) is None:
+                    # A stored waveform fully specifies the encoding (incl.
+                    # multidimensional b-tensor schemes with no scalar
+                    # gradient_strengths / delta / Delta). Models that evaluate
+                    # the waveform directly (the Gaussian-phase cylinder/sphere)
+                    # declare _supports_waveform_scheme and are not pre-blocked
+                    # on those parameters; models that need the scalar timing
+                    # (e.g. the temporal zeppelin) still are.
+                    if waveform_capable and \
+                            parameter in self._WAVEFORM_SUPERSEDED_PARAMS:
+                        continue
                     msg = "{} is not compatible with ".format(
                         model.__class__.__name__)
                     msg += "given acquisition scheme because it needs "

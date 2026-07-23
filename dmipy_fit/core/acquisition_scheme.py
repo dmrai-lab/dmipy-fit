@@ -1287,20 +1287,32 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
         if not schemes:
             raise ValueError("concatenate() requires at least one scheme.")
 
-        # Determine shared n_t from the maximum
-        max_n_t = max(s._G.shape[1] for s in schemes)
-        dt = schemes[0]._dt  # Use first scheme's dt (should be compatible)
-
-        # Concatenate waveforms (pad shorter waveforms with zeros)
-        G_parts = []
-        for s in schemes:
-            n_t_s = s._G.shape[1]
-            if n_t_s < max_n_t:
-                pad = np.zeros(
-                    (s._G.shape[0], max_n_t - n_t_s, 3), dtype=np.float32)
-                G_parts.append(np.concatenate([s._G, pad], axis=1))
-            else:
-                G_parts.append(s._G)
+        # Resample every waveform onto a common time grid before concatenating.
+        # Schemes can have different dt (different n_t / total duration, e.g.
+        # PGSE vs OGSE vs b-tensor); using one scheme's dt for all and merely
+        # zero-padding would integrate the others' G(t) on the wrong grid and
+        # silently corrupt their b-tensors. Resample to the finest dt over the
+        # longest duration, zero outside each waveform's own window.
+        dts = np.array([float(s._dt) for s in schemes])
+        durations = np.array([s._G.shape[1] * float(s._dt) for s in schemes])
+        dt = float(dts.min())
+        max_n_t = int(np.ceil(durations.max() / dt - 1e-9))
+        t_new = np.arange(max_n_t) * dt
+        if np.allclose(dts, dt) and all(s._G.shape[1] == max_n_t
+                                        for s in schemes):
+            # Fast path: already a common grid -> no interpolation needed.
+            G_parts = [s._G for s in schemes]
+        else:
+            G_parts = []
+            for s in schemes:
+                G_s = np.asarray(s._G, dtype=np.float64)     # (n_m, n_t_s, 3)
+                t_s = np.arange(G_s.shape[1]) * float(s._dt)
+                out = np.zeros((G_s.shape[0], max_n_t, 3), dtype=np.float32)
+                for mi in range(G_s.shape[0]):
+                    for ci in range(3):
+                        out[mi, :, ci] = np.interp(
+                            t_new, t_s, G_s[mi, :, ci], left=0.0, right=0.0)
+                G_parts.append(out)
         G_cat = np.concatenate(G_parts, axis=0)
 
         def _cat_or_none(attr):
