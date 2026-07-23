@@ -114,27 +114,48 @@ def b_hat_ea_short(rho_ext, S_ext_over_V, D_inf, TE):
     return np.exp(-kappa_ext * np.sqrt(D_inf * TE / np.pi))
 
 
-def exterior_surface_to_volume(f_axon, gamma_shape, gamma_scale_outer_diameter):
-    r"""Extra-axonal exterior surface-to-volume ratio ``S_ext/V_EA`` (1/m) from the
-    axon **outer** (fibre) diameter Gamma distribution — the same closed form the
-    Monte-Carlo substrate uses (its inner-scale form
-    ``4 f g / ((1-f)(alpha+1) beta_inner)`` re-expressed on the outer scale
-    ``beta_outer = beta_inner / g``, where the g-ratio cancels):
+# Exterior surface-to-volume of a packed cell population, per cell geometry:
+# (coeff, volume-weight power m).  Cell S/V = coeff/d (sphere 6, cylinder 4,
+# plane 2); water content ~ d^m (sphere d^3, cylinder d^2, plane d^1). The
+# volume-weighted <coeff/d> = coeff / (scale (alpha + m - 1)).
+_EXTERIOR_GEOMETRY = {'sphere': (6.0, 3), 'cylinder': (4.0, 2), 'plane': (2.0, 1)}
+
+
+def exterior_surface_to_volume(f_cell, gamma_shape, gamma_scale_outer_diameter,
+                               *, geometry):
+    r"""Exterior surface-to-volume ratio ``S_ext/V_EA`` (1/m) of the extra-cellular
+    space around a packed population of cells with **outer**-diameter Gamma
+    distribution.
 
     .. math::
         \frac{S_{\mathrm{ext}}}{V_{\mathrm{EA}}}
-        = \frac{4\, f_{\mathrm{axon}}}{(1-f_{\mathrm{axon}})\,(\alpha+1)\,\beta_{\mathrm{outer}}}
+        = \frac{k\, f_{\mathrm{cell}}}{(1-f_{\mathrm{cell}})\,(\alpha+m-1)\,\beta_{\mathrm{outer}}}
+
+    with ``(k, m)`` set by the cell geometry: cylinder (axons) ``(4, 2)`` → ``(α+1)``,
+    sphere (somas) ``(6, 3)`` → ``(α+2)``, plane ``(2, 1)`` → ``α``.  ``geometry``
+    is **required** — the exterior S/V depends on cell shape and cannot be inferred
+    from the extra-cellular compartment, so there is deliberately no default (a
+    silent cylinder value would be wrong by 1.5× for a soma/sphere population).
 
     Parameters
     ----------
-    f_axon : float
-        Fibre (OUTER) volume fraction -- the total axon+myelin packing fraction, so
-        ``1 - f_axon`` is the extra-axonal volume.  (Not the lumen fraction.)
+    f_cell : float
+        Cell (OUTER) volume fraction; ``1 - f_cell`` is the extra-cellular volume.
+        For myelinated axons this is the fibre (axon+myelin) packing fraction.
     gamma_shape : float
-        Shape ``alpha`` of the axon diameter Gamma distribution (same for inner/outer).
+        Shape ``alpha`` of the cell outer-diameter Gamma distribution.
     gamma_scale_outer_diameter : float
-        Scale ``beta`` (m) of the **outer** (fibre) diameter Gamma distribution
+        Scale ``beta`` (m) of the outer-diameter Gamma distribution
         (mean outer diameter = ``alpha * beta``).
+    geometry : {'sphere', 'cylinder', 'plane'}
+        Cell shape (required).
     """
-    return (4.0 * f_axon
-            / ((1.0 - f_axon) * (gamma_shape + 1.0) * gamma_scale_outer_diameter))
+    try:
+        coeff, m = _EXTERIOR_GEOMETRY[geometry]
+    except KeyError:
+        raise ValueError(
+            "geometry must be one of {}; got {!r}".format(
+                sorted(_EXTERIOR_GEOMETRY), geometry))
+    return (coeff * f_cell
+            / ((1.0 - f_cell) * (gamma_shape + m - 1.0)
+               * gamma_scale_outer_diameter))
