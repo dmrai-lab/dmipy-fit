@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dmipy-fit"
-version = "2.2.0"
+version = "2.3.0"
 description = "dmipy-fit: analytical diffusion-microstructure signal models + JAX GPU fitting"
 readme = "README.md"
 license = { text = "AGPL-3.0-only OR LicenseRef-Commercial" }  # dual-licensed; see LICENSING.md
