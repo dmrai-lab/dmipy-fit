@@ -558,14 +558,18 @@ class DD2Poisson(ModelProperties):
         'default_parameters': {},
     }
     _validity_constraints = []
-    _parameter_ranges = {'mu': (0.1, 20.)}
-    _parameter_scales = {'mu': BETA_SCALING}   # 1 µm
-    _parameter_types = {'mu': 'normal'}
+    # Named 'mean_diameter' (not 'mu') so it never collides with a fibre
+    # orientation 'mu' when this distribution wraps an anisotropic compartment;
+    # the rotational-harmonics kernel keys the fibre axis off params ending in
+    # 'mu', which this deliberately does not.
+    _parameter_ranges = {'mean_diameter': (0.1, 20.)}
+    _parameter_scales = {'mean_diameter': BETA_SCALING}   # 1 µm
+    _parameter_types = {'mean_diameter': 'normal'}
     _model_type = 'SpatialDistribution'
 
-    def __init__(self, mu=None, Nsteps=30, normalization='standard',
+    def __init__(self, mean_diameter=None, Nsteps=30, normalization='standard',
                  gridsize=50):
-        self.mu = mu
+        self.mean_diameter = mean_diameter
         self.Nsteps = Nsteps
 
         if normalization == 'standard':
@@ -606,8 +610,8 @@ class DD2Poisson(ModelProperties):
         function of mu) so that __call__ avoids the 500-point CDF scan on
         every forward pass.  Same 99.5% weighted-CDF criterion as DD1Gamma.
         """
-        mu_range = (np.array(self._parameter_ranges['mu']) *
-                    self._parameter_scales['mu'])
+        mu_range = (np.array(self._parameter_ranges['mean_diameter']) *
+                    self._parameter_scales['mean_diameter'])
         mu_linspace = np.linspace(mu_range[0], mu_range[1], gridsize)
 
         start_pts = np.empty(gridsize)
@@ -645,7 +649,7 @@ class DD2Poisson(ModelProperties):
         pdf_normalized : np.ndarray, shape (Nsteps,)
             Normalized probability weights (area under radii × pdf_normalized = 1).
         """
-        mu = kwargs.get('mu', self.mu)
+        mu = kwargs.get('mean_diameter', self.mean_diameter)
         # Gamma(alpha, scale=beta) with beta=1µm gives variance=mean in µm.
         alpha = mu / BETA_SCALING
         gamma_distribution = stats.gamma(alpha, scale=BETA_SCALING)
