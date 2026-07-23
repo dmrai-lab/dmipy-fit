@@ -1575,6 +1575,14 @@ class SphericalMeanAcquisitionScheme:
         self.gradient_strengths = gradient_strengths
         self.Delta = Deltas
         self.delta = deltas
+        # Effective diffusion time tau = Delta - delta/3, same convention as the
+        # full PGSEAcquisitionScheme, so tau-dependent isotropic models (e.g. the
+        # S3 Callaghan sphere) work in the spherical-mean path instead of raising
+        # AttributeError on a missing `tau`.
+        self.tau = None
+        if deltas is not None and Deltas is not None:
+            self.tau = np.asarray(Deltas, dtype=float) \
+                - np.asarray(deltas, dtype=float) / 3.0
         # Per-shell TE so occupancy-gated relaxation factors (T2 / surface
         # relaxivity) apply in the spherical-mean path just as they do in the full
         # signal. None when the scheme has no TE; diffusion-only models ignore it.

@@ -74,14 +74,19 @@ class CC2CappedCylinderStejskalTannerApproximation(
         self._plane_model = plane_models.P2PlaneStejskalTannerApproximation(
             diameter=length)
 
-        self._parameter_ranges = self._cylinder_model._parameter_ranges.copy()
-        self._parameter_ranges.update(self._plane_model._parameter_ranges)
-
-        self._parameter_scales = self._cylinder_model._parameter_scales.copy()
-        self._parameter_scales.update(self._plane_model._parameter_scales)
-
-        self._parameter_types = self._cylinder_model._parameter_types.copy()
-        self._parameter_types.update(self._plane_model._parameter_types)
+        # Expose the cylinder's (mu, lambda_par, diameter) AND the plane's size
+        # as a distinct fittable 'length' parameter. Previously the plane's
+        # 'diameter' key overwrote the cylinder's, so 'length' was never exposed
+        # (and defaulted to None -> the signal crashed unless length was fixed).
+        self._parameter_ranges = dict(self._cylinder_model._parameter_ranges)
+        self._parameter_ranges['length'] = \
+            self._plane_model._parameter_ranges['diameter']
+        self._parameter_scales = dict(self._cylinder_model._parameter_scales)
+        self._parameter_scales['length'] = \
+            self._plane_model._parameter_scales['diameter']
+        self._parameter_types = dict(self._cylinder_model._parameter_types)
+        self._parameter_types['length'] = \
+            self._plane_model._parameter_types['diameter']
 
     def __call__(self, acquisition_scheme, **kwargs):
         r'''
@@ -211,16 +216,19 @@ class CC3CappedCylinderCallaghanApproximation(
         self._plane_model = plane_models.P3PlaneCallaghanApproximation(
             diameter=length,
             diffusion_constant=self.diffusion_intra,
-            n_roots=self.number_of_roots_plane)
+            number_of_roots=self.number_of_roots_plane)
 
-        self._parameter_ranges = self._cylinder_model._parameter_ranges.copy()
-        self._parameter_ranges.update(self._plane_model._parameter_ranges)
-
-        self._parameter_scales = self._cylinder_model._parameter_scales.copy()
-        self._parameter_scales.update(self._plane_model._parameter_scales)
-
-        self._parameter_types = self._cylinder_model._parameter_types.copy()
-        self._parameter_types.update(self._plane_model._parameter_types)
+        # Expose the cylinder's (mu, lambda_par, diameter) AND the plane's size
+        # as a distinct fittable 'length' parameter (see CC2 note).
+        self._parameter_ranges = dict(self._cylinder_model._parameter_ranges)
+        self._parameter_ranges['length'] = \
+            self._plane_model._parameter_ranges['diameter']
+        self._parameter_scales = dict(self._cylinder_model._parameter_scales)
+        self._parameter_scales['length'] = \
+            self._plane_model._parameter_scales['diameter']
+        self._parameter_types = dict(self._cylinder_model._parameter_types)
+        self._parameter_types['length'] = \
+            self._plane_model._parameter_types['diameter']
 
     def __call__(self, acquisition_scheme, **kwargs):
         r'''
