@@ -851,7 +851,12 @@ class SD1WatsonDistributed(DistributedModel, AnisotropicSignalModelProperties):
         """
         rh_scheme = acquisition_scheme.rotational_harmonics_scheme
         rh_scheme.rotational_harmonics_scheme = rh_scheme
-        kwargs.update({self.mu_param: [0., 0.]})
+        # Isotropic distributed compartments (e.g. a Gamma-distributed sphere)
+        # have no orientation parameter, so mu_param is never set. Their signal
+        # is orientation-independent -> the RH kernel is the l=0 term and no mu
+        # needs fixing. Only pin the fibre axis when an orientation exists.
+        if getattr(self, 'mu_param', None) is not None:
+            kwargs.update({self.mu_param: [0., 0.]})
         E_kernel_sf = self(rh_scheme, **kwargs)
         E_reshaped = E_kernel_sf.reshape([-1, rh_scheme.Nsamples])
         max_sh_order = max(rh_scheme.shell_sh_orders.values())
@@ -1022,7 +1027,12 @@ class DD1GammaDistributed(DistributedModel, AnisotropicSignalModelProperties):
             Rotational harmonics coefficients for each shell.
         """
         rh_scheme = acquisition_scheme.rotational_harmonics_scheme
-        kwargs.update({self.mu_param: [0., 0.]})
+        # Isotropic distributed compartments (e.g. a Gamma-distributed sphere)
+        # have no orientation parameter, so mu_param is never set. Their signal
+        # is orientation-independent -> the RH kernel is the l=0 term and no mu
+        # needs fixing. Only pin the fibre axis when an orientation exists.
+        if getattr(self, 'mu_param', None) is not None:
+            kwargs.update({self.mu_param: [0., 0.]})
         E_kernel_sf = self(rh_scheme, **kwargs)
         E_reshaped = E_kernel_sf.reshape([-1, rh_scheme.Nsamples])
         max_sh_order = max(rh_scheme.shell_sh_orders.values())
@@ -1153,7 +1163,12 @@ class DD2PoissonDistributed(DistributedModel, AnisotropicSignalModelProperties):
             Rotational harmonics coefficients for each shell.
         """
         rh_scheme = acquisition_scheme.rotational_harmonics_scheme
-        kwargs.update({self.mu_param: [0., 0.]})
+        # Isotropic distributed compartments (e.g. a Gamma-distributed sphere)
+        # have no orientation parameter, so mu_param is never set. Their signal
+        # is orientation-independent -> the RH kernel is the l=0 term and no mu
+        # needs fixing. Only pin the fibre axis when an orientation exists.
+        if getattr(self, 'mu_param', None) is not None:
+            kwargs.update({self.mu_param: [0., 0.]})
         E_kernel_sf = self(rh_scheme, **kwargs)
         E_reshaped = E_kernel_sf.reshape([-1, rh_scheme.Nsamples])
         max_sh_order = max(rh_scheme.shell_sh_orders.values())
