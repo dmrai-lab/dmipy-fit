@@ -625,6 +625,18 @@ def _make_karger_matrix_jax_fn(model_obj, acquisition_scheme):
     are read from the namespace and folded into the SE/STE propagator, which is
     vmapped over measurements. b0 measurements are normalised to 1.
     """
+    # Physics guard: the JAX propagator assumes instantaneous RF (tau=0). No
+    # standard scheme constructor sets finite RF durations, but if one is present
+    # the NumPy propagator models it and JAX would silently ignore it -> refuse
+    # rather than misrepresent. (See NumPy X0GeneralizedKarger.__call__.)
+    for _tau in ('tau_exc', 'tau_180', 'tau_90'):
+        _v = getattr(acquisition_scheme, _tau, None)
+        if _v is not None and np.any(np.asarray(_v, dtype=float) > 0):
+            raise NotImplementedError(
+                "solver='jax' Karger relaxation path assumes instantaneous RF, "
+                "but the scheme has finite {} > 0 (modelled only by the NumPy "
+                "propagator). Use solver='brute2fine'.".format(_tau))
+
     intra_fn, intra_T2k, intra_T1k = _resolve_karger_diffusion_fn(
         model_obj.model_intra, model_obj, acquisition_scheme)
     extra_fn, extra_T2k, extra_T1k = _resolve_karger_diffusion_fn(
