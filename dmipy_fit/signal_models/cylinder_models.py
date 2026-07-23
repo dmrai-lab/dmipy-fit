@@ -611,6 +611,9 @@ class C4CylinderGaussianPhaseApproximation(
     _required_acquisition_parameters = [
         'bvalues', 'gradient_directions',
         'gradient_strengths', 'delta', 'Delta']
+    # Can evaluate a stored gradient waveform (_G) directly, including rotating
+    # / multidimensional b-tensor schemes, via the gamma_lm eigenmode path.
+    _supports_waveform_scheme = True
 
     _parameter_ranges = {
         'mu': ([0, np.pi], [-np.pi, np.pi]),
