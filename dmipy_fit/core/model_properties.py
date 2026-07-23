@@ -150,7 +150,10 @@ class MultiCompartmentModelProperties:
                     parameters.get(parameter, np.nan)
                     if parameter.endswith('_T2')
                     else parameters[parameter])
-            parameter_vector = np.hstack(parameter_vector)
+            # A model with zero fittable parameters (e.g. a lone S1Dot) yields an
+            # empty list; np.hstack([]) would raise, so return an empty vector.
+            parameter_vector = (np.hstack(parameter_vector) if parameter_vector
+                                else np.zeros(0, dtype=float))
         elif len(set(parameter_shapes)) == 1:
             for parameter, card in self.parameter_cardinality.items():
                 value = np.atleast_1d(

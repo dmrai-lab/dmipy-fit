@@ -264,6 +264,7 @@ class OccupancyGatedModel(ModelProperties, AnisotropicSignalModelProperties):
     def __init__(self, model, factors=None):
         self.model = model
         self.factors = list(factors or [])
+
         # delegate acquisition requirements to the base diffusion model
         self._required_acquisition_parameters = list(getattr(
             model, '_required_acquisition_parameters', []))
@@ -279,6 +280,20 @@ class OccupancyGatedModel(ModelProperties, AnisotropicSignalModelProperties):
                 if (type(f) is SurfaceRelaxivity and f.geometry is None
                         and f.surface_to_volume is None):
                     f.geometry = base_diameter_geometry
+
+        # Guard: a SurfaceRelaxivity that can resolve neither a diameter (from
+        # the base) nor an explicit surface_to_volume silently evaluates to 1.0
+        # (no relaxivity) -- a footgun for a user who added it expecting an
+        # effect. Refuse at construction.
+        for f in self.factors:
+            if (type(f) is SurfaceRelaxivity and f.surface_to_volume is None
+                    and base_diameter_geometry is None):
+                raise ValueError(
+                    "SurfaceRelaxivity needs a surface-to-volume ratio: the "
+                    "base compartment {} has no 'diameter' parameter and no "
+                    "surface_to_volume was given, so the factor would be a "
+                    "silent no-op. Pass SurfaceRelaxivity(surface_to_volume=...)."
+                    .format(type(model).__name__))
 
         fr, fs, ft = OrderedDict(), OrderedDict(), OrderedDict()
         for f in self.factors:

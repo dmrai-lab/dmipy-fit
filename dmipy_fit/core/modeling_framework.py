@@ -558,6 +558,11 @@ class MultiCompartmentModel(MultiCompartmentModelProperties):
                 **parameters_array_or_dict)
 
         x0_at_least_2d = np.atleast_2d(x0)
+        if x0_at_least_2d.shape[-1] == 0:
+            # Zero-parameter model (e.g. a lone S1Dot): the signal is fully
+            # determined, so there is a single deterministic measurement vector
+            # and no voxel/parameter axis to loop over.
+            return np.asarray(self(acquisition_scheme))
         x0_2d = x0_at_least_2d.reshape(-1, x0_at_least_2d.shape[-1])
         E_2d = np.empty(np.r_[x0_2d.shape[:-1], Ndata])
         for i, x0_ in enumerate(x0_2d):

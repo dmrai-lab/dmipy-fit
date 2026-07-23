@@ -523,7 +523,7 @@ def _make_dd2poisson_jax_fn(model_obj, acquisition_scheme=None):
     params keys expected (local names, SI units):
         'C3CylinderCallaghanApproximation_1_mu'        — [theta, phi] rad
         'C3CylinderCallaghanApproximation_1_lambda_par' — m²/s
-        'DD2Poisson_1_mu'                              — mean diameter, metres
+        'DD2Poisson_1_mean_diameter'                   — mean diameter, metres
     """
     inner_c3 = next(m for m in model_obj.models
                     if isinstance(m, C3CylinderCallaghanApproximation))
@@ -539,7 +539,7 @@ def _make_dd2poisson_jax_fn(model_obj, acquisition_scheme=None):
     _BETA = np.float64(1e-6)   # fixed scale = 1 µm (Poisson parameterization)
 
     def dd2poisson_jax_fn(scheme_jax, params):
-        mu_diam    = params['DD2Poisson_1_mu']   # mean diameter (metres)
+        mu_diam    = params['DD2Poisson_1_mean_diameter']   # mean diameter (m)
         mu_cart    = unitsphere2cart_1d_jax(
             params['C3CylinderCallaghanApproximation_1_mu'])
         lambda_par = params[
