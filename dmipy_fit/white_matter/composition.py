@@ -114,7 +114,8 @@ def white_matter_compartments(include_csf: bool = False, *,
     """
     if S_ext_over_V is None:
         S_ext_over_V = exterior_surface_to_volume(
-            f_axon, gamma_shape, gamma_scale_outer_diameter)
+            f_axon, gamma_shape, gamma_scale_outer_diameter,
+            geometry='cylinder')
     intra = OccupancyGatedModel(C1Stick(), [
         IntraPoreSurfaceRelaxivity(
             gamma_shape=gamma_shape,
