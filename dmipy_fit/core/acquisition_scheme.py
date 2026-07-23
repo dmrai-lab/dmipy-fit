@@ -216,6 +216,13 @@ class PGSEAcquisitionScheme:
             if self.gradient_strengths is not None:
                 self.shell_gradient_strengths = (
                     self.gradient_strengths[first_indices])
+            # Timing contract: `delta`/`Delta` are PER-MEASUREMENT (length
+            # number_of_measurements) and are what a model's __call__ reads;
+            # `shell_delta`/`shell_Delta` are the PER-SHELL representatives
+            # (length N_shells), for per-shell code paths (spherical_mean /
+            # rotational_harmonics). The SphericalMeanAcquisitionScheme is
+            # already per-shell and stores those values under `delta`/`Delta`
+            # with no `shell_delta` -- see its docstring.
             self.shell_delta = None
             if self.delta is not None:
                 self.shell_delta = self.delta[first_indices]
@@ -1523,7 +1530,28 @@ class RotationalHarmonicsAcquisitionScheme:
 
 
 class SphericalMeanAcquisitionScheme:
-    "Acquisition scheme for isotropic spherical mean models."
+    r"""Acquisition scheme for spherical-mean models -- already reduced to one
+    entry per shell.
+
+    Timing-attribute contract (see also ``PGSEAcquisitionScheme``)
+    -------------------------------------------------------------
+    A model's ``__call__`` runs **per measurement**, so it must read the
+    per-measurement timings ``.delta`` / ``.Delta`` (and ``.bvalues`` /
+    ``.qvalues`` / ...), which every scheme type exposes. On this scheme each
+    "measurement" **is** a shell, so ``.delta`` / ``.Delta`` here already hold the
+    per-shell values (constructed from the full scheme's ``shell_delta`` /
+    ``shell_Delta``) and ``number_of_measurements == N_shells``.
+
+    This scheme deliberately does **not** define ``shell_delta`` / ``shell_Delta``
+    -- those are the *per-shell representatives of a finer per-measurement scheme*
+    (the full ``AcquisitionScheme`` and the ``RotationalHarmonicsAcquisitionScheme``
+    carry them). A ``__call__`` that reaches for ``acquisition_scheme.shell_delta``
+    is a category error: it works on the full/RH scheme but raises here. Use
+    ``.delta`` / ``.Delta`` and derive any unique-timing grouping locally
+    (``np.unique([delta, Delta], axis=1)``). Per-shell code paths that always
+    receive a full/RH scheme -- ``spherical_mean`` / ``rotational_harmonics_
+    representation`` overrides -- may use ``shell_delta`` / ``shell_Delta``.
+    """
 
     def __init__(self, bvalues, qvalues,
                  gradient_strengths, Deltas, deltas, TE=None, TM=None,
