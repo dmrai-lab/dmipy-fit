@@ -37,11 +37,6 @@ def _eval_np_jax(karger, scheme, params):
     return E_np, E_jax
 
 
-@pytest.mark.xfail(reason="anisotropic sub-model numpy<->jax gap: numpy "
-                          "stick/zeppelin use btensor() (finite-pulse b), jax "
-                          "uses nominal bvalues; pre-existing, not Karger. "
-                          "Blocks tight anisotropic parity until reconciled.",
-                   strict=False)
 def test_jax_matches_numpy_pgse_gated_stick_zeppelin():
     """PGSE, per-compartment T2/T1 (T1 inert on SE): JAX == NumPy propagator."""
     karger = X0GeneralizedKarger(_gated(C1Stick()), _gated(G2Zeppelin()))

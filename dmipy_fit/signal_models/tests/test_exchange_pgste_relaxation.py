@@ -256,21 +256,33 @@ def test_karger_relaxation_via_occupancy_gated_addon():
     npt.assert_allclose(E_relax, E_direct, atol=1e-9)
 
 
-def test_jax_karger_refuses_relaxation_addon():
-    """solver='jax' can't represent coupled relaxation-exchange (scalar formula,
-    no matrix propagator). Building the JAX fn for a relaxation-gated Karger must
-    raise loudly rather than silently drop relaxation. See issue #7."""
+def test_jax_karger_builds_relaxation_path_and_matches_numpy():
+    """solver='jax' now handles coupled relaxation-exchange via the matrix
+    propagator (issue #7): building the JAX fn for a relaxation-gated Karger no
+    longer raises, and it reproduces the NumPy signal (isotropic here -> exact)."""
     import pytest
     pytest.importorskip("jax")
+    import jax.numpy as jnp
     from dmipy_fit.signal_models.attenuation import (
         OccupancyGatedModel, TransverseRelaxation)
     from dmipy_fit.jax.multicompartment_jax import _make_x1karger_jax_fn
+    from dmipy_fit.jax.jax_compat import scheme_to_jax
 
     gated = X0GeneralizedKarger(
-        OccupancyGatedModel(G1Ball(), [TransverseRelaxation()]), G1Ball())
-    with pytest.raises(NotImplementedError, match="relaxation add-on"):
-        _make_x1karger_jax_fn(gated)
+        OccupancyGatedModel(G1Ball(), [TransverseRelaxation()]),
+        OccupancyGatedModel(G1Ball(), [TransverseRelaxation()]))
+    scheme = AcquisitionScheme.from_pgse(
+        B, BVECS, delta=DELTA, Delta=DELTA + TM, TE=2 * DELTA + TM)
+    fn = _make_x1karger_jax_fn(gated, scheme)          # must not raise
+    params = dict(f=F, kappa=KAPPA,
+                  OccupancyGatedModel_1_lambda_iso=D1,
+                  OccupancyGatedModel_2_lambda_iso=D2,
+                  OccupancyGatedModel_1_T2=T2_1, OccupancyGatedModel_2_T2=T2_2)
+    E_np = np.asarray(gated(scheme, **params))
+    E_jax = np.asarray(fn(scheme_to_jax(scheme),
+                          {k: jnp.asarray(v) for k, v in params.items()}))
+    npt.assert_allclose(E_jax, E_np, rtol=2e-4, atol=2e-5)
 
-    # Relaxation-free Karger is unaffected (still builds a scalar fast path).
+    # Relaxation-free Karger still builds the scalar fast path.
     plain = X0GeneralizedKarger(G1Ball(), G1Ball())
     assert _make_x1karger_jax_fn(plain) is not None

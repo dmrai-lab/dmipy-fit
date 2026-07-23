@@ -841,7 +841,9 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
         from dmipy_sim.sequences import Sequence as _Sequence
         seq = _Sequence.from_pgse(bvalues, gradient_directions, delta, Delta,
                                   TE=TE, n_t=n_t, slew_rate=slew_rate)
-        return cls._wrap_sequence(seq, min_b_shell_distance, b0_threshold)
+        inst = cls._wrap_sequence(seq, min_b_shell_distance, b0_threshold)
+        inst._colinear_pgse = True   # exact rank-1 b-tensor (see btensor())
+        return inst
 
     @classmethod
     def from_pgste(cls, bvalues, gradient_directions, delta, TM, TE=None,
@@ -1241,6 +1243,18 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
             For STE: B ≈ (b_trace/3) × I₃.
         """
         if hasattr(self, '_btensor_cache'):
+            return self._btensor_cache
+
+        # Colinear single-direction encoding (PGSE/PGSTE) has an exact rank-1
+        # b-tensor B = b * n⊗n. Use the analytic form from the stored nominal
+        # b-values rather than numerically integrating the discretised waveform:
+        # the latter carries an O(1/n_t) quadrature error (~0.4% at the default
+        # n_t=1000, worse for short pulses) that otherwise makes Gaussian
+        # anisotropic models (stick/zeppelin) disagree with the analytic b used
+        # by G1Ball and the JAX backend. Genuine rotating / multidimensional
+        # (b-tensor-encoding) waveforms are NOT colinear and keep the integral.
+        if getattr(self, '_colinear_pgse', False):
+            self._btensor_cache = super(AcquisitionScheme, self).btensor()
             return self._btensor_cache
 
         gamma = CONSTANTS['water_gyromagnetic_ratio']
