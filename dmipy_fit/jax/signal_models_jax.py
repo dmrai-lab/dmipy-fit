@@ -339,7 +339,9 @@ def s4sphere_ogse_signal_jax(G_waveform, dt, diameter, diffusion_constant,
     Parameters
     ----------
     G_waveform : jnp.array, shape (n_t, 3), T/m — gradient waveform for one
-        measurement (projected onto isotropic sphere; uses x-component as proxy).
+        measurement. The isotropic sphere factorises over the three Cartesian
+        components, so any waveform (colinear PGSE/OGSE or multidimensional
+        b-tensor STE/PTE) is handled exactly.
     dt : float, timestep in seconds
     diameter : float, sphere diameter in m
     diffusion_constant : float, D in m²/s
@@ -360,10 +362,6 @@ def s4sphere_ogse_signal_jax(G_waveform, dt, diameter, diffusion_constant,
     R = diameter / 2.0
     D = diffusion_constant
 
-    # Scalar projection along gradient direction (isotropic sphere: any dir)
-    # Use x-component of the waveform as the signed scalar gradient.
-    G_t = G_waveform[:, 0]  # (n_t,)
-
     mu_k = roots_jax                        # (n_roots,)
     lam_k = (mu_k / R) ** 2               # (n_roots,)
     B_k = 2.0 * (R / mu_k) ** 2 / (mu_k ** 2 - 2.0)  # (n_roots,)
@@ -373,7 +371,7 @@ def s4sphere_ogse_signal_jax(G_waveform, dt, diameter, diffusion_constant,
     # I_k = 2 * Σ_n G(t_n) * H_n * dt
     # We use vmap over roots_jax.
 
-    def compute_I_k(lkd):
+    def compute_I_k(lkd, G_t):
         """Compute I_k for a single eigenmode with decay lkd = λ_k D."""
         decay_step = jnp.exp(-lkd * dt)
 
@@ -387,7 +385,14 @@ def s4sphere_ogse_signal_jax(G_waveform, dt, diameter, diffusion_constant,
         return I_k
 
     lkD = lam_k * D                       # (n_roots,)
-    I_k_all = jax.vmap(compute_I_k)(lkD)  # (n_roots,)
+    # Isotropic sphere factorises: the GPA phase adds over the three Cartesian
+    # gradient components (φ = Σ_c φ_c ⇒ E = Π_c exp(-φ_c)), so sum each
+    # eigenmode's I_k over x, y, z. This is exact for any waveform -- colinear
+    # PGSE/OGSE (reduces to the single-component result) and multidimensional
+    # b-tensor encoding (STE/PTE) alike -- instead of projecting onto one axis.
+    I_k_all = sum(
+        jax.vmap(lambda lkd, c=c: compute_I_k(lkd, G_waveform[:, c]))(lkD)
+        for c in range(3))
 
     phi = 0.5 * gyromagnetic_ratio ** 2 * jnp.sum(B_k * I_k_all)
     return jnp.exp(-phi)
