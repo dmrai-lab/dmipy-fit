@@ -34,14 +34,20 @@ intra_fraction = fit.fitted_parameters["partial_volume_1"]
 ## The signal model
 
 dmipy-fit models the measured signal as a sum of compartments, each carrying its diffusion
-attenuation times its (transverse) relaxation contrasts:
+attenuation times its relaxation contrasts:
 
 $$
 S \;=\; S_0 \sum_i f_i \;
 \underbrace{E^{\mathrm{diff}}_i(b)}_{\text{diffusion}} \;
 \underbrace{e^{-\mathrm{TE}/T_{2,i}}}_{T_2} \;
+\underbrace{e^{-\mathrm{TM}/T_{1,i}}}_{T_1\ (\text{PGSTE})} \;
 \underbrace{\hat B^{\mathrm{surf}}_i(\mathrm{TE})}_{\text{surface relaxivity}}
 $$
+
+The transverse factors ($T_2$, surface relaxivity) act over the echo time $\mathrm{TE}$; on a
+stimulated-echo (PGSTE) sequence the magnetisation is stored along the field during the mixing
+time $\mathrm{TM}$, so those gate off and longitudinal $T_1$ relaxation acts instead. On a plain
+spin echo (no $\mathrm{TM}$) the $T_1$ factor is the identity.
 
 Magnetisation is treated as fully transverse (ideal instantaneous pulses). Each non-diffusion
 effect is an **occupancy-gated factor** — a multiplicative attenuation that attaches to *any*
@@ -52,8 +58,9 @@ compartment via `OccupancyGatedModel`, so any subset composes by listing more fa
 - **Signal models** (`signal_models/`) — sticks/cylinders, sphere, Gaussian (ball/zeppelin),
   plane, capped cylinder, tissue-response; b-tensor / free-waveform aware.
 - **Occupancy-gated factors** (`signal_models/attenuation.py`) — `OccupancyGatedModel` +
-  `TransverseRelaxation`, `IntraPoreSurfaceRelaxivity`, `ExteriorSurfaceRelaxivity`. Relaxation
-  and surface relaxivity as composable add-ons to any compartment.
+  `TransverseRelaxation` ($T_2$), `LongitudinalRelaxation` ($T_1$, PGSTE mixing time),
+  `IntraPoreSurfaceRelaxivity`, `ExteriorSurfaceRelaxivity`. Relaxation and surface relaxivity
+  as composable add-ons to any compartment.
 - **Fitting framework** (`core/`) — `MultiCompartmentModel`, spherical-mean and
   spherical-harmonics frameworks, fitted-model properties.
 - **Distributions** (`distributions/`) — Watson / Bingham dispersion, Gamma diameter.
