@@ -2,12 +2,14 @@
 import numpy as np
 from ..core.modeling_framework import ModelProperties
 from ..core.constants import CONSTANTS
+from ._restricted_matrix import matrix_restricted_signal, project_fixed_direction, pgse_waveform
 
 DIAMETER_SCALING = 1e-6
 
 
 __all__ = [
-    'P3PlaneCallaghanApproximation'
+    'P3PlaneCallaghanApproximation',
+    'P5PlaneMatrixMethod'
 ]
 
 
@@ -220,3 +222,80 @@ class P3PlaneCallaghanApproximation(ModelProperties):
             q[q_nonzero], tau[q_nonzero], diameter
         )
         return E_plane
+
+
+class P5PlaneMatrixMethod(ModelProperties):
+    r"""Exact matrix / multiple-correlation-function model of diffusion between two parallel planes
+    (a 1-D slab) for an *arbitrary* gradient waveform (Callaghan 1997; Grebenkov 2007). The
+    Stejskal-Tanner (P2) and Callaghan (P3) plane models are its short-pulse limits. Like P2/P3 this is
+    a 1-D building block: the gradient is taken along the restricting axis. Consumes the stored waveform
+    ``_G`` when present; otherwise reconstructs a rectangular PGSE waveform from the scalar timing.
+
+    Parameters
+    ----------
+    diameter : float
+        slab thickness in meters.
+    """
+    _citations = {
+        'definition': [
+            {'key': 'callaghan1997', 'authors': 'Callaghan PT',
+             'title': 'A simple matrix formalism for spin echo analysis of restricted diffusion under generalized gradient waveforms',
+             'journal': 'Journal of Magnetic Resonance', 'year': 1997,
+             'doi': '10.1006/jmre.1997.1233'},
+            {'key': 'grebenkov2007', 'authors': 'Grebenkov DS',
+             'title': 'NMR survey of reflected Brownian motion',
+             'journal': 'Reviews of Modern Physics', 'year': 2007,
+             'doi': '10.1103/RevModPhys.79.1077'},
+        ],
+        'default_parameters': {},
+    }
+    _validity_constraints = [
+        {'id': 'impermeable_membrane', 'name': 'Impermeable membrane assumption',
+         'condition_human': 'Assumes the restricting walls are perfectly impermeable (no exchange).',
+         'severity': 'info'},
+        {'id': 'mode_truncation', 'name': 'Eigenmode truncation',
+         'condition_human': 'Exact up to the number of eigenmodes kept (n_modes); increase for very high q or short pulses.',
+         'severity': 'info'},
+    ]
+    _required_acquisition_parameters = [
+        'gradient_strengths', 'delta', 'Delta']
+    _supports_waveform_scheme = True
+
+    _parameter_ranges = {'diameter': (1e-2, 20)}
+    _parameter_scales = {'diameter': DIAMETER_SCALING}
+    _parameter_types = {'diameter': 'plane'}
+    _model_type = 'NMRModel'
+
+    def __init__(self, diameter=None,
+                 diffusion_constant=CONSTANTS['water_in_axons_diffusion_constant'],
+                 n_modes=24):
+        self.diameter = diameter
+        self.diffusion_constant = diffusion_constant
+        self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
+        self.n_modes = int(n_modes)
+
+    def __call__(self, acquisition_scheme, **kwargs):
+        "Signal of the exact-matrix slab for the acquisition's gradient waveform."
+        L = kwargs.get('diameter', self.diameter)          # slab thickness
+        D = self.diffusion_constant
+        gamma = self.gyromagnetic_ratio
+        _G = getattr(acquisition_scheme, '_G', None)
+        _dt = getattr(acquisition_scheme, '_dt', None)
+        n_meas = (_G.shape[0] if _G is not None
+                  else len(acquisition_scheme.gradient_strengths))
+        E = np.ones(n_meas)
+        for m in range(n_meas):
+            if _G is not None:
+                G_m, dt = np.asarray(_G[m], np.float64), float(_dt)
+            else:
+                g = acquisition_scheme.gradient_strengths[m]
+                if g == 0:
+                    continue
+                G_m, dt = pgse_waveform(
+                    g, acquisition_scheme.delta[m], acquisition_scheme.Delta[m],
+                    acquisition_scheme.gradient_directions[m])
+            if not np.any(G_m):
+                continue
+            _, g_signed = project_fixed_direction(G_m, dt)
+            E[m] = matrix_restricted_signal('plane', g_signed, dt, D, L, gamma, self.n_modes)
+        return E

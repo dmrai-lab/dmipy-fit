@@ -8,6 +8,7 @@ from ..utils import utils
 from ..core.constants import CONSTANTS
 from ..core.modeling_framework import ModelProperties
 from ..core.signal_model_properties import AnisotropicSignalModelProperties
+from ._restricted_matrix import matrix_restricted_signal, pgse_waveform
 from dipy.utils.optpkg import optional_package
 from dipy.reconst.shm import real_sh_tournier as _real_sh_tournier
 
@@ -52,7 +53,8 @@ __all__ = [
     'C1Stick',
     'C2CylinderStejskalTannerApproximation',
     'C3CylinderCallaghanApproximation',
-    'C4CylinderGaussianPhaseApproximation'
+    'C4CylinderGaussianPhaseApproximation',
+    'C5CylinderMatrixMethod'
 ]
 
 
@@ -1330,3 +1332,123 @@ if have_numba:
     _attenuation_parallel_stick = numba.njit()(_attenuation_parallel_stick)
     _attenuation_perpendicular_gaussian_phase = numba.njit()(
         _attenuation_perpendicular_gaussian_phase)
+
+
+class C5CylinderMatrixMethod(ModelProperties, AnisotropicSignalModelProperties):
+    r"""Exact matrix / multiple-correlation-function model of a finite-radius cylinder.
+
+    Perpendicular restriction is solved *exactly* (to the number of eigenmodes kept) for the actual
+    gradient waveform via the Bloch-Torrey eigenmode propagator (Callaghan 1997; Barzykin 1999;
+    Grebenkov 2007), of which the Gaussian-phase model
+    :class:`C4CylinderGaussianPhaseApproximation` is the low-b limit. Parallel diffusion is free
+    (Gaussian). The stored gradient waveform ``_G`` is consumed when present (any PGSE / OGSE /
+    fixed-direction waveform); otherwise a rectangular PGSE waveform is reconstructed from the scalar
+    timing. Rotating / multidimensional b-tensor waveforms are projected onto their dominant direction
+    (exact only for fixed-direction encodings).
+
+    Parameters
+    ----------
+    mu : array, shape(2)
+        angles [theta, phi] of the cylinder axis on the sphere.
+    lambda_par : float
+        parallel (intra-axonal) diffusivity in 10^9 m^2/s.
+    diameter : float
+        cylinder diameter in meters.
+    """
+    _citations = {
+        'definition': [
+            {'key': 'callaghan1997', 'authors': 'Callaghan PT',
+             'title': 'A simple matrix formalism for spin echo analysis of restricted diffusion under generalized gradient waveforms',
+             'journal': 'Journal of Magnetic Resonance', 'year': 1997,
+             'doi': '10.1006/jmre.1997.1233'},
+            {'key': 'grebenkov2007', 'authors': 'Grebenkov DS',
+             'title': 'NMR survey of reflected Brownian motion',
+             'journal': 'Reviews of Modern Physics', 'year': 2007,
+             'doi': '10.1103/RevModPhys.79.1077'},
+        ],
+        'default_parameters': {},
+    }
+    _validity_constraints = [
+        {'id': 'impermeable_membrane', 'name': 'Impermeable membrane assumption',
+         'condition_human': 'Assumes the restricting membrane is perfectly impermeable (no exchange across the boundary).',
+         'severity': 'info'},
+        {'id': 'gaussian_parallel', 'name': 'Gaussian parallel diffusion',
+         'condition_human': 'Parallel diffusion is modeled as purely Gaussian along the fiber axis.',
+         'severity': 'info'},
+        {'id': 'single_axon_diffusivity', 'name': 'Single-axon parallel diffusivity',
+         'condition_human': 'lambda_par is the intrinsic single-axon parallel diffusivity, not a dispersed macroscopic value.',
+         'severity': 'warning'},
+        {'id': 'mode_truncation', 'name': 'Eigenmode truncation',
+         'condition_human': 'Exact up to the number of eigenmodes kept (n_modes); the default is converged well below 1e-4 for typical b. Increase n_modes for very high q or short pulses.',
+         'severity': 'info'},
+        {'id': 'fixed_direction_waveform', 'name': 'Fixed-direction waveform',
+         'condition_human': 'Exact for fixed-direction encodings (PGSE, standard OGSE). Rotating / b-tensor waveforms are projected onto their dominant direction (approximate).',
+         'severity': 'info'},
+    ]
+    _required_acquisition_parameters = [
+        'gradient_directions', 'gradient_strengths', 'delta', 'Delta']
+    _supports_waveform_scheme = True
+
+    _parameter_ranges = {
+        'mu': ([0, np.pi], [-np.pi, np.pi]),
+        'lambda_par': (.1, 3),
+        'diameter': (1e-2, 20),
+    }
+    _parameter_scales = {
+        'mu': np.r_[1., 1.],
+        'lambda_par': DIFFUSIVITY_SCALING,
+        'diameter': DIAMETER_SCALING,
+    }
+    _parameter_types = {
+        'mu': 'orientation',
+        'lambda_par': 'normal',
+        'diameter': 'cylinder',
+    }
+    _model_type = 'CompartmentModel'
+
+    def __init__(self, mu=None, lambda_par=None, diameter=None,
+                 diffusion_perpendicular=CONSTANTS['water_in_axons_diffusion_constant'],
+                 n_modes=16):
+        self.mu = mu
+        self.lambda_par = lambda_par
+        self.diameter = diameter
+        self.diffusion_perpendicular = diffusion_perpendicular
+        self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
+        self.n_modes = int(n_modes)
+
+    def __call__(self, acquisition_scheme, **kwargs):
+        "Signal of the exact-matrix cylinder for the acquisition's gradient waveform."
+        diameter = kwargs.get('diameter', self.diameter)
+        lambda_par = kwargs.get('lambda_par', self.lambda_par)
+        mu = kwargs.get('mu', self.mu)
+        R = diameter / 2.
+        D = self.diffusion_perpendicular
+        gamma = self.gyromagnetic_ratio
+        mu_cart = utils.unitsphere2cart_1d(np.array(mu))
+
+        _G = getattr(acquisition_scheme, '_G', None)
+        _dt = getattr(acquisition_scheme, '_dt', None)
+        n = acquisition_scheme.gradient_directions
+        bvals = acquisition_scheme.bvalues
+        n_meas = (_G.shape[0] if _G is not None
+                  else len(acquisition_scheme.gradient_strengths))
+        # parallel axis is free (Gaussian): exact from the scheme's own b-value projection
+        cos_par = np.dot(n, mu_cart)
+        E_par = np.exp(-bvals * lambda_par * cos_par ** 2)
+        E = E_par.copy()
+        for m in range(n_meas):
+            if _G is not None:
+                G_m, dt = np.asarray(_G[m], np.float64), float(_dt)
+            else:
+                g = acquisition_scheme.gradient_strengths[m]
+                if g == 0:
+                    continue
+                G_m, dt = pgse_waveform(
+                    g, acquisition_scheme.delta[m], acquisition_scheme.Delta[m], n[m])
+            if not np.any(G_m):
+                continue
+            perp_frac = np.sqrt(max(0., 1. - cos_par[m] ** 2))     # perp gradient magnitude fraction
+            g_perp = (G_m @ n[m]) * perp_frac                      # 1-D restricted-axis schedule
+            E[m] = E_par[m] * matrix_restricted_signal(
+                'cylinder', g_perp, dt, D, R, gamma, self.n_modes)
+        return E
