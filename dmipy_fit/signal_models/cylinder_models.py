@@ -1354,6 +1354,12 @@ class C5CylinderMatrixMethod(ModelProperties, AnisotropicSignalModelProperties):
         parallel (intra-axonal) diffusivity in 10^9 m^2/s.
     diameter : float
         cylinder diameter in meters.
+    n_modes : int, optional
+        Laplacian eigenmodes kept (accuracy knob; default 16 is converged well below 1e-4 for typical
+        b). Increase for very high q or short gradient pulses.
+
+    See ``examples/02_signal_models/exact_matrix_method.md`` for a worked comparison against the
+    Gaussian-phase model.
     """
     _citations = {
         'definition': [
