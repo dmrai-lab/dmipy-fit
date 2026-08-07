@@ -8,6 +8,14 @@ compatibility test.** Relaxation and surface relaxivity are now consistently opt
 exercises every compartment × scheme × framework × wrapper combination.
 
 ### Added
+- **Exact matrix-method restricted-diffusion compartments** `P5PlaneMatrixMethod`,
+  `C5CylinderMatrixMethod`, `S5SphereMatrixMethod` — the Callaghan (1997) / Grebenkov (2007)
+  multiple-correlation-function (MCF) solution, exact for an *arbitrary* gradient waveform (PGSE, OGSE,
+  fixed-direction) up to eigenmode truncation; the Gaussian-phase models (`C4`/`S4`) are their low-b
+  limit. They consume the stored gradient waveform `_G` directly (`_supports_waveform_scheme`), with a
+  reconstructed-PGSE fallback from scalar timing. Shared kernel in
+  `signal_models/_restricted_matrix.py`; validated against the GPA at low b, free diffusion on
+  unrestricted axes, restriction monotonicity, and mode convergence in `tests/test_matrix_method.py`.
 - **Coupled compartment-wise T2/T1 relaxation–exchange** in `X0GeneralizedKarger` on the JAX
   backend — a dimension-agnostic (N-pool-ready) matrix-exponential SE/STE propagator; relaxation is
   supplied per compartment via `OccupancyGatedModel`. Fast scalar path retained for the
