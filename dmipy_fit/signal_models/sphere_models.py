@@ -4,13 +4,15 @@ from ..core.constants import CONSTANTS
 from scipy import special
 import numpy as np
 
-DIAMETER_SCALING = 1e-6
+from ..core.constants import DIAMETER_SCALING
+from ._restricted_matrix import matrix_restricted_signal, pgse_waveform
 
 __all__ = [
     'S1Dot',
     'S2SphereStejskalTannerApproximation',
     'S3SphereCallaghanApproximation',
     'S4SphereGaussianPhaseApproximation',
+    'S5SphereMatrixMethod',
 ]
 
 
@@ -754,3 +756,93 @@ class S4SphereGaussianPhaseApproximation(
 
         return E_sphere
 
+
+
+class S5SphereMatrixMethod(ModelProperties, IsotropicSignalModelProperties):
+    r"""Exact matrix / multiple-correlation-function model of a sphere.
+
+    The restricted signal is solved *exactly* (to the number of eigenmodes kept) for the actual
+    gradient waveform via the Bloch-Torrey eigenmode propagator (Callaghan 1997; Grebenkov 2007), of
+    which the Gaussian-phase model :class:`S4SphereGaussianPhaseApproximation` is the low-b limit.
+    Consumes the stored gradient waveform ``_G`` when present (any PGSE / OGSE / fixed-direction
+    waveform); otherwise a rectangular PGSE waveform is reconstructed from the scalar timing. Rotating /
+    b-tensor waveforms are projected onto their dominant direction (exact only for fixed-direction).
+
+    Parameters
+    ----------
+    diameter : float
+        sphere diameter in meters.
+    n_modes : int, optional
+        Laplacian eigenmodes kept (accuracy knob; default 16 is converged well below 1e-4 for typical
+        b). Increase for very high q or short gradient pulses.
+
+    See ``examples/02_signal_models/exact_matrix_method.md`` for a worked comparison against the
+    Gaussian-phase model.
+    """
+    _citations = {
+        'definition': [
+            {'key': 'callaghan1997', 'authors': 'Callaghan PT',
+             'title': 'A simple matrix formalism for spin echo analysis of restricted diffusion under generalized gradient waveforms',
+             'journal': 'Journal of Magnetic Resonance', 'year': 1997,
+             'doi': '10.1006/jmre.1997.1233'},
+            {'key': 'grebenkov2007', 'authors': 'Grebenkov DS',
+             'title': 'NMR survey of reflected Brownian motion',
+             'journal': 'Reviews of Modern Physics', 'year': 2007,
+             'doi': '10.1103/RevModPhys.79.1077'},
+        ],
+        'default_parameters': {},
+    }
+    _validity_constraints = [
+        {'id': 'impermeable_membrane', 'name': 'Impermeable membrane assumption',
+         'condition_human': 'Assumes the restricting membrane is perfectly impermeable (no exchange across the boundary).',
+         'severity': 'info'},
+        {'id': 'mode_truncation', 'name': 'Eigenmode truncation',
+         'condition_human': 'Exact up to the number of eigenmodes kept (n_modes); the default is converged well below 1e-4 for typical b. Increase n_modes for very high q or short pulses.',
+         'severity': 'info'},
+        {'id': 'fixed_direction_waveform', 'name': 'Fixed-direction waveform',
+         'condition_human': 'Exact for fixed-direction encodings (PGSE, standard OGSE). Rotating / b-tensor waveforms are projected onto their dominant direction (approximate).',
+         'severity': 'info'},
+    ]
+    _required_acquisition_parameters = [
+        'gradient_directions', 'gradient_strengths', 'delta', 'Delta']
+    _supports_waveform_scheme = True
+
+    _parameter_ranges = {'diameter': (1e-2, 20)}
+    _parameter_scales = {'diameter': DIAMETER_SCALING}
+    _parameter_types = {'diameter': 'sphere'}
+    _model_type = 'CompartmentModel'
+
+    def __init__(self, diameter=None,
+                 diffusion_constant=CONSTANTS['water_in_axons_diffusion_constant'],
+                 n_modes=16):
+        self.diameter = diameter
+        self.diffusion_constant = diffusion_constant
+        self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
+        self.n_modes = int(n_modes)
+
+    def __call__(self, acquisition_scheme, **kwargs):
+        "Signal of the exact-matrix sphere for the acquisition's gradient waveform."
+        diameter = kwargs.get('diameter', self.diameter)
+        R = diameter / 2.
+        D = self.diffusion_constant
+        gamma = self.gyromagnetic_ratio
+        _G = getattr(acquisition_scheme, '_G', None)
+        _dt = getattr(acquisition_scheme, '_dt', None)
+        n = acquisition_scheme.gradient_directions
+        n_meas = (_G.shape[0] if _G is not None
+                  else len(acquisition_scheme.gradient_strengths))
+        E = np.ones(n_meas)
+        for m in range(n_meas):
+            if _G is not None:
+                G_m, dt = np.asarray(_G[m], np.float64), float(_dt)
+            else:
+                g = acquisition_scheme.gradient_strengths[m]
+                if g == 0:
+                    continue
+                G_m, dt = pgse_waveform(
+                    g, acquisition_scheme.delta[m], acquisition_scheme.Delta[m], n[m])
+            if not np.any(G_m):
+                continue
+            g_signed = G_m @ n[m]                      # isotropic: magnitude along the gradient axis
+            E[m] = matrix_restricted_signal('sphere', g_signed, dt, D, R, gamma, self.n_modes)
+        return E

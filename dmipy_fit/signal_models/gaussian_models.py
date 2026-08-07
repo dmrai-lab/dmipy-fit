@@ -15,8 +15,7 @@ from dipy.utils.optpkg import optional_package
 
 numba, have_numba, _ = optional_package("numba")
 
-DIFFUSIVITY_SCALING = 1e-9
-A_SCALING = 1e-12
+from ..core.constants import DIFFUSIVITY_SCALING, A_SCALING
 
 __all__ = [
     'G1Ball',

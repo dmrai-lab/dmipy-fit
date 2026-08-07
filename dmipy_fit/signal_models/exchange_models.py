@@ -32,7 +32,7 @@ __all__ = [
     'X0GeneralizedKarger',
 ]
 
-DIFFUSIVITY_SCALING = 1e-9
+from ..core.constants import DIFFUSIVITY_SCALING
 
 
 # ---------------------------------------------------------------------------

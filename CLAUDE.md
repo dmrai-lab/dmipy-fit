@@ -83,7 +83,7 @@ model = build_white_matter_model(include_csf=False)
 | `core/spherical_mean_framework.py`, `core/spherical_harmonics_framework.py` | spherical-mean & SH (CSD/FOD) frameworks |
 | `core/fitted_modeling_framework.py` | fit result: `.fitted_parameters`, multi-tissue fractions |
 | `core/acquisition_scheme.py` | `AcquisitionScheme.from_*` (PGSE/PGSTE/CPMG/OGSE/waveform/b-tensor) |
-| `signal_models/` | `cylinder_models` (stick/cylinder/axcaliber), `gaussian_models` (ball/zeppelin), `sphere_models`, `plane_models`, `capped_cylinder_models`, `tissue_response_models`, `exchange_models` |
+| `signal_models/` | `cylinder_models` (stick/cylinder/axcaliber), `gaussian_models` (ball/zeppelin), `sphere_models`, `plane_models`, `capped_cylinder_models`, `tissue_response_models`, `exchange_models`. Each restricted geometry has a **Gaussian-phase** model (`C4`/`S4`, low-b closed form) and an **exact matrix-method** model (`C5CylinderMatrixMethod`/`S5SphereMatrixMethod`/`P5PlaneMatrixMethod`, `_restricted_matrix.py`) that solves the Bloch–Torrey equation for the *actual waveform* and stays correct at high b / OGSE. |
 | `signal_models/attenuation.py` | `OccupancyGatedModel` + `TransverseRelaxation`, `IntraPoreSurfaceRelaxivity`, `ExteriorSurfaceRelaxivity` |
 | `distributions/` | Watson / Bingham dispersion, Gamma diameter distribution |
 | `optimizers/`, `optimizers_fod/` | brute2fine, MIX, multi-tissue NNLS; CSD (Tournier / cvxpy / OSQP-JAX) |
@@ -99,6 +99,10 @@ model = build_white_matter_model(include_csf=False)
 - **T2 / surface relaxivity on a compartment** → `signal_models/attenuation.py`
   (`OccupancyGatedModel`).
 - **GPU / whole-slice speed** → `solver="jax"`, `jax/`.
+- **Exact restricted signal at high b / OGSE / arbitrary waveform** (beyond the Gaussian-phase
+  approximation) → the matrix-method compartments `C5`/`S5`/`P5` (`signal_models/_restricted_matrix.py`);
+  see `examples/02_signal_models/exact_matrix_method.md`. Use the closed-form `C4`/`S4` GPA models when b
+  is low-to-moderate (cheaper).
 - **A standard model by name** → `custom_optimizers/reference_models.py`.
 - **Cross-checking against ground truth** → build the same tissue in dmipy-sim, fit the MC
   signal; parity tolerance is roughly `max(0.02, 1/√N)`.
