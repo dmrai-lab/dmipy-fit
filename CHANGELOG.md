@@ -8,6 +8,11 @@ compatibility test.** Relaxation and surface relaxivity are now consistently opt
 exercises every compartment × scheme × framework × wrapper combination.
 
 ### Added
+- **JAX/GPU forward for the replay compartments** (Tier 2) — `replay_complex_jax` / `replay_batch_jax`
+  in `_replay_fit.py`: the compiled-scheme `C@W` matmul + weighted complex mean as a jittable,
+  differentiable kernel, `vmap`-batched over a grid of compiled schemes so a whole set of forward
+  evaluations (e.g. candidate orientations in a fit) is one GPU call. Parity with the NumPy engine to
+  ~1e-5 (complex64) / ~1e-7 (x64), diffusion and the exact surface path.
 - **Monte-Carlo replay compartments** `C6MonteCarloReplayCylinder`, `S6MonteCarloReplaySphere`, `P6MonteCarloReplayPlane` — the
   *generalized pore*: the signal is computed by replaying a stored Monte-Carlo reference walk (Substrate
   Commons canonical replay-pack dataset), exact to the MC floor for any gradient waveform. Same fit
