@@ -14,9 +14,7 @@ from dipy.reconst.shm import real_sh_tournier as _real_sh_tournier
 
 numba, have_numba, _ = optional_package("numba")
 
-DIFFUSIVITY_SCALING = 1e-9
-DIAMETER_SCALING = 1e-6
-A_SCALING = 1e-12
+from ..core.constants import DIFFUSIVITY_SCALING, DIAMETER_SCALING, A_SCALING
 
 # ---------------------------------------------------------------------------
 # Sphere quadrature grid for SH dispersion integrals.

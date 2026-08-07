@@ -34,7 +34,7 @@ inverse_sh_matrix_kernel = {
         sh_order, hemisphere.theta, hemisphere.phi, legacy=False
     )[0]) for sh_order in np.arange(0, 15, 2)
 }
-BETA_SCALING = 1e-6
+from ..core.constants import BETA_SCALING
 
 __all__ = [
     'get_sh_order_from_odi',
