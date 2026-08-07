@@ -8,6 +8,16 @@ compatibility test.** Relaxation and surface relaxivity are now consistently opt
 exercises every compartment × scheme × framework × wrapper combination.
 
 ### Added
+- **Monte-Carlo replay compartments** `C6MonteCarloReplayCylinder`, `S6MonteCarloReplaySphere` — the
+  *generalized pore*: the signal is computed by replaying a stored Monte-Carlo reference walk (Substrate
+  Commons canonical replay-pack dataset), exact to the MC floor for any gradient waveform. Same fit
+  parameters as the analytic cylinders/spheres (`mu`, `diameter`). Forward evaluation uses a
+  compiled-scheme engine (`signal_models/_replay_fit.py`): the waveform is projected onto the pack's DCT
+  temporal basis once, then each replay is a single matmul — identical to `dmipy_sim` `pack.replay`
+  (verified ~1e-6) but fast enough to fit. Surface relaxivity is exact, not analytic: a
+  `surface_relaxivity` factor activates the pack's boundary-local-time replay knob (optionally
+  coherence-gated), not an `exp(-TE rho S/V)` tag-on. Loader `data/mc_replay.py`; tests build a tiny CPU
+  pack fixture (`tests/test_mc_replay.py`).
 - **Gaussian-phase plane model** `P4PlaneGaussianPhaseApproximation` — the finite-pulse GPA for a 1-D
   slab (`ln E = -gamma^2 G^2 sum_odd |<k|x|0>|^2 I(D(k pi/L)^2)`), completing the plane series alongside
   the cylinder `C4` (Van Gelderen) and sphere `S4` (Murday-Cotts). It is the low-b / small-pore limit of
