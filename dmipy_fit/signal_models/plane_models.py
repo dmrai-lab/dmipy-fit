@@ -235,6 +235,12 @@ class P5PlaneMatrixMethod(ModelProperties):
     ----------
     diameter : float
         slab thickness in meters.
+    n_modes : int, optional
+        Laplacian eigenmodes kept (accuracy knob; default 24). Increase for very high q or short
+        gradient pulses (the plane needs more modes than the cylinder/sphere at matched q).
+
+    See ``examples/02_signal_models/exact_matrix_method.md`` for a worked comparison against the
+    Gaussian-phase and short-pulse plane models.
     """
     _citations = {
         'definition': [
