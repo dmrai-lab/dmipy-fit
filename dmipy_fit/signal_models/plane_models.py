@@ -2,7 +2,8 @@
 import numpy as np
 from ..core.modeling_framework import ModelProperties
 from ..core.constants import CONSTANTS
-from ._restricted_matrix import matrix_restricted_signal, project_fixed_direction, pgse_waveform
+from ._restricted_matrix import (
+    matrix_restricted_signal, matrix_restricted_batch, project_fixed_direction, pgse_waveform)
 
 from ..core.constants import DIAMETER_SCALING
 
@@ -280,28 +281,29 @@ class P5PlaneMatrixMethod(ModelProperties):
         self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
         self.n_modes = int(n_modes)
 
-    def __call__(self, acquisition_scheme, **kwargs):
-        "Signal of the exact-matrix slab for the acquisition's gradient waveform."
+    def __call__(self, acquisition_scheme, use_jax=False, **kwargs):
+        """Signal of the exact-matrix slab for the acquisition's gradient waveform.
+        ``use_jax=True`` uses the differentiable GPU batch path (needs the ``[jax]`` extra and a stored
+        waveform ``_G``; falls back to NumPy for scalar-timing schemes)."""
         L = kwargs.get('diameter', self.diameter)          # slab thickness
         D = self.diffusion_constant
         gamma = self.gyromagnetic_ratio
         _G = getattr(acquisition_scheme, '_G', None)
-        _dt = getattr(acquisition_scheme, '_dt', None)
-        n_meas = (_G.shape[0] if _G is not None
-                  else len(acquisition_scheme.gradient_strengths))
+        if _G is not None:
+            dt = float(acquisition_scheme._dt)
+            _Gd = np.asarray(_G, np.float64)
+            g_axes = np.stack([project_fixed_direction(_Gd[m], dt)[1] for m in range(_Gd.shape[0])])
+            return matrix_restricted_batch(
+                'plane', g_axes, dt, D, L, gamma, self.n_modes, use_jax=use_jax)
+        n_meas = len(acquisition_scheme.gradient_strengths)
         E = np.ones(n_meas)
         for m in range(n_meas):
-            if _G is not None:
-                G_m, dt = np.asarray(_G[m], np.float64), float(_dt)
-            else:
-                g = acquisition_scheme.gradient_strengths[m]
-                if g == 0:
-                    continue
-                G_m, dt = pgse_waveform(
-                    g, acquisition_scheme.delta[m], acquisition_scheme.Delta[m],
-                    acquisition_scheme.gradient_directions[m])
-            if not np.any(G_m):
+            g = acquisition_scheme.gradient_strengths[m]
+            if g == 0:
                 continue
+            G_m, dt = pgse_waveform(
+                g, acquisition_scheme.delta[m], acquisition_scheme.Delta[m],
+                acquisition_scheme.gradient_directions[m])
             _, g_signed = project_fixed_direction(G_m, dt)
             E[m] = matrix_restricted_signal('plane', g_signed, dt, D, L, gamma, self.n_modes)
         return E
