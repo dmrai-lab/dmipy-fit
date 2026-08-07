@@ -4,7 +4,7 @@ from ..core.constants import CONSTANTS
 from scipy import special
 import numpy as np
 
-DIAMETER_SCALING = 1e-6
+from ..core.constants import DIAMETER_SCALING
 from ._restricted_matrix import matrix_restricted_signal, pgse_waveform
 
 __all__ = [
