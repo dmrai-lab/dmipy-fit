@@ -8,6 +8,12 @@ compatibility test.** Relaxation and surface relaxivity are now consistently opt
 exercises every compartment × scheme × framework × wrapper combination.
 
 ### Added
+- **Signal-LUT fit form for the replay compartments** (Tier 3) — `data/mc_replay_lut.py`
+  `build_pgse_kernel` / `ReplayKernel`: for single-diffusion-encoding PGSE at fixed timing a pore's
+  signal factorises as `E(diameter, b, cos_theta[, rho])`, so the family is lowered once (via the exact
+  Tier-1 engine) to a KB-scale kernel; fitting then interpolates per measurement — measured ~65x faster
+  per forward and ~900-5000x leaner than the walker packs. Interpolation-grade (fit accelerator; Tier 1/2
+  stay exact); signed-signal interpolation so diffraction zeros do not inflate.
 - **JAX/GPU forward for the replay compartments** (Tier 2) — `replay_complex_jax` / `replay_batch_jax`
   in `_replay_fit.py`: the compiled-scheme `C@W` matmul + weighted complex mean as a jittable,
   differentiable kernel, `vmap`-batched over a grid of compiled schemes so a whole set of forward
