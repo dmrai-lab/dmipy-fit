@@ -8,6 +8,12 @@ compatibility test.** Relaxation and surface relaxivity are now consistently opt
 exercises every compartment × scheme × framework × wrapper combination.
 
 ### Added
+- **JAX / GPU path for the matrix-method compartments** — `use_jax=True` on `C5`/`S5`/`P5` evaluates a
+  differentiable `jax.lax.scan` Strang propagator (`jax/signal_models_jax.py:matrix_restricted_signal_jax`
+  + batched twin), with the geometry-fixed eigenmodes precomputed once on the host. Gradients flow w.r.t.
+  diameter/orientation/diffusivity, enabling whole-slice `solver="jax"` fitting; matches the NumPy path to
+  the MC/float precision. Requires the `[jax]` extra and a stored waveform (`_G`); scalar-timing schemes
+  fall back to NumPy.
 - **Exact matrix-method restricted-diffusion compartments** `P5PlaneMatrixMethod`,
   `C5CylinderMatrixMethod`, `S5SphereMatrixMethod` — the Callaghan (1997) / Grebenkov (2007)
   multiple-correlation-function (MCF) solution, exact for an *arbitrary* gradient waveform (PGSE, OGSE,
