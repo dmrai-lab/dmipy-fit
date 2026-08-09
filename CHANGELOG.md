@@ -8,6 +8,11 @@ compatibility test.** Relaxation and surface relaxivity are now consistently opt
 exercises every compartment × scheme × framework × wrapper combination.
 
 ### Added
+- **Gaussian-phase plane model** `P4PlaneGaussianPhaseApproximation` — the finite-pulse GPA for a 1-D
+  slab (`ln E = -gamma^2 G^2 sum_odd |<k|x|0>|^2 I(D(k pi/L)^2)`), completing the plane series alongside
+  the cylinder `C4` (Van Gelderen) and sphere `S4` (Murday-Cotts). It is the low-b / small-pore limit of
+  the exact `P5PlaneMatrixMethod`; validated to match P5 where the GPA holds and to depart only at high
+  b / short pulses (`tests/test_plane_gpa.py`). Ref: Balinov et al. 1993.
 - **Exact matrix-method restricted-diffusion compartments** `P5PlaneMatrixMethod`,
   `C5CylinderMatrixMethod`, `S5SphereMatrixMethod` — the Callaghan (1997) / Grebenkov (2007)
   multiple-correlation-function (MCF) solution, exact for an *arbitrary* gradient waveform (PGSE, OGSE,
