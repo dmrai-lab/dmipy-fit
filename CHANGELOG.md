@@ -8,7 +8,7 @@ compatibility test.** Relaxation and surface relaxivity are now consistently opt
 exercises every compartment × scheme × framework × wrapper combination.
 
 ### Added
-- **Monte-Carlo replay compartments** `C6MonteCarloReplayCylinder`, `S6MonteCarloReplaySphere` — the
+- **Monte-Carlo replay compartments** `C6MonteCarloReplayCylinder`, `S6MonteCarloReplaySphere`, `P6MonteCarloReplayPlane` — the
   *generalized pore*: the signal is computed by replaying a stored Monte-Carlo reference walk (Substrate
   Commons canonical replay-pack dataset), exact to the MC floor for any gradient waveform. Same fit
   parameters as the analytic cylinders/spheres (`mu`, `diameter`). Forward evaluation uses a
