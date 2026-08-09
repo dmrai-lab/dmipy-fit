@@ -8,7 +8,7 @@ import pytest
 os.environ.setdefault("JAX_ENABLE_X64", "1")
 jax = pytest.importorskip("jax")
 jax.config.update("jax_enable_x64", True)
-pytest.importorskip("dmipy_sim")
+pytest.importorskip("dmipy_sim.canonical")  # pack generator (full sim); public CI skips
 
 from dmipy_sim.canonical import build_canonical_pack   # noqa: E402
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme   # noqa: E402
