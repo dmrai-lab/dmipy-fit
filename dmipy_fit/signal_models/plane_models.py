@@ -9,6 +9,7 @@ from ..core.constants import DIAMETER_SCALING
 
 __all__ = [
     'P3PlaneCallaghanApproximation',
+    'P4PlaneGaussianPhaseApproximation',
     'P5PlaneMatrixMethod'
 ]
 
@@ -304,4 +305,88 @@ class P5PlaneMatrixMethod(ModelProperties):
                 continue
             _, g_signed = project_fixed_direction(G_m, dt)
             E[m] = matrix_restricted_signal('plane', g_signed, dt, D, L, gamma, self.n_modes)
+        return E
+
+
+class P4PlaneGaussianPhaseApproximation(ModelProperties):
+    r"""Gaussian-phase (finite gradient pulse) model of restricted diffusion between two parallel plates
+    (a 1-D slab). The plane analogue of the Van Gelderen cylinder (``C4``) and Murday-Cotts sphere
+    (``S4``) Gaussian-phase models, and the finite-pulse companion of the short-pulse plane models
+    ``P2``/``P3``. The exact matrix-method plane ``P5PlaneMatrixMethod`` is its infinite-order limit;
+    ``P4`` is accurate where the Gaussian-phase approximation holds (``delta >> L^2/D``, many wall
+    collisions per pulse) and departs at high b / short pulses, where ``P5`` should be used.
+
+    Restriction is across the slab (gradient taken along the plate normal). For a slab of thickness
+    ``diameter`` = L the second-cumulant phase is
+
+        ln E = - gamma^2 G^2  sum_{k odd}  |<k|x|0>|^2  I(D (k pi / L)^2),
+
+    with the position-coupling weight ``|<k|x|0>|^2 = 8 L^2 / (k pi)^4`` (only odd modes couple the
+    uniform ground state to an excited cosine mode) and ``I`` the Van Gelderen PGSE temporal bracket.
+
+    Parameters
+    ----------
+    diameter : float
+        slab thickness (plate separation) in meters.
+    diffusion_constant : float
+        intrinsic diffusivity in m^2/s (default: water in axons).
+    number_of_modes : int, optional
+        number of odd eigenmodes summed (converges as 1/k^4; default 100).
+    """
+    _citations = {
+        'definition': [
+            {'key': 'balinov1993', 'authors': 'Balinov B, Jonsson B, Linse P, Soderman O',
+             'title': 'The NMR self-diffusion method applied to restricted diffusion. Simulation of echo attenuation from molecules in spheres and between planes',
+             'journal': 'Journal of Magnetic Resonance, Series A', 'year': 1993,
+             'doi': '10.1006/jmra.1993.1184'}
+        ],
+        'default_parameters': {},
+    }
+    _validity_constraints = [
+        {'id': 'GPA', 'name': 'Gaussian Phase Approximation',
+         'condition_human': 'delta >> L^2/D (many wall collisions during the gradient pulse); use P5PlaneMatrixMethod outside this regime.',
+         'severity': 'warning', 'source_key': 'balinov1993'},
+        {'id': 'impermeable_membrane', 'name': 'Impermeable membrane assumption',
+         'condition_human': 'Assumes perfectly impermeable plates (no exchange across the walls).',
+         'severity': 'info'},
+    ]
+    _required_acquisition_parameters = ['gradient_strengths', 'delta', 'Delta']
+
+    _parameter_ranges = {'diameter': (1e-2, 20)}
+    _parameter_scales = {'diameter': DIAMETER_SCALING}
+    _parameter_types = {'diameter': 'plane'}
+    _model_type = 'NMRModel'
+
+    def __init__(self, diameter=None,
+                 diffusion_constant=CONSTANTS['water_in_axons_diffusion_constant'],
+                 number_of_modes=100):
+        self.diameter = diameter
+        self.diffusion_constant = diffusion_constant
+        self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
+        self._k_odd = np.arange(1, 2 * int(number_of_modes), 2)   # odd modes 1,3,5,...
+
+    def plane_attenuation(self, gradient_strength, delta, Delta, diameter):
+        "Plane Gaussian-phase signal attenuation (gradient along the plate normal)."
+        D = self.diffusion_constant
+        L = diameter
+        k = self._k_odd
+        lam_D = D * (k * np.pi / L) ** 2                          # eigenmode decay rates (1/s)
+        bracket = (2 * lam_D * delta - 2 + 2 * np.exp(-lam_D * delta)
+                   + 2 * np.exp(-lam_D * Delta)
+                   - np.exp(-lam_D * (Delta - delta))
+                   - np.exp(-lam_D * (Delta + delta))) / lam_D ** 2
+        weight = 8.0 * L ** 2 / (k * np.pi) ** 4                  # |<k|x|0>|^2, odd modes
+        phi2 = (self.gyromagnetic_ratio * gradient_strength) ** 2 * np.sum(weight * bracket)
+        return np.exp(-phi2)
+
+    def __call__(self, acquisition_scheme, **kwargs):
+        r"""Signal attenuation for the acquisition scheme (gradient taken along the plate normal)."""
+        diameter = kwargs.get('diameter', self.diameter)
+        g = acquisition_scheme.gradient_strengths
+        delta = acquisition_scheme.delta
+        Delta = acquisition_scheme.Delta
+        E = np.ones_like(np.asarray(g, float))
+        nz = np.asarray(g, float) > 0
+        idx = np.where(nz)[0]
+        E[idx] = [self.plane_attenuation(g[i], delta[i], Delta[i], diameter) for i in idx]
         return E
