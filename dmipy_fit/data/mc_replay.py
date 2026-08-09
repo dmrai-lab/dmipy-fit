@@ -148,3 +148,11 @@ def orient_to_z(mu):
     e1 = a - (a @ mu) * mu; e1 /= np.linalg.norm(e1)
     e2 = np.cross(mu, e1)
     return np.stack([e1, e2, mu], axis=0)
+
+
+def orient_to_x(mu):
+    """Rotation R (3×3) mapping unit axis ``mu`` → +x (rows = mu, e1, e2). For a slab/plane pack whose
+    restricted axis is x (``Box1D``): with the plane NORMAL ``mu``, ``G @ R.T`` sends the gradient's
+    normal component to x (restricted) and the in-plane components to y,z (free)."""
+    R = orient_to_z(mu)                       # rows e1, e2, mu
+    return R[[2, 0, 1], :]                     # -> rows mu, e1, e2  (mu -> +x)
