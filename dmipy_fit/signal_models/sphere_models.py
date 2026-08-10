@@ -5,7 +5,8 @@ from scipy import special
 import numpy as np
 
 from ..core.constants import DIAMETER_SCALING
-from ._restricted_matrix import matrix_restricted_signal, pgse_waveform
+from ._restricted_matrix import (
+    matrix_restricted_signal, matrix_restricted_batch, pgse_waveform)
 
 __all__ = [
     'S1Dot',
@@ -820,29 +821,28 @@ class S5SphereMatrixMethod(ModelProperties, IsotropicSignalModelProperties):
         self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
         self.n_modes = int(n_modes)
 
-    def __call__(self, acquisition_scheme, **kwargs):
-        "Signal of the exact-matrix sphere for the acquisition's gradient waveform."
+    def __call__(self, acquisition_scheme, use_jax=False, **kwargs):
+        """Signal of the exact-matrix sphere for the acquisition's gradient waveform.
+        ``use_jax=True`` uses the differentiable GPU batch path (needs the ``[jax]`` extra and a stored
+        waveform ``_G``; falls back to NumPy for scalar-timing schemes)."""
         diameter = kwargs.get('diameter', self.diameter)
         R = diameter / 2.
         D = self.diffusion_constant
         gamma = self.gyromagnetic_ratio
         _G = getattr(acquisition_scheme, '_G', None)
-        _dt = getattr(acquisition_scheme, '_dt', None)
         n = acquisition_scheme.gradient_directions
-        n_meas = (_G.shape[0] if _G is not None
-                  else len(acquisition_scheme.gradient_strengths))
+        if _G is not None:
+            dt = float(acquisition_scheme._dt)
+            g_axes = np.einsum('mtc,mc->mt', np.asarray(_G, np.float64), n)   # isotropic: along grad dir
+            return matrix_restricted_batch(
+                'sphere', g_axes, dt, D, R, gamma, self.n_modes, use_jax=use_jax)
+        n_meas = len(acquisition_scheme.gradient_strengths)
         E = np.ones(n_meas)
         for m in range(n_meas):
-            if _G is not None:
-                G_m, dt = np.asarray(_G[m], np.float64), float(_dt)
-            else:
-                g = acquisition_scheme.gradient_strengths[m]
-                if g == 0:
-                    continue
-                G_m, dt = pgse_waveform(
-                    g, acquisition_scheme.delta[m], acquisition_scheme.Delta[m], n[m])
-            if not np.any(G_m):
+            g = acquisition_scheme.gradient_strengths[m]
+            if g == 0:
                 continue
-            g_signed = G_m @ n[m]                      # isotropic: magnitude along the gradient axis
-            E[m] = matrix_restricted_signal('sphere', g_signed, dt, D, R, gamma, self.n_modes)
+            G_m, dt = pgse_waveform(
+                g, acquisition_scheme.delta[m], acquisition_scheme.Delta[m], n[m])
+            E[m] = matrix_restricted_signal('sphere', G_m @ n[m], dt, D, R, gamma, self.n_modes)
         return E

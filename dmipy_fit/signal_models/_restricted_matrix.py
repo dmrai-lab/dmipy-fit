@@ -162,6 +162,23 @@ def _unit_modes(shape, n_modes, nr=4000):
     return lam, beta, evecs
 
 
+def matrix_restricted_batch(shape, g_axes, dt, diffusivity, size, gyromagnetic_ratio,
+                            n_modes=16, use_jax=False):
+    """Signal for a stack of projected 1-D schedules ``g_axes`` (n_meas, n_t), all on a common ``dt``.
+    ``use_jax=True`` evaluates the differentiable GPU twin (needs the ``[jax]`` extra, uniform ``dt``);
+    otherwise a NumPy loop. Returns a length-``n_meas`` array."""
+    if use_jax:
+        import jax.numpy as jnp
+        from ..jax.signal_models_jax import matrix_restricted_signal_jax_batch
+        lam, beta, U = _unit_modes(shape, int(n_modes))
+        out = matrix_restricted_signal_jax_batch(
+            jnp.asarray(g_axes), float(dt), float(diffusivity), float(size),
+            float(gyromagnetic_ratio), jnp.asarray(lam), jnp.asarray(beta), jnp.asarray(U))
+        return np.asarray(out, dtype=float)
+    return np.array([matrix_restricted_signal(shape, g, dt, diffusivity, size, gyromagnetic_ratio, n_modes)
+                     for g in g_axes])
+
+
 def matrix_restricted_signal(shape, g_axis, dt, diffusivity, size, gyromagnetic_ratio, n_modes=16):
     """Exact restricted signal for a projected 1-D gradient magnitude schedule.
 
