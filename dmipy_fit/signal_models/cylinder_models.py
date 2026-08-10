@@ -8,7 +8,8 @@ from ..utils import utils
 from ..core.constants import CONSTANTS
 from ..core.modeling_framework import ModelProperties
 from ..core.signal_model_properties import AnisotropicSignalModelProperties
-from ._restricted_matrix import matrix_restricted_signal, pgse_waveform
+from ._restricted_matrix import (
+    matrix_restricted_signal, matrix_restricted_batch, pgse_waveform)
 from dipy.utils.optpkg import optional_package
 from dipy.reconst.shm import real_sh_tournier as _real_sh_tournier
 
@@ -1420,8 +1421,10 @@ class C5CylinderMatrixMethod(ModelProperties, AnisotropicSignalModelProperties):
         self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
         self.n_modes = int(n_modes)
 
-    def __call__(self, acquisition_scheme, **kwargs):
-        "Signal of the exact-matrix cylinder for the acquisition's gradient waveform."
+    def __call__(self, acquisition_scheme, use_jax=False, **kwargs):
+        """Signal of the exact-matrix cylinder for the acquisition's gradient waveform.
+        ``use_jax=True`` uses the differentiable GPU batch path (needs the ``[jax]`` extra and a stored
+        waveform ``_G``; falls back to NumPy for scalar-timing schemes)."""
         diameter = kwargs.get('diameter', self.diameter)
         lambda_par = kwargs.get('lambda_par', self.lambda_par)
         mu = kwargs.get('mu', self.mu)
@@ -1431,28 +1434,29 @@ class C5CylinderMatrixMethod(ModelProperties, AnisotropicSignalModelProperties):
         mu_cart = utils.unitsphere2cart_1d(np.array(mu))
 
         _G = getattr(acquisition_scheme, '_G', None)
-        _dt = getattr(acquisition_scheme, '_dt', None)
         n = acquisition_scheme.gradient_directions
         bvals = acquisition_scheme.bvalues
-        n_meas = (_G.shape[0] if _G is not None
-                  else len(acquisition_scheme.gradient_strengths))
         # parallel axis is free (Gaussian): exact from the scheme's own b-value projection
         cos_par = np.dot(n, mu_cart)
         E_par = np.exp(-bvals * lambda_par * cos_par ** 2)
-        E = E_par.copy()
-        for m in range(n_meas):
-            if _G is not None:
-                G_m, dt = np.asarray(_G[m], np.float64), float(_dt)
-            else:
+        if _G is not None:
+            dt = float(acquisition_scheme._dt)
+            n_meas, n_t = _G.shape[0], _G.shape[1]
+            perp_frac = np.sqrt(np.clip(1. - cos_par ** 2, 0., None))   # (n_meas,)
+            g_axes = (np.einsum('mtc,mc->mt', np.asarray(_G, np.float64), n)  # project onto gradient dir
+                      * perp_frac[:, None])                                   # then take perp magnitude
+            E_perp = matrix_restricted_batch(
+                'cylinder', g_axes, dt, D, R, gamma, self.n_modes, use_jax=use_jax)
+        else:                                                          # scalar-timing fallback (NumPy)
+            n_meas = len(acquisition_scheme.gradient_strengths)
+            E_perp = np.ones(n_meas)
+            for m in range(n_meas):
                 g = acquisition_scheme.gradient_strengths[m]
                 if g == 0:
                     continue
                 G_m, dt = pgse_waveform(
                     g, acquisition_scheme.delta[m], acquisition_scheme.Delta[m], n[m])
-            if not np.any(G_m):
-                continue
-            perp_frac = np.sqrt(max(0., 1. - cos_par[m] ** 2))     # perp gradient magnitude fraction
-            g_perp = (G_m @ n[m]) * perp_frac                      # 1-D restricted-axis schedule
-            E[m] = E_par[m] * matrix_restricted_signal(
-                'cylinder', g_perp, dt, D, R, gamma, self.n_modes)
-        return E
+                perp_frac = np.sqrt(max(0., 1. - cos_par[m] ** 2))
+                E_perp[m] = matrix_restricted_signal(
+                    'cylinder', (G_m @ n[m]) * perp_frac, dt, D, R, gamma, self.n_modes)
+        return E_par * E_perp
