@@ -23,7 +23,8 @@ transverse-occupancy schedule ``chi(t)`` — see :func:`surface_logweight`.
 """
 import numpy as np
 
-__all__ = ["compile_scheme", "replay_complex", "surface_logweight"]
+__all__ = ["compile_scheme", "replay_complex", "surface_logweight",
+           "replay_complex_jax", "replay_batch_jax"]
 
 
 def compile_scheme(G_pack, dt, K, gyromagnetic_ratio):
@@ -80,3 +81,46 @@ def replay_complex(coeffs, spin_weights, W, *, blt_dct=None, rho_over_D=0.0, n_t
         w_eff = w0 * np.exp(surface_logweight(blt_dct, rho_over_D, n_t, chi_hat))
     num = (w_eff[:, None] * np.exp(1j * phi)).sum(0)
     return num / w0.sum()
+
+
+# ------------------------------- JAX / GPU forward (Tier 2) -------------------------------
+# The compiled-scheme forward `E = <w_eff exp(i C@W)> / <w0>` is a dense matmul + reduction, so it maps
+# directly onto the GPU and is differentiable. `replay_batch_jax` vmaps it over a batch of compiled
+# schemes `W` (e.g. one per candidate orientation the optimizer evaluates), turning a whole grid of
+# forward evaluations into a single GPU call. Requires the `[jax]` extra. Reference precision: enable
+# jax_enable_x64 (the fit backend does globally); otherwise complex64 (~1e-5 vs the NumPy path).
+
+def _weff(spin_weights, blt_dct, rho_over_D, n_t, chi_hat, jnp):
+    w0 = jnp.asarray(spin_weights)
+    if blt_dct is None or not rho_over_D:
+        return w0, w0
+    blt = jnp.asarray(blt_dct)
+    if chi_hat is None:
+        s = jnp.sqrt(n_t) * blt[:, 0]
+    else:
+        ch = jnp.asarray(chi_hat)[: blt.shape[1]]
+        s = blt[:, : ch.shape[0]] @ ch
+    return w0, w0 * jnp.exp(rho_over_D * s)
+
+
+def replay_complex_jax(coeffs, spin_weights, W, *, blt_dct=None, rho_over_D=0.0, n_t=None, chi_hat=None):
+    """JAX twin of :func:`replay_complex` — jittable/differentiable single-scheme forward.
+    ``coeffs`` (N_w, K, 3), ``W`` (3K, n_meas). Returns a complex (n_meas,) array."""
+    import jax.numpy as jnp
+    C = jnp.asarray(coeffs)
+    N_w, K, _ = C.shape
+    phi = C.reshape(N_w, K * 3) @ jnp.asarray(W)                    # (N_w, n_meas)
+    w0, w_eff = _weff(spin_weights, blt_dct, rho_over_D, n_t, chi_hat, jnp)
+    num = (w_eff[:, None] * jnp.exp(1j * phi)).sum(0)
+    return num / w0.sum()
+
+
+def replay_batch_jax(coeffs, spin_weights, W_batch, *, blt_dct=None, rho_over_D=0.0, n_t=None, chi_hat=None):
+    """Vmap :func:`replay_complex_jax` over a batch of compiled schemes ``W_batch`` (n_batch, 3K, n_meas)
+    — one GPU call for a whole grid of forward evaluations (e.g. candidate orientations in a fit).
+    Returns magnitudes (n_batch, n_meas)."""
+    import jax
+    import jax.numpy as jnp
+    fn = lambda W: replay_complex_jax(coeffs, spin_weights, W, blt_dct=blt_dct,
+                                      rho_over_D=rho_over_D, n_t=n_t, chi_hat=chi_hat)
+    return jnp.abs(jax.vmap(fn)(jnp.asarray(W_batch)))
