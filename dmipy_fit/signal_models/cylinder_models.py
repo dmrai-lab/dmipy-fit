@@ -53,7 +53,8 @@ __all__ = [
     'C2CylinderStejskalTannerApproximation',
     'C3CylinderCallaghanApproximation',
     'C4CylinderGaussianPhaseApproximation',
-    'C5CylinderMatrixMethod'
+    'C5CylinderMatrixMethod',
+    'C6MonteCarloReplayCylinder'
 ]
 
 
@@ -1460,3 +1461,92 @@ class C5CylinderMatrixMethod(ModelProperties, AnisotropicSignalModelProperties):
                 E_perp[m] = matrix_restricted_signal(
                     'cylinder', (G_m @ n[m]) * perp_frac, dt, D, R, gamma, self.n_modes)
         return E_par * E_perp
+
+
+class C6MonteCarloReplayCylinder(ModelProperties, AnisotropicSignalModelProperties):
+    r"""Restricted-cylinder compartment whose signal is computed by *replaying* a Monte-Carlo reference
+    walk (Substrate Commons canonical replay-pack dataset) rather than a closed-form approximation. Same
+    fit parameters as the analytical cylinders — orientation ``mu`` and ``diameter`` — but exact (to the
+    Monte-Carlo floor) for **any** gradient waveform, with no short-pulse or Gaussian-phase assumption.
+    This is the *generalized pore*: the same machinery replays arbitrary (e.g. mesh) substrates.
+
+    Forward evaluation uses the compiled-scheme engine (``_replay_fit``): the waveform is projected onto
+    the pack's DCT temporal basis once, then each replay is a single matmul — identical to the engine's
+    ``pack.replay`` but fast enough to fit. ``diameter`` interpolates across the dataset's per-diameter
+    packs; orientation rotates the waveform onto the pack's canonical (axis = z) frame.
+
+    **Surface relaxivity is exact, not analytic.** When a surface-relaxivity factor supplies
+    ``surface_relaxivity`` (rho, m/s) at call time, it is *not* applied as the mean-field
+    ``exp(-TE rho S/V)`` tag-on the analytic compartments use; instead it activates the pack's boundary
+    local-time replay knob — a per-walker reweighting by the stored surface contact, optionally
+    coherence-gated by a transverse-occupancy schedule (``chi``). This captures the coherence dependence
+    the analytic factor cannot.
+
+    Parameters
+    ----------
+    mu : array, shape(2)      angles [theta, phi] of the cylinder axis on the sphere.
+    diameter : float          cylinder diameter in meters.
+    diffusivity : float       intrinsic (fixed) diffusivity of the reference dataset, m^2/s (default 2e-9).
+    dataset_dir : str, optional   directory holding the replay-pack dataset (else $SUBSTRATE_COMMONS_DATA).
+    """
+    _citations = {
+        'definition': [
+            {'key': 'substrate_commons', 'authors': 'Substrate Commons',
+             'title': 'Canonical restricted-shape Monte-Carlo replay-pack reference dataset',
+             'journal': 'https://substrate-commons.github.io', 'year': 2026, 'doi': ''},
+            {'key': 'callaghan1997', 'authors': 'Callaghan PT',
+             'title': 'A simple matrix formalism for spin echo analysis of restricted diffusion under generalized gradient waveforms',
+             'journal': 'Journal of Magnetic Resonance', 'year': 1997, 'doi': '10.1006/jmre.1997.1233'},
+        ],
+        'default_parameters': {},
+    }
+    _validity_constraints = [
+        {'id': 'impermeable_membrane', 'name': 'Impermeable membrane assumption',
+         'condition_human': 'The reference walk is inside a perfectly impermeable cylinder (no exchange).',
+         'severity': 'info'},
+        {'id': 'fixed_diffusivity', 'name': 'Fixed intrinsic diffusivity',
+         'condition_human': 'Intrinsic diffusivity D0 is fixed by the reference dataset (walk-time), not fitted; pick the dataset whose D0 matches your regime.',
+         'severity': 'warning', 'source_key': 'substrate_commons'},
+        {'id': 'waveform_grid', 'name': 'Waveform save-grid resolution',
+         'condition_human': 'The acquisition waveform is resampled onto the pack save grid; pulses finer than that grid are not resolved.',
+         'severity': 'info'},
+    ]
+    _required_acquisition_parameters = ['gradient_directions']
+    _supports_waveform_scheme = True
+    _parameter_ranges = {
+        'mu': ([0, np.pi], [-np.pi, np.pi]),
+        'diameter': (0.1, 20),
+    }
+    _parameter_scales = {
+        'mu': np.r_[1., 1.],
+        'diameter': DIAMETER_SCALING,
+    }
+    _parameter_types = {
+        'mu': 'orientation',
+        'diameter': 'cylinder',
+    }
+    _model_type = 'CompartmentModel'
+
+    def __init__(self, mu=None, diameter=None, diffusivity=2.0e-9, dataset_dir=None):
+        self.mu = mu
+        self.diameter = diameter
+        self.diffusivity = float(diffusivity)
+        self.dataset_dir = dataset_dir
+
+    def __call__(self, acquisition_scheme, **kwargs):
+        from ..data.mc_replay import (load_replay_family, resample_waveform_to_grid, orient_to_z)
+        diameter = kwargs.get('diameter', self.diameter)
+        mu = kwargs.get('mu', self.mu)
+        rho = float(kwargs.get('surface_relaxivity', 0.0) or 0.0)   # m/s; from a surface factor
+        chi_hat = kwargs.get('chi_hat', None)                       # coherence/occupancy schedule (DCT)
+        G = getattr(acquisition_scheme, '_G', None)
+        if G is None:
+            raise ValueError(
+                "C6MonteCarloReplayCylinder needs a waveform-first AcquisitionScheme "
+                "(build with AcquisitionScheme.from_pgse/from_waveform) — no ._G on this scheme.")
+        fam = load_replay_family('cylinder', self.diffusivity, dataset_dir=self.dataset_dir)
+        G_pack = resample_waveform_to_grid(np.asarray(G), float(acquisition_scheme._dt), fam.n_t, fam.dt)
+        R = orient_to_z(utils.unitsphere2cart_1d(np.asarray(mu, float)))
+        G_rot = G_pack @ R.T                                        # lab → canonical (axis = z)
+        rho_over_D = (rho / fam.diffusivity) if rho else 0.0        # exact surface replay knob
+        return fam.replay_interpolated(G_rot, float(diameter), rho_over_D=rho_over_D, chi_hat=chi_hat)
