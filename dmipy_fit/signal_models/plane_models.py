@@ -11,7 +11,8 @@ from ..core.constants import DIAMETER_SCALING
 __all__ = [
     'P3PlaneCallaghanApproximation',
     'P4PlaneGaussianPhaseApproximation',
-    'P5PlaneMatrixMethod'
+    'P5PlaneMatrixMethod',
+    'P6MonteCarloReplayPlane'
 ]
 
 
@@ -392,3 +393,78 @@ class P4PlaneGaussianPhaseApproximation(ModelProperties):
         idx = np.where(nz)[0]
         E[idx] = [self.plane_attenuation(g[i], delta[i], Delta[i], diameter) for i in idx]
         return E
+
+
+class P6MonteCarloReplayPlane(ModelProperties):
+    r"""Parallel-plate (slab) compartment whose signal is computed by *replaying* a Monte-Carlo
+    reference walk (Substrate Commons canonical replay-pack dataset). The 1-D sibling of
+    ``C6MonteCarloReplayCylinder`` / ``S6MonteCarloReplaySphere``: exact to the Monte-Carlo floor for any
+    gradient waveform, with no short-pulse or Gaussian-phase assumption. Diffusion is restricted across
+    the slab (along the plane normal ``mu``) and free in the plane.
+
+    Forward evaluation uses the compiled-scheme engine (``_replay_fit``): the waveform is projected onto
+    the pack's DCT temporal basis once, then each replay is a single matmul. ``diameter`` (slab thickness)
+    interpolates across the dataset's per-diameter packs; the normal ``mu`` rotates the waveform onto the
+    pack's canonical restricted axis (x). Surface relaxivity is exact (the boundary-local-time replay knob,
+    optionally coherence-gated), not the analytic ``exp(-TE rho S/V)`` tag-on.
+
+    Parameters
+    ----------
+    mu : array, shape(2)      angles [theta, phi] of the plane NORMAL on the sphere.
+    diameter : float          slab thickness in meters.
+    diffusivity : float       intrinsic (fixed) diffusivity of the reference dataset, m^2/s (default 2e-9).
+    dataset_dir : str, optional   directory holding the replay-pack dataset (else $SUBSTRATE_COMMONS_DATA).
+    """
+    _citations = {
+        'definition': [
+            {'key': 'substrate_commons', 'authors': 'Substrate Commons',
+             'title': 'Canonical restricted-shape Monte-Carlo replay-pack reference dataset',
+             'journal': 'https://substrate-commons.github.io', 'year': 2026, 'doi': ''},
+        ],
+        'default_parameters': {},
+    }
+    _validity_constraints = [
+        {'id': 'impermeable_membrane', 'name': 'Impermeable membrane assumption',
+         'condition_human': 'The reference walk is between perfectly impermeable parallel plates (no exchange).',
+         'severity': 'info'},
+        {'id': 'fixed_diffusivity', 'name': 'Fixed intrinsic diffusivity',
+         'condition_human': 'Intrinsic diffusivity D0 is fixed by the reference dataset (walk-time), not fitted; pick the dataset whose D0 matches your regime.',
+         'severity': 'warning', 'source_key': 'substrate_commons'},
+        {'id': 'waveform_grid', 'name': 'Waveform save-grid resolution',
+         'condition_human': 'The acquisition waveform is resampled onto the pack save grid; pulses finer than that grid are not resolved.',
+         'severity': 'info'},
+    ]
+    _required_acquisition_parameters = ['gradient_directions']
+    _supports_waveform_scheme = True
+    _parameter_ranges = {
+        'mu': ([0, np.pi], [-np.pi, np.pi]),
+        'diameter': (0.1, 20),
+    }
+    _parameter_scales = {'mu': np.r_[1., 1.], 'diameter': DIAMETER_SCALING}
+    _parameter_types = {'mu': 'orientation', 'diameter': 'plane'}
+    _model_type = 'CompartmentModel'
+
+    def __init__(self, mu=None, diameter=None, diffusivity=2.0e-9, dataset_dir=None):
+        self.mu = mu
+        self.diameter = diameter
+        self.diffusivity = float(diffusivity)
+        self.dataset_dir = dataset_dir
+
+    def __call__(self, acquisition_scheme, **kwargs):
+        from ..data.mc_replay import (load_replay_family, resample_waveform_to_grid, orient_to_x)
+        from ..utils import utils
+        diameter = kwargs.get('diameter', self.diameter)
+        mu = kwargs.get('mu', self.mu)
+        rho = float(kwargs.get('surface_relaxivity', 0.0) or 0.0)
+        chi_hat = kwargs.get('chi_hat', None)
+        G = getattr(acquisition_scheme, '_G', None)
+        if G is None:
+            raise ValueError(
+                "P6MonteCarloReplayPlane needs a waveform-first AcquisitionScheme "
+                "(build with AcquisitionScheme.from_pgse/from_waveform) — no ._G on this scheme.")
+        fam = load_replay_family('plane', self.diffusivity, dataset_dir=self.dataset_dir)
+        G_pack = resample_waveform_to_grid(np.asarray(G), float(acquisition_scheme._dt), fam.n_t, fam.dt)
+        R = orient_to_x(utils.unitsphere2cart_1d(np.asarray(mu, float)))   # normal -> restricted axis x
+        G_rot = G_pack @ R.T
+        rho_over_D = (rho / fam.diffusivity) if rho else 0.0
+        return fam.replay_interpolated(G_rot, float(diameter), rho_over_D=rho_over_D, chi_hat=chi_hat)

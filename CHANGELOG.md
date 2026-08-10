@@ -8,6 +8,16 @@ compatibility test.** Relaxation and surface relaxivity are now consistently opt
 exercises every compartment × scheme × framework × wrapper combination.
 
 ### Added
+- **Monte-Carlo replay compartments** `C6MonteCarloReplayCylinder`, `S6MonteCarloReplaySphere`, `P6MonteCarloReplayPlane` — the
+  *generalized pore*: the signal is computed by replaying a stored Monte-Carlo reference walk (Substrate
+  Commons canonical replay-pack dataset), exact to the MC floor for any gradient waveform. Same fit
+  parameters as the analytic cylinders/spheres (`mu`, `diameter`). Forward evaluation uses a
+  compiled-scheme engine (`signal_models/_replay_fit.py`): the waveform is projected onto the pack's DCT
+  temporal basis once, then each replay is a single matmul — identical to `dmipy_sim` `pack.replay`
+  (verified ~1e-6) but fast enough to fit. Surface relaxivity is exact, not analytic: a
+  `surface_relaxivity` factor activates the pack's boundary-local-time replay knob (optionally
+  coherence-gated), not an `exp(-TE rho S/V)` tag-on. Loader `data/mc_replay.py`; tests build a tiny CPU
+  pack fixture (`tests/test_mc_replay.py`).
 - **JAX / GPU path for the matrix-method compartments** — `use_jax=True` on `C5`/`S5`/`P5` evaluates a
   differentiable `jax.lax.scan` Strang propagator (`jax/signal_models_jax.py:matrix_restricted_signal_jax`
   + batched twin), with the geometry-fixed eigenmodes precomputed once on the host. Gradients flow w.r.t.
