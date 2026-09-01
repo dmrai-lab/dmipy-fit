@@ -8,6 +8,38 @@ compatibility test.** Relaxation and surface relaxivity are now consistently opt
 exercises every compartment × scheme × framework × wrapper combination.
 
 ### Added
+- **Signal-LUT fit form for the replay compartments** (Tier 3) — `data/mc_replay_lut.py`
+  `build_pgse_kernel` / `ReplayKernel`: for single-diffusion-encoding PGSE at fixed timing a pore's
+  signal factorises as `E(diameter, b, cos_theta[, rho])`, so the family is lowered once (via the exact
+  Tier-1 engine) to a KB-scale kernel; fitting then interpolates per measurement — measured ~65x faster
+  per forward and ~900-5000x leaner than the walker packs. Interpolation-grade (fit accelerator; Tier 1/2
+  stay exact); signed-signal interpolation so diffraction zeros do not inflate.
+- **JAX/GPU forward for the replay compartments** (Tier 2) — `replay_complex_jax` / `replay_batch_jax`
+  in `_replay_fit.py`: the compiled-scheme `C@W` matmul + weighted complex mean as a jittable,
+  differentiable kernel, `vmap`-batched over a grid of compiled schemes so a whole set of forward
+  evaluations (e.g. candidate orientations in a fit) is one GPU call. Parity with the NumPy engine to
+  ~1e-5 (complex64) / ~1e-7 (x64), diffusion and the exact surface path.
+- **Monte-Carlo replay compartments** `C6MonteCarloReplayCylinder`, `S6MonteCarloReplaySphere`, `P6MonteCarloReplayPlane` — the
+  *generalized pore*: the signal is computed by replaying a stored Monte-Carlo reference walk (Substrate
+  Commons canonical replay-pack dataset), exact to the MC floor for any gradient waveform. Same fit
+  parameters as the analytic cylinders/spheres (`mu`, `diameter`). Forward evaluation uses a
+  compiled-scheme engine (`signal_models/_replay_fit.py`): the waveform is projected onto the pack's DCT
+  temporal basis once, then each replay is a single matmul — identical to `dmipy_sim` `pack.replay`
+  (verified ~1e-6) but fast enough to fit. Surface relaxivity is exact, not analytic: a
+  `surface_relaxivity` factor activates the pack's boundary-local-time replay knob (optionally
+  coherence-gated), not an `exp(-TE rho S/V)` tag-on. Loader `data/mc_replay.py`; tests build a tiny CPU
+  pack fixture (`tests/test_mc_replay.py`).
+- **JAX / GPU path for the matrix-method compartments** — `use_jax=True` on `C5`/`S5`/`P5` evaluates a
+  differentiable `jax.lax.scan` Strang propagator (`jax/signal_models_jax.py:matrix_restricted_signal_jax`
+  + batched twin), with the geometry-fixed eigenmodes precomputed once on the host. Gradients flow w.r.t.
+  diameter/orientation/diffusivity, enabling whole-slice `solver="jax"` fitting; matches the NumPy path to
+  the MC/float precision. Requires the `[jax]` extra and a stored waveform (`_G`); scalar-timing schemes
+  fall back to NumPy.
+- **Gaussian-phase plane model** `P4PlaneGaussianPhaseApproximation` — the finite-pulse GPA for a 1-D
+  slab (`ln E = -gamma^2 G^2 sum_odd |<k|x|0>|^2 I(D(k pi/L)^2)`), completing the plane series alongside
+  the cylinder `C4` (Van Gelderen) and sphere `S4` (Murday-Cotts). It is the low-b / small-pore limit of
+  the exact `P5PlaneMatrixMethod`; validated to match P5 where the GPA holds and to depart only at high
+  b / short pulses (`tests/test_plane_gpa.py`). Ref: Balinov et al. 1993.
 - **Exact matrix-method restricted-diffusion compartments** `P5PlaneMatrixMethod`,
   `C5CylinderMatrixMethod`, `S5SphereMatrixMethod` — the Callaghan (1997) / Grebenkov (2007)
   multiple-correlation-function (MCF) solution, exact for an *arbitrary* gradient waveform (PGSE, OGSE,

@@ -5,7 +5,8 @@ from scipy import special
 import numpy as np
 
 from ..core.constants import DIAMETER_SCALING
-from ._restricted_matrix import matrix_restricted_signal, pgse_waveform
+from ._restricted_matrix import (
+    matrix_restricted_signal, matrix_restricted_batch, pgse_waveform)
 
 __all__ = [
     'S1Dot',
@@ -13,6 +14,7 @@ __all__ = [
     'S3SphereCallaghanApproximation',
     'S4SphereGaussianPhaseApproximation',
     'S5SphereMatrixMethod',
+    'S6MonteCarloReplaySphere',
 ]
 
 
@@ -820,29 +822,88 @@ class S5SphereMatrixMethod(ModelProperties, IsotropicSignalModelProperties):
         self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
         self.n_modes = int(n_modes)
 
-    def __call__(self, acquisition_scheme, **kwargs):
-        "Signal of the exact-matrix sphere for the acquisition's gradient waveform."
+    def __call__(self, acquisition_scheme, use_jax=False, **kwargs):
+        """Signal of the exact-matrix sphere for the acquisition's gradient waveform.
+        ``use_jax=True`` uses the differentiable GPU batch path (needs the ``[jax]`` extra and a stored
+        waveform ``_G``; falls back to NumPy for scalar-timing schemes)."""
         diameter = kwargs.get('diameter', self.diameter)
         R = diameter / 2.
         D = self.diffusion_constant
         gamma = self.gyromagnetic_ratio
         _G = getattr(acquisition_scheme, '_G', None)
-        _dt = getattr(acquisition_scheme, '_dt', None)
         n = acquisition_scheme.gradient_directions
-        n_meas = (_G.shape[0] if _G is not None
-                  else len(acquisition_scheme.gradient_strengths))
+        if _G is not None:
+            dt = float(acquisition_scheme._dt)
+            g_axes = np.einsum('mtc,mc->mt', np.asarray(_G, np.float64), n)   # isotropic: along grad dir
+            return matrix_restricted_batch(
+                'sphere', g_axes, dt, D, R, gamma, self.n_modes, use_jax=use_jax)
+        n_meas = len(acquisition_scheme.gradient_strengths)
         E = np.ones(n_meas)
         for m in range(n_meas):
-            if _G is not None:
-                G_m, dt = np.asarray(_G[m], np.float64), float(_dt)
-            else:
-                g = acquisition_scheme.gradient_strengths[m]
-                if g == 0:
-                    continue
-                G_m, dt = pgse_waveform(
-                    g, acquisition_scheme.delta[m], acquisition_scheme.Delta[m], n[m])
-            if not np.any(G_m):
+            g = acquisition_scheme.gradient_strengths[m]
+            if g == 0:
                 continue
-            g_signed = G_m @ n[m]                      # isotropic: magnitude along the gradient axis
-            E[m] = matrix_restricted_signal('sphere', g_signed, dt, D, R, gamma, self.n_modes)
+            G_m, dt = pgse_waveform(
+                g, acquisition_scheme.delta[m], acquisition_scheme.Delta[m], n[m])
+            E[m] = matrix_restricted_signal('sphere', G_m @ n[m], dt, D, R, gamma, self.n_modes)
         return E
+
+
+class S6MonteCarloReplaySphere(ModelProperties, IsotropicSignalModelProperties):
+    r"""Restricted-sphere compartment whose signal is computed by *replaying* a Monte-Carlo reference
+    walk (Substrate Commons canonical replay-pack dataset) rather than a closed-form approximation.
+    Same fit parameter as the analytical spheres — ``diameter`` — but exact (to the Monte-Carlo floor)
+    for **any** gradient waveform. The isotropic sibling of ``C6MonteCarloReplayCylinder``; see it for the
+    compiled-scheme engine and the exact (coherence-gated) surface-relaxivity replay knob.
+
+    Parameters
+    ----------
+    diameter : float          sphere diameter in meters.
+    diffusivity : float       intrinsic (fixed) diffusivity of the reference dataset, m^2/s (default 2e-9).
+    dataset_dir : str, optional   directory holding the replay-pack dataset (else $SUBSTRATE_COMMONS_DATA).
+    """
+    _citations = {
+        'definition': [
+            {'key': 'substrate_commons', 'authors': 'Substrate Commons',
+             'title': 'Canonical restricted-shape Monte-Carlo replay-pack reference dataset',
+             'journal': 'https://substrate-commons.github.io', 'year': 2026, 'doi': ''},
+        ],
+        'default_parameters': {},
+    }
+    _validity_constraints = [
+        {'id': 'impermeable_membrane', 'name': 'Impermeable membrane assumption',
+         'condition_human': 'The reference walk is inside a perfectly impermeable sphere (no exchange).',
+         'severity': 'info'},
+        {'id': 'fixed_diffusivity', 'name': 'Fixed intrinsic diffusivity',
+         'condition_human': 'Intrinsic diffusivity D0 is fixed by the reference dataset (walk-time), not fitted; pick the dataset whose D0 matches your regime.',
+         'severity': 'warning', 'source_key': 'substrate_commons'},
+        {'id': 'waveform_grid', 'name': 'Waveform save-grid resolution',
+         'condition_human': 'The acquisition waveform is resampled onto the pack save grid; pulses finer than that grid are not resolved.',
+         'severity': 'info'},
+    ]
+    _required_acquisition_parameters = ['gradient_directions']
+    _supports_waveform_scheme = True
+    _parameter_ranges = {'diameter': (0.1, 20)}
+    _parameter_scales = {'diameter': DIAMETER_SCALING}
+    _parameter_types = {'diameter': 'sphere'}
+    _model_type = 'CompartmentModel'
+
+    def __init__(self, diameter=None, diffusivity=2.0e-9, dataset_dir=None):
+        self.diameter = diameter
+        self.diffusivity = float(diffusivity)
+        self.dataset_dir = dataset_dir
+
+    def __call__(self, acquisition_scheme, **kwargs):
+        from ..data.mc_replay import load_replay_family, resample_waveform_to_grid
+        diameter = kwargs.get('diameter', self.diameter)
+        rho = float(kwargs.get('surface_relaxivity', 0.0) or 0.0)
+        chi_hat = kwargs.get('chi_hat', None)
+        G = getattr(acquisition_scheme, '_G', None)
+        if G is None:
+            raise ValueError(
+                "S6MonteCarloReplaySphere needs a waveform-first AcquisitionScheme "
+                "(build with AcquisitionScheme.from_pgse/from_waveform) — no ._G on this scheme.")
+        fam = load_replay_family('sphere', self.diffusivity, dataset_dir=self.dataset_dir)
+        G_pack = resample_waveform_to_grid(np.asarray(G), float(acquisition_scheme._dt), fam.n_t, fam.dt)
+        rho_over_D = (rho / fam.diffusivity) if rho else 0.0        # isotropic: no orientation rotation
+        return fam.replay_interpolated(G_pack, float(diameter), rho_over_D=rho_over_D, chi_hat=chi_hat)
