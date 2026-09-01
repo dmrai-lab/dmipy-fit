@@ -62,8 +62,25 @@ def build_pgse_kernel(family, delta, Delta, b_grid, cos_grid=None, rho_grid=(0.0
         for b in b_grid:
             bvals.append(b); gds.append(d)
     sch = AcquisitionScheme.from_pgse(np.asarray(bvals), np.asarray(gds), delta, Delta, n_t=n_t_scheme)
-    Gp = resample_waveform_to_grid(sch._G, float(sch._dt), family.n_t, family.dt)
-    W = compile_scheme(Gp, family.dt, family.K, _GAMMA)         # (3K, n_cos*n_b) compiled once
+    # AXIS-PARALLEL / PERPENDICULAR SPLIT (cylinder/plane). The kernel stores only the PERPENDICULAR
+    # replay; the axial factor exp(-b_par * lambda_par) is applied analytically in ReplayKernel.signal.
+    # This mirrors C6.__call__ -- without it the lowered kernel disagrees with the exact model it is
+    # supposed to approximate, and it disagrees in the worst place: the axial component has
+    # Var[cos phi] = 0.5 at every diameter, so replaying it injects ~1/sqrt(N) noise into a quantity
+    # with a closed form. `_pgse_dirs` puts the pore axis along z, so the axial part is component 2.
+    # `_pgse_dirs` lays directions out at angle theta to the Z axis, which is the CYLINDER-axis
+    # convention. A plane family's restricted axis is X (P6 uses orient_to_x) and its free directions
+    # are the other two, so the split here would be exactly inverted for a plane -- it would replay the
+    # free in-plane motion and analytically remove the restricted part. Refuse rather than guess.
+    if shape not in ("sphere", "cylinder"):
+        raise NotImplementedError(
+            f"build_pgse_kernel supports 'sphere' and 'cylinder'; got {shape!r}. The kernel's cos axis "
+            f"is defined against the cylinder axis (z) and would mis-assign a plane's restricted axis "
+            f"(x). Use the exact path (P6MonteCarloReplayPlane) or add a plane-specific lowering.")
+    G_lab = np.asarray(sch._G, np.float64)
+    if shape == "cylinder":
+        G_lab = G_lab.copy()
+        G_lab[..., 2] = 0.0          # drop the axial (free) component; applied in closed form on read
 
     # E_kernel[diameter, rho, cos, b]. Store the SIGNED (real) signal, not the magnitude: PGSE signal is
     # real and can cross zero (diffraction lobes); interpolating the magnitude across diameter would
@@ -71,9 +88,14 @@ def build_pgse_kernel(family, delta, Delta, b_grid, cos_grid=None, rho_grid=(0.0
     E = np.zeros((len(family.diameters), len(rho_grid), len(cos_grid), len(b_grid)))
     for di in range(len(family.diameters)):
         C, w, K, blt = family._pk[di]
+        # per-pack grid: the family is heterogeneous by design (n_t in {2000,4000,8000}, K in {128,196}),
+        # so compiling once against family.n_t/family.K would resample onto the wrong grid for most packs
+        n_t_i = int(family.n_t_all[di]); dt_i = float(family.dt_all[di]); K_i = int(family.K_all[di])
+        Gp_i = resample_waveform_to_grid(G_lab, float(sch._dt), n_t_i, dt_i)
+        W_i = compile_scheme(Gp_i, dt_i, K_i, _GAMMA, n_t=n_t_i)
         for ri, rho in enumerate(rho_grid):
             rod = (rho / family.diffusivity) if rho else 0.0
-            S = replay_complex(C, w, W, blt_dct=blt, rho_over_D=rod, n_t=family.n_t).real
+            S = replay_complex(C, w, W_i, blt_dct=blt, rho_over_D=rod, n_t=n_t_i).real
             E[di, ri] = S.reshape(len(cos_grid), len(b_grid))
     return ReplayKernel(shape, family.diffusivity, np.asarray(family.diameters, float),
                         rho_grid, cos_grid, b_grid, float(delta), float(Delta), E)
@@ -97,9 +119,13 @@ class ReplayKernel:
     def _interp1(self, x, xs, ys):
         return np.interp(np.clip(x, xs[0], xs[-1]), xs, ys)
 
-    def signal(self, bvalues, gradient_directions, diameter, mu=None, rho=0.0):
+    def signal(self, bvalues, gradient_directions, diameter, mu=None, rho=0.0, lambda_par=None):
         """Interpolate E for a PGSE scheme: per measurement look up (b_m, cos_theta_m); interpolate over
-        diameter (and rho). ``mu`` is the pore axis (cylinder); ignored for sphere."""
+        diameter (and rho). ``mu`` is the pore axis (cylinder); ignored for sphere.
+
+        The stored table is the PERPENDICULAR signal only; the axial factor
+        ``exp(-b cos^2(theta) lambda_par)`` is applied here in closed form, matching C6. ``lambda_par``
+        defaults to the reference dataset's own D0 (the replayed walk's diffusivity)."""
         b = np.asarray(bvalues, float)
         n = np.asarray(gradient_directions, float)
         # diameter bracket
@@ -124,7 +150,12 @@ class ReplayKernel:
             khi = _interp2(self.cos_grid, self.b_grid, K_hi, cos, b)
         # interpolate the SIGNED signal across diameter, then take magnitude (matches full replay's
         # complex-interpolate-then-abs, so diffraction zeros don't inflate)
-        return np.abs(wlo * klo + (1 - wlo) * khi)
+        E_perp = np.abs(wlo * klo + (1 - wlo) * khi)
+        if self.shape == "sphere":
+            return E_perp
+        # cos is the angle to the CYLINDER AXIS, so the axial (free) b fraction is b*cos^2.
+        lp = self.diffusivity if lambda_par is None else float(lambda_par)
+        return E_perp * np.exp(-b * (cos ** 2) * lp)
 
 
 def _mu_cart(mu):

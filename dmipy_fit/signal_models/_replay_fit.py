@@ -1,6 +1,7 @@
 """Fast, exact forward evaluation of a Monte-Carlo *replay pack* for a FIXED acquisition scheme.
 
-A replay pack stores each walker's trajectory as truncated DCT-II coefficients ``dct_coeffs`` (N_w, K, 3)
+A replay pack stores each walker's trajectory as ``bridge_dst`` coefficients (N_w, K+2, 3):
+two exact endpoints per axis followed by K sine bands of the residual pinned at both ends
 and a spin weight. The diffusion-weighted signal is
 
     E = < w_i exp(i phi_i) > / < w_i > ,   phi_i(m) = gamma * dt * sum_t G_m(t) . r_i(t)
@@ -27,25 +28,48 @@ __all__ = ["compile_scheme", "replay_complex", "surface_logweight",
            "replay_complex_jax", "replay_batch_jax"]
 
 
-def compile_scheme(G_pack, dt, K, gyromagnetic_ratio):
-    """Compile a fixed acquisition scheme into its temporal-basis projection ``W`` (3K, n_meas).
+def compile_scheme(G_pack, dt, K, gyromagnetic_ratio, n_t=None):
+    """Compile a fixed acquisition into the pack's basis, ``W`` of shape ``((K+2)*n_c, n_meas)``.
+
+    Packs store positions as ``bridge_dst``: per axis, two exact endpoints ``r(0)`` and
+    ``r(T)-r(0)`` followed by ``K`` sine bands of the residual pinned at both ends.  ``W``
+    therefore leads with the two gradient moments per axis -- ``M0 = sum_n G_n`` and
+    ``M1 = sum_n tau_n G_n``, which a motion-compensated waveform makes vanish -- and then the
+    sine bands.
 
     Parameters
     ----------
     G_pack : (n_meas, n_t, 3) array   waveform resampled onto the pack save grid [T/m]
     dt : float                        pack save interval [s]
-    K : int                           number of DCT modes the pack stores
+    K : int                           SINE BANDS the pack stores -- NOT the stored width, which
+                                      is ``K + 2``. Passing the width yields a ``W`` of exactly
+                                      the right shape to multiply and the wrong thing to
+                                      multiply by. Take it from ``pack.meta["compression"]["K"]``.
     gyromagnetic_ratio : float        [rad/s/T]
+    n_t : int, optional               pack walk length; defaults to ``G_pack.shape[1]``
 
     Returns
     -------
-    (3K, n_meas) float64 array — reuse across all packs on this grid and all fit iterations.
+    ((K+2)*n_c, n_meas) float64 array — reuse across all packs on this grid and all iterations.
     """
-    from scipy.fft import dct
+    from scipy.fft import dst
     G_pack = np.asarray(G_pack, np.float64)
-    Ghat = dct(G_pack, type=2, norm="ortho", axis=1)[:, :K, :]      # (n_meas, K, 3)
-    n_meas = Ghat.shape[0]
-    return (gyromagnetic_ratio * dt * Ghat).reshape(n_meas, K * 3).T   # (3K, n_meas)
+    n_t = int(n_t or G_pack.shape[1])
+    if G_pack.shape[1] != n_t:
+        raise ValueError(f"waveform has {G_pack.shape[1]} samples, pack walk has n_t={n_t}")
+    tau = np.arange(n_t) / (n_t - 1.0)
+    M0 = G_pack.sum(1)                                              # (n_meas, n_c)
+    M1 = (G_pack * tau[None, :, None]).sum(1)                       # (n_meas, n_c)
+    Ghat = dst(G_pack[:, 1:-1, :], type=1, norm="ortho", axis=1)[:, :K, :]
+    W = np.concatenate([M0[:, None, :], M1[:, None, :], Ghat], axis=1)
+    n_meas = W.shape[0]
+    # Generic in the component count: a pack may carry FEWER than three position axes when the model has
+    # replaced the others with a closed form (C6 the axial term, P6 the two in-plane terms). The waveform
+    # must then be compiled from exactly those components, in the same order, or the contraction below
+    # silently pairs the wrong axis with the wrong coefficient block. The moments follow the same axes,
+    # since they are sums over the components G_pack already carries.
+    n_c = W.shape[2]
+    return (gyromagnetic_ratio * dt * W).reshape(n_meas, (K + 2) * n_c).T
 
 
 def surface_logweight(blt_dct, rho_over_D, n_t, chi_hat=None):
@@ -65,14 +89,15 @@ def surface_logweight(blt_dct, rho_over_D, n_t, chi_hat=None):
 def replay_complex(coeffs, spin_weights, W, *, blt_dct=None, rho_over_D=0.0, n_t=None, chi_hat=None):
     """Complex diffusion-weighted signal ``< w exp(i phi) > / < w >`` for compiled scheme ``W``.
 
-    ``coeffs`` is the pack's ``dct_coeffs`` (N_w, K, 3); ``W`` is from :func:`compile_scheme`. When
+    ``coeffs`` is the pack's position coefficients (N_w, K+2, 3); ``W`` is from :func:`compile_scheme`. When
     ``blt_dct`` + ``rho_over_D`` are given, the walker weights are multiplied by ``exp(surface_logweight)``
     — the exact coherence-gated surface-relaxivity replay (``chi_hat`` = DCT of the occupancy schedule).
     Returns a complex array (n_meas,); take ``abs`` for magnitude (kept complex for diameter interpolation).
     """
     coeffs = np.asarray(coeffs, np.float64)
     N_w, K, _ = coeffs.shape
-    phi = coeffs.reshape(N_w, K * 3) @ W                            # (N_w, n_meas)
+    n_c = coeffs.shape[2]
+    phi = coeffs.reshape(N_w, K * n_c) @ W                          # (N_w, n_meas)
     w0 = np.asarray(spin_weights, np.float64)                       # original weights (normalization)
     w_eff = w0
     if blt_dct is not None and rho_over_D:
@@ -109,7 +134,7 @@ def replay_complex_jax(coeffs, spin_weights, W, *, blt_dct=None, rho_over_D=0.0,
     import jax.numpy as jnp
     C = jnp.asarray(coeffs)
     N_w, K, _ = C.shape
-    phi = C.reshape(N_w, K * 3) @ jnp.asarray(W)                    # (N_w, n_meas)
+    phi = C.reshape(N_w, K * C.shape[2]) @ jnp.asarray(W)           # (N_w, n_meas)
     w0, w_eff = _weff(spin_weights, blt_dct, rho_over_D, n_t, chi_hat, jnp)
     num = (w_eff[:, None] * jnp.exp(1j * phi)).sum(0)
     return num / w0.sum()
