@@ -427,7 +427,7 @@ def test_watson_mc_validation():  # noqa: N802 (legacy test 5→6 renumbering)
     try:
         from dmipy_sim.mesoscopic.orchestrator import run_voxel_simulation
         from dmipy_sim.mesoscopic.composition import VoxelComposition, IntraAxonalPopulation
-        from dmipy_sim.waveforms import Waveform
+        from dmipy_sim import ScannerSequence
         import jax.numpy as jnp
     except ImportError as e:
         pytest.skip(f"dmipy-sim not available: {e}")
@@ -493,10 +493,9 @@ def test_watson_mc_validation():  # noqa: N802 (legacy test 5→6 renumbering)
         n_radii=1,
         seed=42,
     )
-    waveform = Waveform(
+    waveform = ScannerSequence(
         G=jnp.array(G_np, dtype=jnp.float32),
-        dt=float(dt),
-        echo_idx=n_t - 1
+        dt=float(dt)
     )
     S_mc = run_voxel_simulation(composition, waveform)
 

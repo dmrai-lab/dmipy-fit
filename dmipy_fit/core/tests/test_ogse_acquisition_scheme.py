@@ -76,27 +76,27 @@ def test_from_ogse_bvalues_roundtrip():
 # ---------------------------------------------------------------------------
 
 def test_from_ogse_stores_fields():
-    """from_ogse stores oscillation_frequency, gradient_rise_time, n_oscillation_cycles."""
+    """from_ogse carries the OGSE fields of the sequence's Encoding: the frequency, the block duration, the number
+    of cycles (f * sigma, whole by construction) and the ramp the slew limit imposes (0 in the idealised limit)."""
     f = 75.0
-    sigma = 0.030
-    n_cyc = 2
-    t_r = 1e-3
+    sigma = 0.040                                    # 3 whole periods
     n_m = 4
     bvalues = np.linspace(0, 2e9, n_m)
     bvecs = _make_bvecs(n_m)
 
-    scheme = AcquisitionScheme.from_ogse(
-        bvalues, bvecs,
-        oscillation_frequency=f,
-        gradient_duration=sigma,
-        n_cycles=n_cyc,
-        gradient_rise_time=t_r)
+    scheme = AcquisitionScheme.from_ogse(bvalues, bvecs, oscillation_frequency=f, gradient_duration=sigma)
 
     assert scheme.oscillation_frequency is not None
     assert_allclose(scheme.oscillation_frequency, np.full(n_m, f))
-    assert_allclose(scheme.gradient_rise_time, np.full(n_m, t_r))
-    assert_allclose(scheme.n_oscillation_cycles, np.full(n_m, float(n_cyc)))
+    assert_allclose(scheme.gradient_duration, np.full(n_m, sigma))
+    assert_allclose(scheme.gradient_rise_time, np.zeros(n_m))                      # slew_rate = inf: no ramp
+    assert_allclose(scheme.n_oscillation_cycles, np.full(n_m, 3.0))
     assert scheme.number_of_measurements == n_m
+    ramped = AcquisitionScheme.from_ogse(bvalues, bvecs, oscillation_frequency=f, gradient_duration=sigma,
+                                         shape="trapezoid", slew_rate=200.0)
+    assert np.all(ramped.gradient_rise_time[1:] > 0) and ramped.gradient_rise_time[0] == 0   # ramps follow amplitude
+    with pytest.raises(ValueError, match="must be whole"):
+        AcquisitionScheme.from_ogse(bvalues, bvecs, oscillation_frequency=f, gradient_duration=0.030)
 
 
 # ---------------------------------------------------------------------------

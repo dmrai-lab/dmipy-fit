@@ -76,7 +76,7 @@ def surface_logweight(blt_dct, rho_over_D, n_t, chi_hat=None):
     """Per-walker surface log-weight (rho/D) * sum_t chi(t) l_i(t) from the boundary-local-time DCT
     coefficients ``blt_dct`` (N_w, Kb). Un-gated (chi=None): the exact total contact is sqrt(n_t)*beta0
     (the DC coefficient). Coherence-gated: contract with the DCT of chi(t) (Parseval). Mirrors
-    ``dmipy_sim.compression.surface_logweight_dct``."""
+    ``dmipy_sim.replay.compression.surface_logweight_dct``."""
     blt = np.asarray(blt_dct, np.float64)
     if chi_hat is None:
         s = np.sqrt(n_t) * blt[:, 0]

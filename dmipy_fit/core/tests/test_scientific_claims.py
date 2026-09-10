@@ -130,7 +130,7 @@ class TestCalcBBridge:
     def _import_sim(self):
         pytest.importorskip("dmipy_sim",
                             reason="dmipy-sim not installed")
-        from dmipy_sim.waveforms import pgse, calc_b
+        from dmipy_sim import pgse, calc_b
         self.pgse = pgse
         self.calc_b = calc_b
 
@@ -140,7 +140,7 @@ class TestCalcBBridge:
         (20e-3, 60e-3, 0.02, 2000),
     ])
     def test_calc_b_vs_b_from_g(self, delta, Delta, G_mag, n_t):
-        """max relative deviation must be < 0.1% across all measurements."""
+        """the played b matches the square-lobe formula to the grid's own resolution on every measurement."""
         # pgse() takes scalar delta/Delta; bvecs sets n_measurements
         bvecs = np.array([[1., 0., 0.],
                           [0., 1., 0.],
@@ -149,13 +149,16 @@ class TestCalcBBridge:
 
         # compare against the SQUARE-lobe analytic b formula, so build the square
         # (instantaneous) waveform explicitly (sim now defaults to slew-limited)
-        wf = self.pgse(delta, Delta, G_mags, bvecs, n_t, slew_rate=np.inf)
+        wf = self.pgse(bvecs, delta, Delta, gradient_strengths=G_mags, n_t=n_t, slew_rate=np.inf)
         b_sim = self.calc_b(wf)
         b_core = b_from_g(G_mag, delta, Delta)
 
+        # the lobe edges land inside a grid step (samples are mid-step), so the played q is within dt/delta of
+        # the square lobe's and b within 2 dt/delta: the bound shrinks with the grid, not a fixed percentage
+        tol = 2.0 * wf.dt / delta
         rel_err = np.abs(b_sim - b_core) / b_core
-        assert np.all(rel_err < 1e-3), (
-            f"max relative error {rel_err.max():.4%} exceeds 0.1% "
+        assert np.all(rel_err < tol), (
+            f"max relative error {rel_err.max():.4%} exceeds the grid bound {tol:.4%} "
             f"(delta={delta*1e3:.0f}ms Delta={Delta*1e3:.0f}ms G={G_mag}T/m "
             f"n_t={n_t})")
 

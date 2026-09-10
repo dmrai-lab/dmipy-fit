@@ -1,5 +1,4 @@
 import numpy as np
-from collections import namedtuple
 from .gradient_conversions import (
     g_from_b, q_from_b, b_from_q, g_from_q, b_from_g, q_from_g)
 from .constants import CONSTANTS
@@ -73,91 +72,10 @@ class PGSEAcquisitionScheme:
         self.tau = None
         if self.delta is not None and self.Delta is not None:
             self.tau = Delta - delta / 3.
-        # Finite-RF / minimum-echo-time bookkeeping.  ``_minimum_te`` is the
-        # ideal (hard-pulse) gradient-schedule echo-time floor and ``_te_auto``
-        # records that TE defaulted to it; both are set by the from_* constructors
-        # after build.  Finite RF lengthens that floor:
-        #   * the excitation (90 deg) always adds the full tau_exc: M_xy is born at
-        #     the pulse centre and the encoding can only start once the pulse ends,
-        #     a tau_exc/2 lead-in, which spin-echo symmetry mirrors into an equal
-        #     tau_exc/2 trail-out before the echo (the lobes sit symmetric about the
-        #     180), so 2 * tau_exc/2 = tau_exc total;
-        #   * the refocusing (180 deg) adds only the part of its duration that does
-        #     not fit the gradient-off window straddling it (``_refocus_gap``).  In
-        #     PGSE that window is Delta - delta wide, so a typical refocusing pulse
-        #     hides inside it; in OGSE the oscillating trains butt the pulse
-        #     (_refocus_gap = 0), so the full tau_180 lengthens TE.
-        self._tau_exc = 0.0
-        self._tau_180 = 0.0
-        self._refocus_gap = np.inf
-        self._minimum_te = None
+        # The legacy analytical scheme (no waveform): a PGSE family by construction.
+        self.sequence_type = 'pgse'
         self._te_auto = False
-        # Coherence-pathway family, stamped by the from_* constructors; used to
-        # dispatch the sequence-diagram renderer.  Default for raw construction.
-        self.sequence_type = 'waveform'
-        # True when the stored G(t) is the 180-folded EFFECTIVE gradient (lobes
-        # after a refocusing pulse stored with flipped sign so q refocuses);
-        # the diagram un-folds it to show the physical same-polarity gradient.
-        self._effective_gradient = False
         self._compute_shells()
-
-    @property
-    def tau_exc(self):
-        """Excitation (90 deg) RF pulse duration in seconds (0 = ideal hard pulse).
-
-        Setting a finite duration on a scheme whose echo time defaulted to the
-        gradient-schedule minimum extends that minimum (by the full tau_exc for the
-        excitation -- tau_exc/2 lead-in mirrored by tau_exc/2 trail-out -- plus any
-        refocusing spill-over); if the echo time was set explicitly, a value that
-        would push the minimum above it raises instead.
-        """
-        return self._tau_exc
-
-    @tau_exc.setter
-    def tau_exc(self, value):
-        self._tau_exc = float(value)
-        self._apply_finite_rf()
-
-    @property
-    def tau_180(self):
-        """Refocusing (180 deg) RF pulse duration in seconds (0 = ideal hard pulse).
-
-        Only the part of the pulse that does not fit the gradient-off window
-        straddling it (``_refocus_gap``) lengthens the echo time: in PGSE the
-        Delta - delta inter-lobe gap absorbs a typical pulse, whereas in OGSE the
-        trains butt the pulse and the full duration is added.
-        """
-        return self._tau_180
-
-    @tau_180.setter
-    def tau_180(self, value):
-        self._tau_180 = float(value)
-        self._apply_finite_rf()
-
-    def _effective_minimum_te(self):
-        """Echo-time floor including any finite-RF lengthening, or None."""
-        if self._minimum_te is None:
-            return None
-        refocus = max(0.0, self._tau_180 - self._refocus_gap)
-        return self._minimum_te + self._tau_exc + refocus
-
-    def _apply_finite_rf(self):
-        """Re-apply the finite-RF echo-time floor after a tau_* change."""
-        te_min = self._effective_minimum_te()
-        if te_min is None:
-            return  # GRE/CPMG and freeform schemes: TE is defined explicitly
-        if self._te_auto:
-            self.TE = np.full(self.number_of_measurements, te_min)
-            self._compute_shells()
-        elif self.TE is not None and np.any(
-                np.asarray(self.TE) < te_min - _TE_FLOOR_ATOL):
-            raise ValueError(
-                "Echo time TE = {:.3f} ms is below the minimum {:.3f} ms once "
-                "the finite RF pulses (tau_exc = {:.3f} ms, refocusing "
-                "spill-over = {:.3f} ms) are included.".format(
-                    float(np.min(self.TE)) * 1e3, te_min * 1e3,
-                    self._tau_exc * 1e3,
-                    max(0.0, self._tau_180 - self._refocus_gap) * 1e3))
 
     def _compute_shells(self):
         """Compute (or recompute) shell clustering and all derived properties.
@@ -590,135 +508,215 @@ DmipyAcquisitionScheme = PGSEAcquisitionScheme
 
 
 # ---------------------------------------------------------------------------
-# Waveform-first acquisition scheme (ADR-001 option A)
+# The acquisition scheme over dmipy-sim's acquisition object
 # ---------------------------------------------------------------------------
 
-_WaveformView = namedtuple('_WaveformView', ['G', 'dt', 'echo_idx'])
+def _as_protocol(sequence):
+    """A ``ScannerSequence`` or a ``Protocol`` as a Protocol (one sequence: one entry, its rows ``0 .. n-1``)."""
+    from dmipy_sim.acquisition.scanner_sequence import Protocol, ScannerSequence
+    if isinstance(sequence, Protocol):
+        return sequence
+    if isinstance(sequence, ScannerSequence):
+        return Protocol([sequence])
+    raise TypeError("an AcquisitionScheme wraps a dmipy-sim ScannerSequence or Protocol (the acquisition object), "
+                    f"got {type(sequence).__name__}")
 
 
-def _trap_profile(t, start, delta, eps):
-    """Unit trapezoid amplitude (0..1) sampled at times ``t`` (seconds).
-
-    Ramps 0->1 over ``eps``, holds, ramps 1->0 over ``eps``, with the two ramp
-    MIDPOINTS at ``start`` and ``start + delta`` -- i.e. ``delta`` is the
-    half-amplitude (50%) width and the lobe physically spans ``delta + eps``.  A
-    symmetric trapezoid placed this way has area ``delta`` (matching a rectangle
-    of width delta), so the b-value and diffusion time are referenced to the ramp
-    midpoints, the standard slew convention.  ``eps <= 0`` gives a rectangle.
-    """
-    if eps <= 0:
-        return ((t >= start) & (t < start + delta)).astype(np.float64)
-    a = np.zeros_like(t, dtype=np.float64)
-    up = (t >= start) & (t < start + eps)
-    a[up] = (t[up] - start) / eps
-    flat = (t >= start + eps) & (t < start + delta)
-    a[flat] = 1.0
-    dn = (t >= start + delta) & (t < start + delta + eps)
-    a[dn] = 1.0 - (t[dn] - (start + delta)) / eps
-    return a
-
-
-def _trap_cosine_profile(t, sigma, f, slew, g_mag):
-    """Trapezoidal (flat-top, slew-limited) cosine-OGSE amplitude, T/m.
-
-    A triangle carrier aligned with the cosine (peak +1 at t=0, -1 at the
-    half-period) is scaled so its slope equals the slew rate and then *clipped*
-    at +/- g_mag: the transitions become straight slew ramps and the extrema are
-    genuine flat plateaus -- the trapezoidal "minimum achievable rise time" OGSE
-    of Drobnjak 2016 (for N=1 this is one +/- pair, i.e. PGSE).  A leading and
-    trailing slew ramp tapers the train to zero at the ends; the carrier is
-    zero outside ``[0, sigma]``.
-    """
-    P = 1.0 / f
-    phi = (f * t) % 1.0
-    tri = 1.0 - 4.0 * np.minimum(phi, 1.0 - phi)        # +1 at peak, -1 at trough
-    trap = np.clip((slew * P / 4.0) * tri, -g_mag, g_mag)
-    ramp = g_mag / slew
-    env = np.clip(t / ramp, 0.0, 1.0) * np.clip((sigma - t) / ramp, 0.0, 1.0)
-    env = np.where((t >= 0) & (t < sigma), env, 0.0)
-    return trap * env
+def _gather(protocol, values, fill=None):
+    """A per-measurement array over ``protocol`` in acquisition order from ``values(seq)`` per sequence -- an
+    array of that sequence's ``n_meas`` rows, or ``None``. ``None`` when no sequence has a value; a sequence
+    without one takes ``fill`` (a scalar, or a callable of the sequence)."""
+    per = [values(seq) for seq in protocol]
+    if all(v is None for v in per):
+        return None
+    out = None
+    for seq, rows, v in zip(protocol, protocol.rows, per):
+        if v is None:
+            f = fill(seq) if callable(fill) else fill
+            v = np.full((seq.n_meas,), np.nan if f is None else f, dtype=float)
+        v = np.asarray(v, dtype=float)
+        if v.ndim == 0 or v.shape[0] != seq.n_meas:
+            v = np.broadcast_to(v, (seq.n_meas,) + v.shape[1:] if v.ndim else (seq.n_meas,))
+        if out is None:
+            out = np.empty((protocol.n_meas,) + v.shape[1:], dtype=float)
+        out[rows] = v
+    return out
 
 
-def _refocusing_residual(G, dt):
-    """Relative net gradient moment ``max|q(TE)| / max|q|`` for one measurement.
-
-    ``q(t) = integral G dt`` (the stored G is the effective, 180-folded gradient).
-    A moment-nulled (refocused) waveform has ``q(TE) = 0`` so stationary spins
-    rephase at the echo; the residual is ~0.  A non-nulled waveform leaves a net
-    ``q(TE)`` -- dmipy-sim then dephases the ensemble to little/no signal at TE,
-    while the analytical model still returns a (meaningless) b-tensor value.
-    """
-    G = np.asarray(G, dtype=np.float64)
-    q = np.cumsum(G * dt, axis=0)
-    qmax = float(np.max(np.abs(q)))
-    if qmax <= 0.0:
-        return 0.0
-    return float(np.max(np.abs(q[-1]))) / qmax
+def _enc(seq, field):
+    """An ``Encoding`` field of ``seq`` (``None`` when absent)."""
+    return None if seq.encoding is None else getattr(seq.encoding, field, None)
 
 
-def _calc_b_from_waveform(G, dt):
-    """Compute b-values from gradient waveform using trapezoidal integration.
+def _by_te(TE, n_m, build):
+    """One sequence per distinct echo time, each holding the rows of that TE in acquisition order:
+    ``build(rows, te)`` returns the ScannerSequence of ``rows`` (``te`` ``None`` = the smallest that fits). A
+    single TE (or none) is one sequence; several are a Protocol that remembers the interleaving."""
+    from dmipy_sim.acquisition.scanner_sequence import Protocol
+    if TE is None or np.ndim(TE) == 0:
+        return build(np.arange(n_m), None if TE is None else float(TE))
+    TE = np.broadcast_to(np.asarray(TE, dtype=float), (n_m,))
+    groups = [np.flatnonzero(TE == te) for te in np.unique(TE)]
+    if len(groups) == 1:
+        return build(groups[0], float(TE[0]))
+    return Protocol([build(rows, float(TE[rows[0]])) for rows in groups], rows=groups)
 
-    Implements b = γ² ∫₀^T |q(t)|² dt, where q(t) = γ ∫₀^t G(t') dt'.
-    Matches dmipy_sim.waveforms.calc_b() within discretization error (~0.16%
-    for PGSE at n_t=1000; see SC-013 in governance/scientific_ledger.yaml).
 
-    Parameters
-    ----------
-    G : ndarray, shape (n_m, n_t, 3), T/m
-    dt : float, seconds
-
-    Returns
-    -------
-    b : ndarray, shape (n_m,), s/m²
-    """
-    gamma = CONSTANTS['water_gyromagnetic_ratio']
-    G_f64 = np.asarray(G, dtype=np.float64)
-    q = np.cumsum(G_f64 * dt, axis=1) * gamma   # (n_m, n_t, 3) rad/m
-    q_sq = np.sum(q ** 2, axis=2)               # (n_m, n_t)
-    b = np.trapezoid(q_sq, dx=dt, axis=1)       # (n_m,) s/m²
-    return b.astype(np.float64)
+def _rows_of(x, rows, n_m):
+    """The rows ``rows`` of a per-measurement or scalar parameter."""
+    if x is None or np.ndim(x) == 0:
+        return x
+    x = np.asarray(x)
+    return x[rows] if x.shape[0] == n_m else x
 
 
 class AcquisitionScheme(PGSEAcquisitionScheme):
-    """Waveform-first acquisition scheme (ADR-001 option A).
+    """The analytical acquisition scheme over dmipy-sim's acquisition object.
 
-    Extends PGSEAcquisitionScheme by storing the gradient waveform G(t) as
-    the canonical representation. This enables one scheme object for both:
+    A scheme wraps one :class:`dmipy_sim.acquisition.scanner_sequence.ScannerSequence` -- what the scanner does
+    from the excitation to the readout: the physical gradient, the RF schedule, the readout, a timing budget,
+    the per-measurement ``Encoding`` -- or a :class:`~dmipy_sim.acquisition.scanner_sequence.Protocol` of them
+    (one per echo time; a scheme with several TEs is several sequences, interleaved as the acquisition was).
+    Every per-measurement quantity a signal model reads (``bvalues``, ``gradient_directions``, ``delta``,
+    ``Delta``, ``TE``, ``TM``, ``tau_perp``, the OGSE fields, ...) is that object's declared ``Encoding``, in
+    acquisition order; the shell / SH / rotational-harmonics layer is this class's own. Nothing about the
+    gradient is re-derived here: ``btensor()``, ``refocusing_residual``, the effective gradient ``_G`` the
+    waveform-integrating models read, all come from the object.
 
-    - Analytical signal models: via inherited bvalues, gradient_directions,
-      shell_indices, shell_sh_matrices, etc. (PGSEAcquisitionScheme).
-    - Monte Carlo simulation: via .waveform → dmipy_sim.simulate().
+    Build one from a dmipy-sim sequence (``AcquisitionScheme(seq)``) or through the constructors, which are
+    dmipy-sim's builders with the shell parameters added:
+    ``from_pgse``, ``from_pgste``, ``from_cpmg``, ``from_ogse``, ``from_btensor_ste``, ``from_btensor_pte``,
+    ``from_waveform``, ``from_btensor_waveform``. The legacy factories (``acquisition_scheme_from_bvalues`` ...)
+    return the waveform-free :class:`PGSEAcquisitionScheme`.
 
-    Primary state: G (n_m, n_t, 3) float32 T/m, dt (float, seconds).
-
-    Construct with class methods:
-        AcquisitionScheme.from_pgse(bvalues, gradient_directions, delta, Delta)
-        AcquisitionScheme.from_waveform(G, dt, gradient_directions, ...)
-
-    The legacy factory functions (acquisition_scheme_from_bvalues etc.) still
-    return PGSEAcquisitionScheme for full backward compatibility.
+    Monte Carlo: ``dmipy_sim.simulate(n, D, scheme, geometry)`` reads ``scheme.waveform`` -- the object itself --
+    so the analytical model and the walk see the identical acquisition.
     """
 
-    def __init__(self, G, dt, bvalues, gradient_directions, qvalues,
-                 gradient_strengths, delta, Delta, TE,
-                 min_b_shell_distance, b0_threshold,
-                 oscillation_frequency=None,
-                 gradient_rise_time=None,
-                 n_oscillation_cycles=None):
-        super().__init__(bvalues, gradient_directions, qvalues,
-                         gradient_strengths, delta, Delta, TE,
-                         min_b_shell_distance, b0_threshold)
-        self._G = np.asarray(G, dtype=np.float32)
-        self._dt = float(dt)
-        # OGSE-specific per-measurement fields (None for pure PGSE schemes)
-        self.oscillation_frequency = oscillation_frequency
-        self.gradient_rise_time = gradient_rise_time
-        self.n_oscillation_cycles = n_oscillation_cycles
-        # Re-cluster shells now that oscillation_frequency is known, so PGSE
-        # and OGSE measurements at the same b-value get separate shell indices.
-        if oscillation_frequency is not None and np.any(oscillation_frequency > 0):
-            self._compute_shells()
+    def __init__(self, sequence, min_b_shell_distance=50e6, b0_threshold=10e6):
+        P = _as_protocol(sequence)
+        for seq in P:
+            if seq.encoding is None:
+                raise TypeError("an AcquisitionScheme reads each sequence's Encoding (b, directions, delta, ...); "
+                                "build the sequence with a dmipy-sim builder or sequences.from_waveform")
+        self.protocol = P
+        n_m = P.n_meas
+        bvalues = _gather(P, lambda s: _enc(s, "bvalues"))
+        dirs = _gather(P, lambda s: _enc(s, "gradient_directions"))
+        qvalues = _gather(P, lambda s: _enc(s, "qvalues"), fill=0.0)
+        gs = _gather(P, lambda s: _enc(s, "gradient_strengths"), fill=0.0)
+        delta = _gather(P, lambda s: _enc(s, "delta"), fill=0.0)
+        Delta = _gather(P, lambda s: _enc(s, "Delta"), fill=0.0)
+        TE = _gather(P, lambda s: _enc(s, "TE"), fill=lambda s: s.T)
+        # the OGSE fields, before the shells are computed (they enter the shell key)
+        self.oscillation_frequency = _gather(P, lambda s: _enc(s, "oscillation_frequency"), fill=0.0)
+        self.gradient_rise_time = _gather(P, lambda s: _enc(s, "gradient_rise_time"), fill=0.0)
+        self.n_oscillation_cycles = _gather(P, lambda s: _enc(s, "n_oscillation_cycles"), fill=0.0)
+        self.gradient_duration = _gather(P, lambda s: _enc(s, "gradient_duration"), fill=0.0)
+        # coherence-pathway quantities the relaxation factors gate on: the stimulated echo's storage time (0 for a
+        # spin echo: exp(-TM/T1) = 1) and the time transverse (the whole echo for a spin echo)
+        self.TM = _gather(P, lambda s: None if s.TM is None else np.full(s.n_meas, s.TM), fill=0.0)
+        self.tau_perp = _gather(P, lambda s: _enc(s, "tau_perp_SE"), fill=lambda s: s.T)
+        self.tau_perp_SE = self.tau_perp
+        self.ste_flip_angles = next((_enc(s, "ste_flip_angles") for s in P if _enc(s, "ste_flip_angles") is not None), None)
+        self.refocused = all(_enc(s, "refocused") is not False for s in P)
+        for k in ("cpmg_n_echoes", "cpmg_TE", "cpmg_beta_deg", "n_t_per_echo"):
+            setattr(self, k, next((_enc(s, k) for s in P if _enc(s, k) is not None), None))
+        super().__init__(bvalues, dirs, qvalues, gs, delta, Delta, TE, min_b_shell_distance, b0_threshold)
+        self.sequence_type = P[0].family if len(P) == 1 else "protocol"
+        self._te_auto = any(bool(_enc(s, "te_auto")) for s in P)
+        self._colinear_pgse = all(s.family in ("pgse", "pgste") for s in P)
+
+    # ── the object ─────────────────────────────────────────────────────────────────────────────────────────
+    @property
+    def sequence(self):
+        """The ``ScannerSequence`` when the scheme holds one, else its ``Protocol``."""
+        return self.protocol[0] if len(self.protocol) == 1 else self.protocol
+
+    @property
+    def waveform(self):
+        """What ``dmipy_sim.simulate`` and a pack's ``replay`` read: the acquisition object itself."""
+        return self.sequence
+
+    @property
+    def timing(self):
+        """The timing budget the sequences were built to (``None`` for instantaneous pulses)."""
+        return self.protocol[0].timing
+
+    def _rf_duration(self, role):
+        """The duration of the first pulse of ``role`` in the schedule (0 for a hard or absent pulse)."""
+        from dmipy_sim.acquisition.rf import _ROLE_OF_LABEL
+        for e in self.protocol[0].rf:
+            if _ROLE_OF_LABEL.get(e.label) == role:
+                return float(e.duration_s)
+        return 0.0
+
+    @property
+    def tau_exc(self):
+        """The excitation's duration (s); 0 for an instantaneous pulse. Read from the schedule."""
+        return self._rf_duration("excite")
+
+    @property
+    def tau_180(self):
+        """The refocusing pulse's duration (s); 0 for an instantaneous pulse."""
+        return self._rf_duration("refocus")
+
+    @property
+    def tau_90(self):
+        """A stimulated echo's store / recall duration (s); 0 for an instantaneous pulse."""
+        return self._rf_duration("store")
+
+    @property
+    def refocusing_residual(self):
+        """The worst relative net gradient moment ``|q(TE)| / max|q|`` over the sequences (~0: refocused)."""
+        return max(s.refocusing_residual for s in self.protocol)
+
+    @property
+    def _common_grid(self):
+        n_t, dt = self.protocol[0].n_t, self.protocol[0].dt
+        return all(s.n_t == n_t and abs(s.dt - dt) < 1e-12 * dt for s in self.protocol)
+
+    @property
+    def _grid(self):
+        """The models' shared grid ``(n_t, dt)``: the sequences' own when they agree, otherwise the finest step
+        over the longest duration (a sequence's gradient is held per step, zero after its readout)."""
+        if self._common_grid:
+            return int(self.protocol[0].n_t), float(self.protocol[0].dt)
+        dt = min(float(s.dt) for s in self.protocol)
+        return int(max(round(float(s.T) / dt) for s in self.protocol)) + 1, dt
+
+    @property
+    def _G(self):
+        """The EFFECTIVE gradient ``(n_m, n_t, 3)`` in acquisition order on the shared grid :attr:`_grid`, for the
+        models that integrate a waveform (built once, on first read); :meth:`waveform_of` reads a measurement on
+        its own sequence's grid."""
+        cached = self.__dict__.get("_G_cache")
+        if cached is not None:
+            return cached
+        n_t, dt = self._grid
+        out = np.zeros((self.number_of_measurements, n_t, 3), np.float32)
+        for seq, rows in zip(self.protocol, self.protocol.rows):
+            G = np.asarray(seq.G_eff, np.float32)
+            if seq.n_t == n_t and abs(seq.dt - dt) < 1e-12 * dt:
+                out[rows] = G
+            else:                                              # held per step: G[k] plays over [k dt, (k+1) dt)
+                k = np.floor(np.arange(n_t) * dt / float(seq.dt) + 1e-9).astype(int)
+                ok = k < seq.n_t
+                out[np.ix_(rows, np.flatnonzero(ok))] = G[:, k[ok]]
+        self.__dict__["_G_cache"] = out
+        return out
+
+    @property
+    def _dt(self):
+        return self._grid[1]
+
+    def waveform_of(self, m):
+        """``(G_eff, dt)`` of measurement ``m``: its sequence's effective gradient row and step."""
+        for seq, rows in zip(self.protocol, self.protocol.rows):
+            hit = np.flatnonzero(rows == m)
+            if hit.size:
+                return np.asarray(seq.G_eff, np.float64)[int(hit[0])], float(seq.dt)
+        raise IndexError(m)
 
     @property
     def is_ogse(self):
@@ -729,12 +727,8 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
 
     @property
     def shell_fingerprints(self):
-        """Per-shell identifier: list of (b_value_s_m2, oscillation_freq_hz).
-
-        Overrides PGSEAcquisitionScheme to include the mean oscillation
-        frequency per shell, so PGSE and OGSE shells at the same b-value
-        have distinct fingerprints.
-        """
+        """Per-shell identifier: list of (b_value_s_m2, oscillation_freq_hz), so PGSE and OGSE shells at the same
+        b-value have distinct fingerprints."""
         osc = self.oscillation_frequency
         fps = []
         for idx in self.unique_shell_indices:
@@ -744,711 +738,192 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
             fps.append((b, freq))
         return fps
 
-    @property
-    def waveform(self):
-        """Freeform gradient waveform view for Monte Carlo simulation.
-
-        Returns a named tuple with attributes:
-          G        : (n_m, n_t, 3) float32 ndarray, T/m
-          dt       : float, seconds
-          echo_idx : int — last timestep (echo assumed at end of sequence)
-
-        Accepted by dmipy_sim.simulate(n_walkers, D, scheme, geometry) directly.
-        """
-        return _WaveformView(G=self._G, dt=self._dt,
-                             echo_idx=self._G.shape[1] - 1)
-
-    @property
-    def refocusing_residual(self):
-        """Worst-case relative net gradient moment ``max|q(TE)|/max|q|`` over all
-        measurements -- a consistency guard between the engines.
-
-        ~0 means the gradient is moment-nulled (the spin/stimulated echo forms and
-        the analytical b / b-tensor is meaningful).  A large value means the
-        waveform does not refocus: dmipy-sim will dephase to little or no signal
-        at TE, whereas dmipy-fit would still emit a (physically meaningless)
-        attenuation.  Use it to assert a loaded free waveform actually refocuses.
-        """
-        G = np.asarray(self._G)
-        return max((_refocusing_residual(G[m], self._dt)
-                    for m in range(G.shape[0])), default=0.0)
-
-    # Physical flags a sim Sequence may carry; copied verbatim onto the wrapped
-    # analytical scheme (oscillation_* are passed through __init__, not here).
-    _SEQ_FLAGS = (
-        'sequence_type', '_minimum_te', '_te_auto', '_refocus_gap',
-        '_effective_gradient', '_ogse_two_train', '_refocus_duration',
-        'TM', 'tau_perp_SE', 'ste_flip_angles', '_ramp_time',
-        'cpmg_n_echoes', 'cpmg_TE', 'cpmg_beta_deg', 'n_t_per_echo', 'refocused',
-        '_refocus_idx',
-    )
+    # ── constructors: dmipy-sim's builders, the shell parameters added ─────────────────────────────────────
+    @classmethod
+    def from_sequence(cls, sequence, min_b_shell_distance=50e6, b0_threshold=10e6):
+        """The scheme of a dmipy-sim ``ScannerSequence`` or ``Protocol``."""
+        return cls(sequence, min_b_shell_distance, b0_threshold)
 
     @classmethod
-    def _wrap_sequence(cls, seq, min_b_shell_distance, b0_threshold):
-        """Build an analytical AcquisitionScheme from a physical dmipy-sim Sequence.
+    def from_pgse(cls, bvalues, gradient_directions, delta, Delta, TE=None, n_t=1000, slew_rate=np.inf,
+                  timing=None, min_b_shell_distance=50e6, b0_threshold=10e6):
+        """PGSE through :func:`dmipy_sim.sequences.pgse`: two same-sign lobes ``Delta`` apart, the 180 midway.
 
-        The forward-truth waveform / encoding (G, b, q, gradient strengths, timing)
-        is generated by dmipy-sim; this wraps it with the analytical shell / SH /
-        rotational-harmonics layer.  Because the Sequence's arrays are bit-identical
-        to the historical inline construction, the resulting scheme is unchanged
-        (locked by dmipy-sim/tests/test_sequences_parity.py).
+        ``bvalues`` (s/m²), ``gradient_directions`` (n_m, 3); ``delta`` / ``Delta`` (s) per measurement or
+        scalar; ``TE`` (s) scalar, per measurement (one sequence per distinct TE, interleaved as given) or None
+        (the smallest that fits); ``slew_rate`` (T/m/s, ``np.inf`` the idealised square lobes the analytical
+        models assume); ``timing`` a :class:`dmipy_sim.acquisition.timing.SequenceTiming` budget.
         """
-        osc = getattr(seq, 'oscillation_frequency', None)
-        scheme = cls(seq.G, seq.dt, seq.bvalues, seq.gradient_directions,
-                     seq.qvalues, seq.gradient_strengths, seq.delta, seq.Delta,
-                     seq.TE, min_b_shell_distance, b0_threshold,
-                     oscillation_frequency=osc,
-                     gradient_rise_time=getattr(seq, 'gradient_rise_time', None),
-                     n_oscillation_cycles=getattr(seq, 'n_oscillation_cycles', None))
-        for attr in cls._SEQ_FLAGS:
-            if hasattr(seq, attr):
-                setattr(scheme, attr, getattr(seq, attr))
-        return scheme
-
-    @classmethod
-    def from_pgse(cls, bvalues, gradient_directions, delta, Delta, TE=None,
-                  n_t=1000, slew_rate=np.inf, min_b_shell_distance=50e6,
-                  b0_threshold=10e6):
-        """Build AcquisitionScheme from PGSE parameters.
-
-        ``slew_rate`` (T/m/s), if given, makes the gradient lobes trapezoidal:
-        each lobe ramps at this slew rate, with the ramp midpoints at the nominal
-        delta/Delta edges (the half-amplitude convention), so the diffusion timing
-        is preserved and the lobe physically occupies delta + G/slew_rate.  The
-        gradient is then rescaled so the numerically integrated b-value still
-        equals the requested target.  Default (None) gives ideal rectangular lobes.
-
-        Supports multi-shell acquisitions with varying delta/Delta per
-        measurement. The waveform uses T_total = max(delta + Delta) across
-        all measurements so every pulse fits within the time window.
-
-        Parameters
-        ----------
-        bvalues : array, shape (n_m,), s/m²
-        gradient_directions : array, shape (n_m, 3)
-        delta : float or array, shape (n_m,), seconds — pulse duration (δ)
-        Delta : float or array, shape (n_m,), seconds — pulse separation (Δ)
-        TE : float, array, or None — echo time(s) in seconds
-        n_t : int — waveform timesteps (default 1000)
-        min_b_shell_distance, b0_threshold : float — shell clustering params
-
-        Returns
-        -------
-        AcquisitionScheme
-        """
-        # Forward-truth waveform generated by dmipy-sim (the physical sequence
-        # owner); this scheme adds the analytical shell/SH layer on top.
-        from dmipy_sim.sequences import Sequence as _Sequence
-        seq = _Sequence.from_pgse(bvalues, gradient_directions, delta, Delta,
-                                  TE=TE, n_t=n_t, slew_rate=slew_rate)
-        inst = cls._wrap_sequence(seq, min_b_shell_distance, b0_threshold)
-        inst._colinear_pgse = True   # exact rank-1 b-tensor (see btensor())
-        return inst
-
-    @classmethod
-    def from_pgste(cls, bvalues, gradient_directions, delta, TM, TE=None,
-                   n_t=1000, slew_rate=np.inf, min_b_shell_distance=50e6,
-                   b0_threshold=10e6):
-        """Build a PGSTE (pulsed-gradient stimulated-echo) AcquisitionScheme.
-
-        The stimulated echo splits the diffusion encoding around a mixing time
-        ``TM`` during which the magnetisation is stored longitudinally: a
-        dephasing gradient lobe of duration ``delta``, then the ``TM`` storage
-        window, then a rephasing lobe.  The effective pulse separation is
-        ``Delta = delta + TM`` (the diffusion time spans the storage), so the
-        b-value / q-value encoding is that of the equivalent PGSE.  The scheme
-        additionally carries ``TM``, which activates the longitudinal
-        :class:`~dmipy_fit.signal_models.attenuation.LongitudinalRelaxation`
-        factor ($\\exp(-\\mathrm{TM}/T_1)$).
-
-        The magnetisation is transverse only during the two encoding lobes, so the
-        transverse occupancy time is ``tau_perp = 2*delta``; the ``TM`` window carries
-        no transverse relaxation or surface relaxivity, only $T_1$.  These are two
-        distinct physical times and are stored separately: ``tau_perp`` gates the
-        transverse factors ($T_2$ / surface relaxivity), while ``TE`` is the true
-        echo time.  In the idealised zero-width-pulse limit the echo forms after
-        both encoding lobes (transverse, ``2*delta``) plus the storage window
-        (longitudinal, ``TM``), so ``TE`` defaults to ``2*delta + TM``; pass ``TE``
-        to override.
-
-        Instantaneous (hard) RF pulses only -- no finite-pulse or flip-angle
-        parameters.  The stimulated echo's constant amplitude factor is absorbed
-        by the global signal scale (``S0_global``) on the fit path and is not
-        applied here.
-
-        Parameters
-        ----------
-        bvalues : array, shape (n_m,), s/m^2
-        gradient_directions : array, shape (n_m, 3)
-        delta : float, seconds -- encoding pulse duration (delta)
-        TM : float, seconds -- mixing (longitudinal storage) time
-        TE : float, array, or None -- echo time(s); default ``2*delta + TM``
-        n_t : int -- waveform timesteps (default 1000)
-        min_b_shell_distance, b0_threshold : float -- shell clustering params
-
-        Returns
-        -------
-        AcquisitionScheme with ``TM`` set, ``Delta = delta + TM``, the transverse
-        occupancy time ``tau_perp = 2*delta`` and the echo time ``TE``
-        (``2*delta + TM`` by default).
-        """
+        from dmipy_sim.sequences import pgse
         bvalues = np.asarray(bvalues, dtype=float)
+        dirs = np.asarray(gradient_directions, dtype=float)
         n_m = len(bvalues)
-        delta_arr = np.full(n_m, float(delta))
-        Delta_arr = np.full(n_m, float(delta) + float(TM))
-        # Two distinct physical times: the transverse occupancy is the two encoding
-        # lobes (2*delta); the echo time is 2*delta transverse + TM longitudinal in
-        # the zero-width-pulse limit. Do NOT conflate them onto one TE field.
-        tau_perp_val = 2.0 * float(delta)           # STE transverse occupancy time
-        te_default = 2.0 * float(delta) + float(TM)  # echo time
-        try:
-            from dmipy_sim.sequences import Sequence  # noqa: F401  (availability check)
-            # Forward-truth encoding waveform from dmipy-sim (via the PGSE lobes at
-            # Delta = delta + TM); the STE-specific transverse time and TM are set
-            # below so the transverse factors are gated to the encoding only.
-            scheme = cls.from_pgse(
-                bvalues, gradient_directions, delta_arr, Delta_arr, TE=None,
-                n_t=n_t, slew_rate=slew_rate,
-                min_b_shell_distance=min_b_shell_distance,
-                b0_threshold=b0_threshold)
-        except ImportError:
-            # dmipy-sim unavailable: build the pure-PGSE (waveform-free) scheme so
-            # the analytical factors still work without the simulator dependency.
-            scheme = acquisition_scheme_from_bvalues(
-                bvalues, gradient_directions, delta_arr, Delta_arr, TE=None,
-                min_b_shell_distance=min_b_shell_distance,
-                b0_threshold=b0_threshold)
-        te_val = te_default if TE is None else TE
-        scheme.TE = np.full(n_m, float(te_val)) if np.ndim(te_val) == 0 \
-            else np.asarray(te_val, dtype=float)
-        scheme._te_auto = False
-        scheme.TM = np.full(n_m, float(TM))
-        scheme.tau_perp = np.full(n_m, tau_perp_val)
-        scheme._compute_shells()
-        return scheme
+        check_acquisition_scheme(bvalues, dirs, *unify_length_reference_delta_Delta(bvalues, delta, Delta, None)[:2], None)
+        seq = _by_te(TE, n_m, lambda rows, te: pgse(
+            dirs[rows], _rows_of(delta, rows, n_m), _rows_of(Delta, rows, n_m), bvalues=bvalues[rows], TE=te,
+            n_t=n_t, slew_rate=slew_rate, timing=timing))
+        return cls(seq, min_b_shell_distance, b0_threshold)
 
     @classmethod
-    def from_cpmg(cls, n_echoes, TE, bvalues=None, gradient_directions=None,
-                  beta_deg=180.0, n_t_per_echo=100,
-                  min_b_shell_distance=50e6, b0_threshold=10e6):
-        """Build a CPMG (multi-echo spin echo) AcquisitionScheme.
-
-        A CPMG train is a spin echo (the static off-resonance field IS
-        refocused, ``refocused = True`` → $\\Xi_{\\rm IA}=1$, no frequency shift),
-        but with a *train* of $N$ refocusing pulses spaced by ``TE``: the
-        measurement axis is the echo index, with per-echo time $(k{+}1)\\,$TE.
-        With ideal refocusing the signal is the per-compartment multi-exponential
-        $\\sum_c f_c\\exp(-(k{+}1)\\TE/T_{2,c})$ — exactly what the analytic
-        :class:`UnifiedWhiteMatterModel` evaluates from the per-measurement ``TE``
-        array (so $\\beta=180^\\circ$ CPMG needs no special analytic branch); for
-        an imperfect refocusing angle the Monte Carlo replays the EPG coherence
-        pathways (``dmipy_sim.waveforms.cpmg`` / ``apply_cpmg_with_relaxation``).
-
-        The bipolar diffusion gradient ($+G$ first half, $-G$ second half of each
-        echo period) is built so the primary pathway refocuses at every echo.
-
-        Parameters
-        ----------
-        n_echoes : int — number of refocusing pulses / echoes (the measurement axis).
-        TE : float — echo spacing in seconds.
-        bvalues : float, array, or None — diffusion weighting (per echo); ``None``/0
-            gives an unweighted relaxometry train.
-        gradient_directions : array (n_echoes, 3) or None — diffusion directions.
-        beta_deg : float — refocusing flip angle; 180 = ideal CPMG.
-        n_t_per_echo : int — waveform steps per echo period (even).
-
-        Returns
-        -------
-        AcquisitionScheme with per-echo ``TE`` and CPMG markers
-        (``cpmg_n_echoes``, ``cpmg_TE``, ``cpmg_beta_deg``, ``n_t_per_echo``);
-        ``refocused = True``.
-        """
-        from dmipy_sim.sequences import Sequence as _Sequence
-        seq = _Sequence.from_cpmg(n_echoes, TE, bvalues=bvalues,
-                                  gradient_directions=gradient_directions,
-                                  beta_deg=beta_deg, n_t_per_echo=n_t_per_echo)
-        return cls._wrap_sequence(seq, min_b_shell_distance, b0_threshold)
+    def from_pgste(cls, bvalues, gradient_directions, delta, TM, TE=None, n_t=1000, slew_rate=np.inf,
+                   timing=None, ste_flip_angles=(90.0, 90.0, 90.0), min_b_shell_distance=50e6, b0_threshold=10e6):
+        """PGSTE through :func:`dmipy_sim.sequences.pgste`: a dephasing lobe, longitudinal storage over ``TM``,
+        the same lobe rephasing; ``Delta = delta + TM``, ``TM`` carried for the longitudinal factor and the
+        transverse time ``tau_perp`` for the transverse ones."""
+        from dmipy_sim.sequences import pgste
+        bvalues = np.asarray(bvalues, dtype=float)
+        dirs = np.asarray(gradient_directions, dtype=float)
+        n_m = len(bvalues)
+        seq = _by_te(TE, n_m, lambda rows, te: pgste(
+            dirs[rows], _rows_of(delta, rows, n_m), TM, bvalues=bvalues[rows], TE=te, n_t=n_t,
+            slew_rate=slew_rate, timing=timing, ste_flip_angles=ste_flip_angles))
+        return cls(seq, min_b_shell_distance, b0_threshold)
 
     @classmethod
-    def from_waveform(cls, G, dt, gradient_directions, delta=None, Delta=None,
-                      TE=None, allow_unrefocused=False,
+    def from_cpmg(cls, n_echoes, TE, bvalues=None, gradient_directions=None, beta_deg=180.0, n_t_per_echo=100,
+                  polarity="constant", slew_rate=np.inf, timing=None, min_b_shell_distance=50e6, b0_threshold=10e6):
+        """CPMG through :func:`dmipy_sim.sequences.cpmg`: a 90 and ``n_echoes`` refocusing pulses of ``beta_deg``
+        at ``(k + 1/2) TE``, an echo read at every ``k TE``; the diffusion gradient at ``polarity`` constant or
+        alternating per interval. The scheme's ``TE`` is the train's; the readout is every echo."""
+        from dmipy_sim.sequences import cpmg
+        seq = cpmg(n_echoes, TE, gradient_directions=gradient_directions, bvalues=bvalues, polarity=polarity,
+                   beta_deg=beta_deg, n_t_per_echo=n_t_per_echo, slew_rate=slew_rate, timing=timing)
+        return cls(seq, min_b_shell_distance, b0_threshold)
+
+    @classmethod
+    def from_waveform(cls, G, dt, gradient_directions, delta=None, Delta=None, TE=None, allow_unrefocused=False,
                       min_b_shell_distance=50e6, b0_threshold=10e6):
-        """Build AcquisitionScheme from arbitrary gradient waveform.
-
-        b-values are computed numerically from the waveform via
-        _calc_b_from_waveform(). For PGSE at n_t=1000 this introduces ~0.16%
-        systematic error vs the analytic formula (SC-013). Models that require
-        qvalues or gradient_strengths (e.g. C3CylinderCallaghanApproximation,
-        which needs tau = Delta - delta/3) require delta and Delta to be set.
-
-        Parameters
-        ----------
-        G : array, shape (n_m, n_t, 3), T/m
-        dt : float, seconds — uniform timestep
-        gradient_directions : array, shape (n_m, 3) — unit direction vectors
-        delta : float, array, or None — δ in seconds (needed for qvalues)
-        Delta : float, array, or None — Δ in seconds (needed for qvalues)
-        TE : float, array, or None — echo time(s) in seconds
-
-        Returns
-        -------
-        AcquisitionScheme
-        """
-        from dmipy_sim.sequences import Sequence as _Sequence
-        # dmipy-sim builds the physical sequence and performs the moment-nulling
-        # (refocusing) guard; this wraps it with the analytical layer.
-        seq = _Sequence.from_waveform(G, dt, gradient_directions, delta=delta,
-                                      Delta=Delta, TE=TE,
-                                      allow_unrefocused=allow_unrefocused)
-        return cls._wrap_sequence(seq, min_b_shell_distance, b0_threshold)
-
+        """An arbitrary played gradient through :func:`dmipy_sim.sequences.from_waveform`: b numerically from
+        ``G``; no pulses declared, so the gradient must refocus on its own."""
+        from dmipy_sim.sequences import from_waveform
+        seq = from_waveform(G, dt, gradient_directions, delta=delta, Delta=Delta, TE=TE,
+                            allow_unrefocused=allow_unrefocused)
+        return cls(seq, min_b_shell_distance, b0_threshold)
 
     @classmethod
-    def from_ogse(cls, bvalues, gradient_directions, oscillation_frequency,
-                  gradient_duration, n_cycles=1, gradient_rise_time=0.,
-                  TE=None, n_t=1000, slew_rate=np.inf, refocus_duration=0.0,
+    def from_ogse(cls, bvalues, gradient_directions, oscillation_frequency, gradient_duration, *, shape="cosine",
+                  Delta=None, TE=None, n_t=1000, slew_rate=np.inf, timing=None,
                   min_b_shell_distance=50e6, b0_threshold=10e6):
-        """Build AcquisitionScheme from cosine OGSE parameters.
-
-        Parameters
-        ----------
-        bvalues : array (n_m,), s/m²
-        gradient_directions : array (n_m, 3)
-        oscillation_frequency : float or array (n_m,), Hz
-        gradient_duration : float or array (n_m,), seconds — full cosine window σ
-        n_cycles : int or array (n_m,) — number of oscillation cycles N
-        gradient_rise_time : float or array (n_m,), seconds — t_r (0 = pure cosine)
-        TE : float, array, or None
-        n_t : int — waveform timesteps
-        min_b_shell_distance, b0_threshold : float — shell clustering params
-
-        Returns
-        -------
-        AcquisitionScheme with OGSE fields set.
-
-        Notes
-        -----
-        b-value for pure cosine OGSE (Xu 2009):
-            b = γ²G²σ / (4π²f²)
-        Solving for G: G = sqrt(b * 4π²f² / (γ²σ))
-
-        RF / 180 convention (OGSE = Oscillating Gradient SPIN ECHO — it HAS a 180):
-        the stored ``G(t)`` is the EFFECTIVE (180-folded) gradient. There is an implicit
-        90 excitation at t=0, and a 180 refocusing pulse:
-          * slew-limited two-train (``slew_rate`` set): the 180 sits in the gradient-OFF
-            GAP between the two oscillating lobes and pushes them apart by
-            ``refocus_duration`` — i.e. the 180 is at ``σ + refocus_duration/2``, NOT at
-            TE/2. The post-180 lobe is stored sign-flipped (``_effective_gradient=True``,
-            ``_ogse_two_train=True``, ``_refocus_duration``); un-fold it (negate after the
-            gap) to recover the physical same-sign cosine.
-          * ideal single cosine (``slew_rate=np.inf``, the idealized instantaneous
-            limit; fit's default): no gap; the 180 is at the cosine centre σ/2. A
-            per-walker Bloch replay must place the 180 / un-fold accordingly
-            (dmipy_sim.pulse_sequence._build_ogse).
-        """
-        from dmipy_sim.sequences import Sequence as _Sequence
-        seq = _Sequence.from_ogse(
-            bvalues, gradient_directions, oscillation_frequency,
-            gradient_duration, n_cycles=n_cycles,
-            gradient_rise_time=gradient_rise_time, TE=TE, n_t=n_t,
-            slew_rate=slew_rate, refocus_duration=refocus_duration)
-        scheme = cls._wrap_sequence(seq, min_b_shell_distance, b0_threshold)
-        # gradient_duration is read by OGSE signal models; carried separately
-        # (not in _SEQ_FLAGS since __init__ takes the other oscillation fields).
-        scheme.gradient_duration = seq.gradient_duration
-        return scheme
+        """OGSE through :func:`dmipy_sim.sequences.ogse`: an oscillating block of ``gradient_duration`` on each side
+        of the 180 -- ``shape='cosine'`` (the frequency-selective cosine over whole periods; the analytical OGSE
+        models' idealised form, so the default here) or ``'trapezoid'`` (Drobnjak's train of lobes); ``Delta``
+        the block separation when stated. The block must hold whole periods (refused, not snapped)."""
+        from dmipy_sim.sequences import ogse
+        bvalues = np.asarray(bvalues, dtype=float)
+        dirs = np.asarray(gradient_directions, dtype=float)
+        n_m = len(bvalues)
+        seq = _by_te(TE, n_m, lambda rows, te: ogse(
+            dirs[rows], _rows_of(oscillation_frequency, rows, n_m), _rows_of(gradient_duration, rows, n_m),
+            shape=shape, Delta=_rows_of(Delta, rows, n_m), bvalues=bvalues[rows], TE=te, n_t=n_t,
+            slew_rate=slew_rate, timing=timing))
+        return cls(seq, min_b_shell_distance, b0_threshold)
 
     @classmethod
-    def from_btensor_ste(cls, bvalues, delta, Delta, TE=None, n_t=1000,
+    def from_btensor_ste(cls, bvalues, gradient_duration, TE=None, n_t=1000, slew_rate=np.inf, timing=None,
                          min_b_shell_distance=50e6, b0_threshold=10e6):
-        """Build a Spherical Tensor Encoding (STE) AcquisitionScheme (b_delta=0).
-
-        Uses three sequential bipolar gradient pairs, one per Cartesian axis
-        (x, y, z), played back-to-back within T_total = delta + Delta.
-        Non-overlapping q(t) support guarantees B_off-diagonal = 0 exactly;
-        symmetry gives B = (b/3) I and b_delta = 0.
-
-        This is the canonical STE waveform from dmipy-sim.  It is not
-        time-optimal (q-MAS waveforms achieve higher b for the same G and
-        duration) but is trivially verifiable from first principles.
-
-        RF / 180 convention: STE is run as a SPIN ECHO — an implicit 90 at t=0 and a
-        180 at TE/2. The three bipolar pairs are stored as the encoding gradient; for a
-        per-walker Bloch replay the post-180 part is un-folded (negated) about TE/2 so the
-        180 refocuses static off-resonance. This leaves the b-tensor ISOTROPIC (b_delta=0,
-        verified): the un-fold and the 180 sign flip cancel for the encoding (s*G_unfold =
-        G), so B is the same isotropic tensor as the no-180 self-refocusing case. NOTE the
-        bipolar pairs are SQUARE here; a realistic replay slew-limits them
-        (dmipy_sim.pulse_sequence._build_btensor_ste / pedagogy._slew_limit).
-
-        Parameters
-        ----------
-        bvalues : float or array, shape (n_m,), s/m²
-        delta : float — gradient block duration (s); only delta+Delta matters
-        Delta : float — block separation (s); only delta+Delta matters
-        TE : float or None — echo time (s)
-        n_t : int — waveform timesteps (default 1000)
-
-        Returns
-        -------
-        AcquisitionScheme
-            gradient_directions is set to [0,0,1] per measurement (nominal;
-            the encoding is isotropic — use scheme.btensor() for true shape).
-        """
-        from dmipy_sim.sequences import Sequence as _Sequence
-        seq = _Sequence.from_btensor_ste(bvalues, delta, Delta, TE=TE, n_t=n_t)
-        return cls._wrap_sequence(seq, min_b_shell_distance, b0_threshold)
+        """Spherical tensor encoding (``b_delta = 0``) through :func:`dmipy_sim.sequences.ste`: three sequential
+        self-refocused pairs, one per axis, over ``gradient_duration``. ``gradient_directions`` is nominal
+        ([0, 0, 1]); the encoding is isotropic -- read ``scheme.btensor()``."""
+        from dmipy_sim.sequences import ste
+        seq = ste(gradient_duration, bvalues=bvalues, TE=TE, n_t=n_t, slew_rate=slew_rate, timing=timing)
+        return cls(seq, min_b_shell_distance, b0_threshold)
 
     @classmethod
-    def from_btensor_pte(cls, bvalues, plane_normal, delta, Delta, TE=None,
-                         n_t=1000, min_b_shell_distance=50e6, b0_threshold=10e6):
-        """Build a Planar Tensor Encoding (PTE) AcquisitionScheme (b_delta=-0.5).
-
-        Two sequential bipolar gradient pairs, one per in-plane axis (u, v),
-        played back-to-back within T_total = delta + Delta.
-        Non-overlapping q(t) support gives B_uv = 0 exactly; eigenvalues are
-        (b/2, b/2, 0) along (u, v, plane_normal), so b_delta = -0.5.
-
-        This is the canonical PTE waveform from dmipy-sim.
-
-        Parameters
-        ----------
-        bvalues : float or array, shape (n_m,), s/m²
-        plane_normal : array, shape (3,) — unit vector normal to encoding plane
-        delta : float — gradient block duration (s); only delta+Delta matters
-        Delta : float — block separation (s); only delta+Delta matters
-        TE : float or None — echo time (s)
-        n_t : int — waveform timesteps (default 1000)
-
-        Returns
-        -------
-        AcquisitionScheme
-            gradient_directions is set to the u-axis per measurement (nominal;
-            use scheme.btensor() for the true encoding shape).
-        """
-        from dmipy_sim.sequences import Sequence as _Sequence
-        seq = _Sequence.from_btensor_pte(bvalues, plane_normal, delta, Delta,
-                                         TE=TE, n_t=n_t)
-        return cls._wrap_sequence(seq, min_b_shell_distance, b0_threshold)
+    def from_btensor_pte(cls, bvalues, plane_normal, gradient_duration, TE=None, n_t=1000, slew_rate=np.inf,
+                         timing=None, min_b_shell_distance=50e6, b0_threshold=10e6):
+        """Planar tensor encoding (``b_delta = -0.5``) through :func:`dmipy_sim.sequences.pte`: two sequential
+        self-refocused pairs in the plane normal to ``plane_normal``; ``gradient_directions`` is the first
+        in-plane axis (nominal) -- read ``scheme.btensor()``."""
+        from dmipy_sim.sequences import pte
+        seq = pte(plane_normal, gradient_duration, bvalues=bvalues, TE=TE, n_t=n_t, slew_rate=slew_rate, timing=timing)
+        return cls(seq, min_b_shell_distance, b0_threshold)
 
     @classmethod
-    def from_btensor_waveform(cls, G, dt, *, echo_idx=None, TE=None,
-                              allow_offcenter_180=False,
+    def from_btensor_waveform(cls, G, dt, *, echo_idx=None, TE=None, timing=None,
                               min_b_shell_distance=50e6, b0_threshold=10e6):
-        """Wrap a precomputed b-tensor gradient waveform as an AcquisitionScheme.
+        """A precomputed b-tensor gradient (e.g. a dmipy-design output; the PHYSICAL gradient) as a spin echo
+        through :func:`dmipy_sim.sequences.from_btensor_waveform`: the 180 at ``echo_idx`` (TE/2 by default,
+        the only position at which the static field refocuses at the echo), the budget it was built to."""
+        from dmipy_sim.sequences import from_btensor_waveform
+        seq = from_btensor_waveform(G, dt, echo_idx=echo_idx, TE=TE, timing=timing)
+        return cls(seq, min_b_shell_distance, b0_threshold)
 
-        For an externally designed b-tensor encoding (e.g. a dmipy-design
-        ``design_waveform`` output) instead of the canonical square bipolar
-        pairs.  ``G`` is the EFFECTIVE gradient (180 folded in, q(TE)=0).  Pass the
-        design's ``echo_idx`` so the Bloch un-fold/180 sit exactly where the design
-        placed them (defaults to TE/2).  A non-TE/2 180 is guarded — it raises
-        unless ``allow_offcenter_180=True`` (an off-centre 180 refocuses static
-        field at 2·t_180, not at TE).  The b-tensor shape is whatever the gradient
-        numbers produce (use ``scheme.btensor()``).  See
-        ``dmipy_sim.sequences.Sequence.from_btensor_waveform``.
-        """
-        from dmipy_sim.sequences import Sequence as _Sequence
-        seq = _Sequence.from_btensor_waveform(
-            G, dt, echo_idx=echo_idx, TE=TE, allow_offcenter_180=allow_offcenter_180)
-        return cls._wrap_sequence(seq, min_b_shell_distance, b0_threshold)
-
+    # ── what the waveform-integrating models read ──────────────────────────────────────────────────────────
     def gamma_lm(self, l_max=4):
-        """Compute angular power spectrum Gamma_lm = integral |G(t)|^2 Y_lm(Ghat(t)) dt.
-
-        Returns the real SH expansion of the gradient power spectrum for each
-        measurement. Only l=0 and l=2 are returned (6 coefficients total, ordered
-        Y00, Y2-2, Y2-1, Y20, Y21, Y22), since higher orders do not contribute to
-        the cylinder GPA signal in the fast-eigenmode limit.
-
-        For measurements without a waveform (PGSEAcquisitionScheme only), or
-        measurements with all-zero gradients, the coefficients are set to zero.
-
-        The integration is performed via Riemann sum:
-            Gamma_lm ~= sum_t |G(t)|^2 * Y_lm(Ghat(t)) * dt
-
-        Parameters
-        ----------
-        l_max : int, optional
-            Maximum SH order to compute. Currently only l=0 and l=2 are
-            implemented regardless of l_max. Default 4.
-
-        Returns
-        -------
-        gamma_lm : ndarray, shape (n_m, 6), float64
-            Columns correspond to: Y00, Y2-2, Y2-1, Y20, Y21, Y22.
-        """
+        """The angular power spectrum of the effective gradient per measurement,
+        ``Gamma_lm = integral |G(t)|^2 Y_lm(Ghat(t)) dt`` for l = 0 and 2 (six coefficients, ordered Y00, Y2-2,
+        Y2-1, Y20, Y21, Y22): what the cylinder GPA reads in the fast-eigenmode limit. Riemann sum on each
+        measurement's own grid."""
         if not hasattr(self, '_gamma_lm_cache'):
             self._gamma_lm_cache = {}
         if l_max in self._gamma_lm_cache:
             return self._gamma_lm_cache[l_max]
-
         n_m = self.number_of_measurements
-        # 6 coefficients: Y00, Y2-2, Y2-1, Y20, Y21, Y22
         result = np.zeros((n_m, 6), dtype=np.float64)
-
-        G = np.asarray(self._G, dtype=np.float64)  # (n_m, n_t, 3)
-        dt = float(self._dt)
-        n_t = G.shape[1]
-
         for m in range(n_m):
-            G_m = G[m]  # (n_t, 3)
-            G_mag = np.linalg.norm(G_m, axis=-1)  # (n_t,)
+            G_m, dt = self.waveform_of(m)                      # (n_t, 3)
+            G_mag = np.linalg.norm(G_m, axis=-1)
             nonzero = G_mag > 0.0
             if not np.any(nonzero):
-                continue  # all-zero waveform — leave gamma_lm = 0
-
-            # Unit direction Ghat(t): only at non-zero timesteps
-            # At zero-gradient timesteps the integrand is zero anyway,
-            # so we can set an arbitrary direction (e.g. x).
+                continue
             Ghat = np.zeros_like(G_m)
             Ghat[nonzero] = G_m[nonzero] / G_mag[nonzero, None]
-            # Magnitude squared at each timestep (integrand weight)
-            G2 = G_mag ** 2  # (n_t,)
-
-            x = Ghat[:, 0]
-            y = Ghat[:, 1]
-            z = Ghat[:, 2]
-
-            # Real SH basis evaluated at Ghat(t):
-            # Y_00 = 1/sqrt(4*pi)
-            Y00 = np.full(n_t, 1.0 / np.sqrt(4.0 * np.pi))
-            # Y_2,-2 = sqrt(15/(4*pi)) * x*y
-            Y2m2 = np.sqrt(15.0 / (4.0 * np.pi)) * x * y
-            # Y_2,-1 = sqrt(15/(4*pi)) * y*z
-            Y2m1 = np.sqrt(15.0 / (4.0 * np.pi)) * y * z
-            # Y_2, 0 = sqrt(5/(16*pi)) * (2*z^2 - x^2 - y^2)
-            Y20 = np.sqrt(5.0 / (16.0 * np.pi)) * (2.0 * z**2 - x**2 - y**2)
-            # Y_2, 1 = sqrt(15/(4*pi)) * x*z
-            Y21 = np.sqrt(15.0 / (4.0 * np.pi)) * x * z
-            # Y_2, 2 = sqrt(15/(16*pi)) * (x^2 - y^2)
-            Y22 = np.sqrt(15.0 / (16.0 * np.pi)) * (x**2 - y**2)
-
-            result[m, 0] = np.sum(G2 * Y00) * dt
-            result[m, 1] = np.sum(G2 * Y2m2) * dt
-            result[m, 2] = np.sum(G2 * Y2m1) * dt
-            result[m, 3] = np.sum(G2 * Y20) * dt
-            result[m, 4] = np.sum(G2 * Y21) * dt
-            result[m, 5] = np.sum(G2 * Y22) * dt
-
+            G2 = G_mag ** 2
+            x, y, z = Ghat[:, 0], Ghat[:, 1], Ghat[:, 2]
+            Y = np.stack([np.full(G_m.shape[0], 1.0 / np.sqrt(4.0 * np.pi)),
+                          np.sqrt(15.0 / (4.0 * np.pi)) * x * y,
+                          np.sqrt(15.0 / (4.0 * np.pi)) * y * z,
+                          np.sqrt(5.0 / (16.0 * np.pi)) * (2.0 * z ** 2 - x ** 2 - y ** 2),
+                          np.sqrt(15.0 / (4.0 * np.pi)) * x * z,
+                          np.sqrt(15.0 / (16.0 * np.pi)) * (x ** 2 - y ** 2)])
+            result[m] = (Y * G2).sum(axis=1) * dt
         self._gamma_lm_cache[l_max] = result
         return result
 
     def btensor(self):
-        """Compute the b-tensor B_ij = γ² ∫ q_i(t) q_j(t) dt for each measurement.
+        """The b-tensor ``B_ij = integral q_i q_j dt`` per measurement ``(n_m, 3, 3)`` (s/m²), in acquisition order.
 
-        Returns
-        -------
-        B : ndarray, shape (n_m, 3, 3), float64
-            B_ij in s/m².  For PGSE along x: B ≈ b × [[1,0,0],[0,0,0],[0,0,0]].
-            For STE: B ≈ (b_trace/3) × I₃.
+        A colinear single-direction encoding (PGSE / PGSTE) has the exact rank-1 tensor ``b n n^T`` and reads
+        it from the declared b (the quadrature of the discretised waveform carries an O(1/n_t) error that would
+        otherwise make the anisotropic Gaussian models disagree with the analytic b); every other encoding is the
+        object's own integral of its effective gradient.
         """
         if hasattr(self, '_btensor_cache'):
             return self._btensor_cache
-
-        # Colinear single-direction encoding (PGSE/PGSTE) has an exact rank-1
-        # b-tensor B = b * n⊗n. Use the analytic form from the stored nominal
-        # b-values rather than numerically integrating the discretised waveform:
-        # the latter carries an O(1/n_t) quadrature error (~0.4% at the default
-        # n_t=1000, worse for short pulses) that otherwise makes Gaussian
-        # anisotropic models (stick/zeppelin) disagree with the analytic b used
-        # by G1Ball and the JAX backend. Genuine rotating / multidimensional
-        # (b-tensor-encoding) waveforms are NOT colinear and keep the integral.
         if getattr(self, '_colinear_pgse', False):
             self._btensor_cache = super(AcquisitionScheme, self).btensor()
             return self._btensor_cache
-
-        gamma = CONSTANTS['water_gyromagnetic_ratio']
-        G = np.asarray(self._G, dtype=np.float64)   # (n_m, n_t, 3)
-        dt = float(self._dt)
-        q = np.cumsum(G * dt, axis=1) * gamma        # (n_m, n_t, 3) rad/m
-        # B_ij = ∫ q_i q_j dt ≈ sum_t q_i(t) q_j(t) * dt
-        # Use np.einsum for efficiency: (n_m, n_t, 3) outer on last dim
-        B = np.einsum('mti,mtj->mij', q, q) * dt    # (n_m, 3, 3)
+        B = np.empty((self.number_of_measurements, 3, 3), dtype=np.float64)
+        for seq, rows in zip(self.protocol, self.protocol.rows):
+            B[rows] = np.asarray(seq.btensor(), np.float64)
         self._btensor_cache = B
         return B
 
+    def to_gradient_array(self, n_t=1000):
+        """``(G_eff, dt)`` of the square PGSE with this scheme's b, directions, delta and Delta on an ``n_t`` grid,
+        as the analytical layer integrates it (:func:`dmipy_sim.sequences.to_gradient_array`); one grid, so one
+        sequence's delta / Delta must be uniform."""
+        from dmipy_sim.sequences import to_gradient_array
+        if len(self.protocol) != 1:
+            raise ValueError("to_gradient_array() is one grid: take it per sequence of a multi-TE protocol")
+        return to_gradient_array(self.protocol[0], n_t=n_t)
+
+    # ── unions ─────────────────────────────────────────────────────────────────────────────────────────────
     @classmethod
     def concatenate(cls, schemes):
-        """Concatenate multiple AcquisitionScheme objects along the measurement axis.
-
-        Parameters
-        ----------
-        schemes : list of AcquisitionScheme instances
-
-        Returns
-        -------
-        AcquisitionScheme with all measurements concatenated.
-
-        Notes
-        -----
-        For fields present only in some schemes (e.g. oscillation_frequency),
-        PGSE schemes are filled with zeros.
-        """
+        """The scheme of several schemes' measurements, one after the other: a Protocol of all their sequences
+        (each keeps its own grid; ``_G`` holds them per step on the finest one), the rows
+        offset so the acquisition order is the concatenation order."""
+        from dmipy_sim.acquisition.scanner_sequence import Protocol
         if not schemes:
             raise ValueError("concatenate() requires at least one scheme.")
-
-        # Resample every waveform onto a common time grid before concatenating.
-        # Schemes can have different dt (different n_t / total duration, e.g.
-        # PGSE vs OGSE vs b-tensor); using one scheme's dt for all and merely
-        # zero-padding would integrate the others' G(t) on the wrong grid and
-        # silently corrupt their b-tensors. Resample to the finest dt over the
-        # longest duration, zero outside each waveform's own window.
-        dts = np.array([float(s._dt) for s in schemes])
-        durations = np.array([s._G.shape[1] * float(s._dt) for s in schemes])
-        dt = float(dts.min())
-        max_n_t = int(np.ceil(durations.max() / dt - 1e-9))
-        t_new = np.arange(max_n_t) * dt
-        if np.allclose(dts, dt) and all(s._G.shape[1] == max_n_t
-                                        for s in schemes):
-            # Fast path: already a common grid -> no interpolation needed.
-            G_parts = [s._G for s in schemes]
-        else:
-            G_parts = []
-            for s in schemes:
-                G_s = np.asarray(s._G, dtype=np.float64)     # (n_m, n_t_s, 3)
-                t_s = np.arange(G_s.shape[1]) * float(s._dt)
-                out = np.zeros((G_s.shape[0], max_n_t, 3), dtype=np.float32)
-                for mi in range(G_s.shape[0]):
-                    for ci in range(3):
-                        out[mi, :, ci] = np.interp(
-                            t_new, t_s, G_s[mi, :, ci], left=0.0, right=0.0)
-                G_parts.append(out)
-        G_cat = np.concatenate(G_parts, axis=0)
-
-        def _cat_or_none(attr):
-            arrays = [getattr(s, attr, None) for s in schemes]
-            if all(a is None for a in arrays):
-                return None
-            # Fill None with zeros
-            filled = []
-            for s, a in zip(schemes, arrays):
-                n_m = s.number_of_measurements
-                if a is None:
-                    filled.append(np.zeros(n_m, dtype=np.float64))
-                else:
-                    filled.append(np.asarray(a, dtype=np.float64))
-            return np.concatenate(filled)
-
-        bvalues = np.concatenate([s.bvalues for s in schemes])
-        gradient_directions = np.concatenate(
-            [s.gradient_directions for s in schemes])
-        qvalues = _cat_or_none('qvalues')
-        gradient_strengths = _cat_or_none('gradient_strengths')
-        delta = _cat_or_none('delta')
-        Delta = _cat_or_none('Delta')
-        TE = _cat_or_none('TE')
-
-        # Recalculate bvalues from concatenated waveform for accuracy
-        bvalues_num = _calc_b_from_waveform(G_cat, dt)
-        # Use original bvalues for shell clustering (more reliable for PGSE)
-        # but keep numerically-derived ones if no bvalues present
-
-        min_b_shell_distance = schemes[0].min_b_shell_distance
-        b0_threshold = schemes[0].b0_threshold
-
-        inst = cls.__new__(cls)
-        super(AcquisitionScheme, inst).__init__(
-            bvalues, gradient_directions, qvalues, gradient_strengths,
-            delta if not np.all(delta == 0) else None,
-            Delta if not np.all(Delta == 0) else None,
-            TE if TE is not None and not np.all(TE == 0) else None,
-            min_b_shell_distance, b0_threshold)
-
-        inst._G = G_cat
-        inst._dt = dt
-
-        # OGSE fields: concatenate, filling PGSE measurements with 0
-        osc_freqs = []
-        rise_times = []
-        n_cycles_list = []
+        seqs, rows, offset = [], [], 0
         for s in schemes:
-            n_m = s.number_of_measurements
-            if s.oscillation_frequency is not None:
-                osc_freqs.append(s.oscillation_frequency)
-            else:
-                osc_freqs.append(np.zeros(n_m))
-            if s.gradient_rise_time is not None:
-                rise_times.append(s.gradient_rise_time)
-            else:
-                rise_times.append(np.zeros(n_m))
-            if s.n_oscillation_cycles is not None:
-                n_cycles_list.append(s.n_oscillation_cycles)
-            else:
-                n_cycles_list.append(np.zeros(n_m))
-
-        # Only set OGSE fields if any scheme has them
-        has_ogse = any(
-            s.oscillation_frequency is not None for s in schemes)
-        if has_ogse:
-            inst.oscillation_frequency = np.concatenate(osc_freqs)
-            inst.gradient_rise_time = np.concatenate(rise_times)
-            inst.n_oscillation_cycles = np.concatenate(n_cycles_list)
-
-            # gradient_duration: concatenate (fill PGSE with zeros)
-            g_durations = []
-            for s in schemes:
-                n_m_s = s.number_of_measurements
-                gd = getattr(s, 'gradient_duration', None)
-                if gd is not None:
-                    g_durations.append(np.asarray(gd, dtype=np.float64))
-                else:
-                    g_durations.append(np.zeros(n_m_s))
-            inst.gradient_duration = np.concatenate(g_durations)
-        else:
-            inst.oscillation_frequency = None
-            inst.gradient_rise_time = None
-            inst.n_oscillation_cycles = None
-            inst.gradient_duration = None
-
-        # ---- per-measurement coherence-gating attributes ----
-        # These were silently dropped before, which broke "scheme = scheme + atom" for
-        # the gating atoms: a PGSE + PGSTE union lost the mixing time (T1 became
-        # insensitive), an STE/finite-pulse union lost its transverse time, and a
-        # multi-field / multi-angle union reverted to the single defaults.
-        # TM (stimulated-echo storage time): absent -> 0 (no longitudinal storage, so
-        # exp(-TM/T1)=1, the correct PGSE limit).
-        inst.TM = _cat_or_none('TM')
-        # tau_perp_SE (transverse-occupancy time): absent -> that scheme's TE, so the
-        # T2 / surface-relaxivity gate uses the correct transverse time (not the full TE).
-        if any(getattr(s, 'tau_perp_SE', None) is not None for s in schemes):
-            parts = []
-            for s in schemes:
-                n_m = s.number_of_measurements
-                tp = getattr(s, 'tau_perp_SE', None)
-                if tp is None:
-                    te = getattr(s, 'TE', None)
-                    tp = (np.full(n_m, np.nan) if te is None
-                          else np.broadcast_to(np.asarray(te, float), (n_m,)).copy())
-                else:
-                    tp = np.broadcast_to(np.asarray(tp, float), (n_m,)).copy()
-                parts.append(tp)
-            inst.tau_perp_SE = np.concatenate(parts)
-        else:
-            inst.tau_perp_SE = None
-        # tau_perp (transverse occupancy time; STE encoding = 2*delta): absent ->
-        # that scheme's TE (spin echo: the whole echo is transverse), so the T2 /
-        # surface-relaxivity gate keeps the correct transverse time across a union.
-        if any(getattr(s, 'tau_perp', None) is not None for s in schemes):
-            parts = []
-            for s in schemes:
-                n_m = s.number_of_measurements
-                tp = getattr(s, 'tau_perp', None)
-                if tp is None:
-                    te = getattr(s, 'TE', None)
-                    tp = (np.full(n_m, np.nan) if te is None
-                          else np.broadcast_to(np.asarray(te, float), (n_m,)).copy())
-                else:
-                    tp = np.broadcast_to(np.asarray(tp, float), (n_m,)).copy()
-                parts.append(tp)
-            inst.tau_perp = np.concatenate(parts)
-        else:
-            inst.tau_perp = None
-
-        # Re-cluster with oscillation_frequency in grouping key when OGSE present
-        if has_ogse:
-            inst._compute_shells()
-
-        return inst
+            for seq, r in zip(s.protocol, s.protocol.rows):
+                seqs.append(seq)
+                rows.append(np.asarray(r) + offset)
+            offset += s.number_of_measurements
+        return cls(Protocol(seqs, rows=rows), schemes[0].min_b_shell_distance, schemes[0].b0_threshold)
 
     def __add__(self, other):
         return AcquisitionScheme.concatenate([self, other])
@@ -1821,8 +1296,7 @@ def _resolve_te(TE, t_total_min, n_m):
     -------
     TE : ndarray (n_m,)
     was_auto : bool
-        True when TE defaulted to the minimum.  Recorded so that attaching a
-        finite excitation pulse afterwards can push the echo out by tau_exc/2.
+        True when TE defaulted to the minimum.
     """
     if TE is None:
         return np.full(n_m, float(t_total_min)), True

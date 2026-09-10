@@ -244,11 +244,10 @@ def _atoms():
         'pgste': AcquisitionScheme.from_pgste(_bcat, _dcat, delta=0.006, TM=0.04),
         'ogse': AcquisitionScheme.from_ogse(
             _bcat, _dcat,
-            oscillation_frequency=np.repeat([0., 50., 80.], _Ncat // 3),
+            oscillation_frequency=np.repeat([0., 50., 100.], _Ncat // 3),      # whole periods over 20 ms
             gradient_duration=0.02),
-        'ste': AcquisitionScheme.from_btensor_ste(_bcat, delta=0.02, Delta=0.02),
-        'pte': AcquisitionScheme.from_btensor_pte(_bcat, plane_normal=[0, 0, 1.],
-                                                  delta=0.02, Delta=0.02),
+        'ste': AcquisitionScheme.from_btensor_ste(_bcat, gradient_duration=0.02 + 0.02),
+        'pte': AcquisitionScheme.from_btensor_pte(_bcat, [0, 0, 1.], gradient_duration=0.02 + 0.02),
     }
 
 

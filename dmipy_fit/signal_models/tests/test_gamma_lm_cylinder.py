@@ -273,7 +273,7 @@ def test_gamma_lm_vs_monte_carlo():
     """
     try:
         from dmipy_sim import simulate, Cylinder
-        from dmipy_sim.waveforms import Waveform
+        from dmipy_sim import ScannerSequence
         import jax.numpy as jnp
     except ImportError as e:
         pytest.skip(f"dmipy-sim not available: {e}")
@@ -293,7 +293,7 @@ def test_gamma_lm_vs_monte_carlo():
         G_vec = np.stack([Gx, Gy, np.zeros(n_t)], axis=-1).astype(np.float32)
         G_arr = G_vec[None, :, :]
 
-        wf = Waveform(G=jnp.array(G_arr), dt=float(dt), echo_idx=n_t - 1)
+        wf = ScannerSequence(G=jnp.array(G_arr), dt=float(dt))
         E_mc_raw = simulate(
             n_walkers=N_WALKERS, diffusivity=D, waveform=wf,
             geometry=Cylinder(radius=R_use, orientation=[0.0, 0.0, 1.0]),

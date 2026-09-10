@@ -22,7 +22,7 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "dmipy-sim>=2.0,<3",   # the forward engine: substrate/constants + physical sequences (fit consumes it)
+    "dmipy-sim>=2.2",      # the forward engine: the acquisition object, its builders, substrate/constants (fit consumes it)
     "numpy>=2.0",
     "scipy>=1.10",
     "dipy>=1.7",
