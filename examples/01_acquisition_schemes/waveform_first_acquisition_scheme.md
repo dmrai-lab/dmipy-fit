@@ -43,7 +43,7 @@ q-value and gradient strength are all *derived* from the waveform by integration
 
 and exposes `bvalues`, `qvalues`, `gradient_strengths` as *computed* properties. This is what
 lets a scheme feed both the analytical fit (which reads `.bvalues`) and the Monte-Carlo
-simulator in `dmipy-sim` (which reads `.waveform.G` directly).
+simulator in `dmipy-sim` (which reads `.waveform` -- the sequence object itself).
 
 ```{code-cell} ipython3
 import numpy as np
@@ -73,9 +73,10 @@ scheme = AcquisitionScheme.from_pgse(bvals, dirs, delta, Delta)
 print("type:", type(scheme).__name__, "| n_measurements:", len(scheme.bvalues))
 ```
 
-## 3. The `.waveform` view
+## 3. The `.waveform` object
 
-`.waveform` returns a named tuple `(G, dt, ...)` — the raw representation the simulator eats.
+`.waveform` is the dmipy-sim `ScannerSequence` the scheme was built on -- the physical gradient `G`, the
+grid `dt`, the RF schedule `rf`, the readout -- the one acquisition object the simulator and the replay eat.
 
 ```{code-cell} ipython3
 wv = scheme.waveform
@@ -108,13 +109,14 @@ For OGSE / PGSTE / scanner waveforms, or anything produced by `dmipy-sim`, build
 array. Pass `delta`/`Delta` for models that need q-values or gradient strengths.
 
 ```{code-cell} ipython3
-n_t, d, D, G_mag = 1000, 0.010, 0.030, 0.040        # 10/30 ms, 40 mT/m
-dt = (D + d) / n_t
+d, D, G_mag, dt = 0.010, 0.030, 0.040, 40e-6         # 10/30 ms, 40 mT/m, a 40 us grid
+n_t = round((D + d) / dt) + 1                        # the readout sample sits at TE = D + d (it plays nothing)
+n_d, n_D = round(d / dt), round(D / dt)              # the lobes in whole samples: equal areas, so q(TE) = 0
 bvecs = np.array([[1., 0., 0.], [0., 1., 0.]])
-G = np.zeros((2, n_t, 3), np.float32); tt = np.arange(n_t) * dt
-for i, bv in enumerate(bvecs):                       # two-lobe PGSE trapezoid
-    G[i, (tt >= 0) & (tt < d)]        =  bv * G_mag
-    G[i, (tt >= D) & (tt < D + d)]    = -bv * G_mag
+G = np.zeros((2, n_t, 3), np.float32)
+for i, bv in enumerate(bvecs):                       # the effective gradient of a two-lobe PGSE
+    G[i, :n_d]           =  bv * G_mag
+    G[i, n_D:n_D + n_d]  = -bv * G_mag
 scheme_wf = AcquisitionScheme.from_waveform(G, dt, bvecs, delta=d, Delta=D)
 print("from_waveform ->", type(scheme_wf).__name__, "| n_meas:", len(scheme_wf.bvalues))
 ```
@@ -139,6 +141,6 @@ print("max |E_legacy - E_new| =", float(np.max(np.abs(E_legacy - E_new))))
 - `AcquisitionScheme` is waveform-first: `G(t)` is primary; b/q/gradient-strength are derived.
 - Use `from_pgse` for standard PGSE, `from_waveform` for arbitrary/free waveforms.
 - Every analytical model works unchanged (they read `.bvalues`), and the same scheme bridges to
-  Monte-Carlo simulation in `dmipy-sim` via `.waveform.G`.
+  Monte-Carlo simulation in `dmipy-sim` via `.waveform`, the sequence object itself.
 
 Next: **loading real acquisition parameters** (bvals/bvecs files, DIPY interop).

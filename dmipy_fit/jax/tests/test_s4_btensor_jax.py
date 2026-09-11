@@ -25,10 +25,9 @@ _d /= np.linalg.norm(_d, axis=1, keepdims=True)
 @pytest.mark.parametrize('scheme_name', ['ste', 'pte'])
 def test_jax_s4_matches_numpy_on_btensor(scheme_name):
     if scheme_name == 'ste':
-        scheme = AcquisitionScheme.from_btensor_ste(_b, delta=0.02, Delta=0.02)
+        scheme = AcquisitionScheme.from_btensor_ste(_b, gradient_duration=0.02 + 0.02)
     else:
-        scheme = AcquisitionScheme.from_btensor_pte(
-            _b, plane_normal=[0, 0, 1.], delta=0.02, Delta=0.02)
+        scheme = AcquisitionScheme.from_btensor_pte(_b, [0, 0, 1.], gradient_duration=0.02 + 0.02)
     s4 = sphere_models.S4SphereGaussianPhaseApproximation()
     E_np = np.asarray(s4(scheme, diameter=8e-6))
     fn = _make_s4sphere_ogse_jax_fn(s4, scheme)

@@ -9,7 +9,7 @@ Packs are large, so they are NOT bundled in the wheel: point ``dataset_dir`` at 
 
 Forward evaluation uses the compiled-scheme engine (:mod:`dmipy_fit.signal_models._replay_fit`): the
 acquisition waveform is projected onto the pack's DCT temporal basis ONCE, after which each replay is a
-single matmul — mathematically identical to ``dmipy_sim.bank.ReplayPack.replay`` but fast enough to fit.
+single matmul — mathematically identical to ``dmipy_sim.replay.ReplayPack.replay`` but fast enough to fit.
 ``dmipy_sim`` is imported lazily (dmipy-fit stays importable without the simulator installed)."""
 import os
 import glob
@@ -34,7 +34,7 @@ def _pack_arrays(pack, axes=None):
     coefficients. Returning the width instead would hand ``K + 2`` to compile_scheme, whose
     output would then be the right shape to multiply and the wrong thing to multiply by.
     """
-    from dmipy_sim.compression import read_position_coeffs
+    from dmipy_sim.replay.compression import read_position_coeffs
     a = pack.arrays
     C = read_position_coeffs(a, axes=axes, dtype=np.float64)
     w = np.asarray(a.get("spin_weights", np.ones(C.shape[0])), np.float64)
@@ -105,7 +105,7 @@ def _hf_family(shape, diffusivity, repo_id, revision=None, eps=None, axes=None):
                 raise ValueError(f"{path}: no measured prefix tier for eps={eps:g}; "
                                  f"available {sorted(tiers)}")
         def load():
-            from dmipy_sim.bank import read_rpk
+            from dmipy_sim.replay.bank import read_rpk
             if tier is None and axes is None:
                 return read_rpk(hf_hub_download(repo_id=repo_id, filename=path, repo_type="dataset",
                                                 revision=revision))
@@ -264,7 +264,7 @@ def fetch_pack_prefix(repo_id, filename, n_rows, *, axes=None, revision=None):
     from huggingface_hub import hf_hub_url, get_token
     import requests
     from dmipy_sim.replay import ReplayPack
-    from dmipy_sim.compression import POSITION_AXES
+    from dmipy_sim.replay.compression import POSITION_AXES
 
     url = hf_hub_url(repo_id=repo_id, filename=filename, repo_type="dataset", revision=revision)
     tok = get_token()
@@ -353,7 +353,7 @@ def load_replay_family(shape, diffusivity, *, dataset_dir=None, repo_id=None, re
 
     root = dataset_dir or os.environ.get("SUBSTRATE_COMMONS_DATA")
     if root:
-        from dmipy_sim.bank import read_rpk
+        from dmipy_sim.replay.bank import read_rpk
         subdir = os.path.join(root, "canonical", f"D0-{diffusivity*1e9:.2f}e-9", shape)
         paths = sorted(glob.glob(os.path.join(subdir, "*.rpk")))
         if not paths:

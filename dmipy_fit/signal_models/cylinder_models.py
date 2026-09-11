@@ -670,8 +670,8 @@ class C4CylinderGaussianPhaseApproximation(
             (1) Rotating waveform (_G stored with non-colinear directions,
                 R < 1 mm): fast-eigenmode Gamma_lm factorisation. Covers
                 rotating OGSE, b-tensor encoding, arbitrary rotating waveforms.
-            (2) Fixed-direction OGSE (oscillation_frequency > 0): analytical
-                cosine or numerical IIR path (Xu 2009 / Stepisnik).
+            (2) Fixed-direction OGSE (oscillation_frequency > 0): the numerical
+                Stepisnik GPA integral of the played waveform.
             (3) PGSE or fixed-direction waveform: Van Gelderen GPA.
         use_jax : bool, optional
             If True and JAX is available, evaluate using the JAX backend
@@ -776,33 +776,16 @@ class C4CylinderGaussianPhaseApproximation(
                             self._CYLINDER_TRASCENDENTAL_ROOTS,
                         )).reshape(-1)[0])
                 else:
-                    t_r = float(acquisition_scheme.gradient_rise_time[m])
-                    if t_r > 0:
-                        # Trapezoidal OGSE: numerical Stepisnik path
-                        G_t_vec = acquisition_scheme._G[m].astype(
-                            np.float64)  # (n_t, 3)
-                        # Project onto perpendicular plane then take magnitude
-                        G_t_perp_vec = np.dot(
-                            mu_perpendicular_plane,
-                            G_t_vec.T).T  # (n_t, 3)
-                        G_t = np.linalg.norm(G_t_perp_vec, axis=-1)  # (n_t,)
-                        # Preserve sign from first non-zero sample
-                        first_nz = np.argmax(np.abs(G_t) > 0)
-                        ref_sign = np.dot(
-                            mu_perpendicular_plane,
-                            G_t_vec[first_nz])
-                        if np.sum(ref_sign) < 0:
-                            G_t = -G_t
-                        E_perpendicular[m] = _ogse_numerical_cylinder_signal(
-                            G_t, acquisition_scheme._dt, D, R,
-                            self._CYLINDER_TRASCENDENTAL_ROOTS)
-                    else:
-                        # Pure cosine OGSE: analytical path (Xu 2009)
-                        sigma_m = float(acquisition_scheme.gradient_duration[m])
-                        omega_m = 2.0 * np.pi * freq_m
-                        E_perpendicular[m] = _ogse_cosine_cylinder_signal(
-                            G_perp_m, omega_m, sigma_m, D, R,
-                            self._CYLINDER_TRASCENDENTAL_ROOTS)
+                    # OGSE (cosine or trapezoid train, whatever the ramps and the gap around the 180): the
+                    # Stepisnik GPA integral of the played effective gradient, projected on the perpendicular
+                    # plane. The closed form ``_ogse_cosine_cylinder_signal`` is its contiguous-cosine limit.
+                    G_t_vec = acquisition_scheme._G[m].astype(np.float64)          # (n_t, 3)
+                    n_perp = np.dot(mu_perpendicular_plane, n[m])                  # the encoding's perpendicular
+                    n_perp = n_perp / np.linalg.norm(n_perp)                       # direction (unit)
+                    G_t = G_t_vec @ n_perp                                         # (n_t,) signed projection
+                    E_perpendicular[m] = _ogse_numerical_cylinder_signal(
+                        G_t, acquisition_scheme._dt, D, R,
+                        self._CYLINDER_TRASCENDENTAL_ROOTS)
 
         E = E_parallel * E_perpendicular
         return E

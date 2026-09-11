@@ -64,7 +64,7 @@ def lte_powder(model, b):
 
 def ste(model, b):
     """Spherical (isotropic) encoding signal at b — orientation-blind."""
-    sch = AcquisitionScheme.from_btensor_ste(np.array([0., b]), delta=0.012, Delta=0.030)
+    sch = AcquisitionScheme.from_btensor_ste(np.array([0., b]), gradient_duration=0.042)
     return float(np.asarray(model(sch)).reshape(-1)[-1])
 ```
 

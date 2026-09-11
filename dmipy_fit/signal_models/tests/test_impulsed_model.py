@@ -94,7 +94,7 @@ def test_impulsed_parameter_recovery():
     # Multi-frequency OGSE scheme
     sigma = 0.04  # s
     bvalues = np.array([0, 5e8, 1e9, 2e9])  # s/m²
-    freqs = [30., 60., 100., 200.]  # Hz — varied to distinguish R
+    freqs = [25., 50., 100., 200.]  # Hz — varied to distinguish R; whole periods over sigma = 40 ms
     scheme = _make_ogse_scheme(freqs=freqs, bvalues_per_freq=bvalues,
                                 sigma=sigma, n_t=1500)
 

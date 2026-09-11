@@ -69,8 +69,8 @@ def test_from_pgste_timing():
     npt.assert_allclose(pgste.TE, 2.0 * delta + TM)
     # explicit TE overrides the 2*delta + TM default
     bvals = np.array([0., 1e9]); bvecs = _dirs(2)
-    ov = AcquisitionScheme.from_pgste(bvals, bvecs, delta=delta, TM=TM, TE=0.05)
-    npt.assert_allclose(ov.TE, 0.05)
+    ov = AcquisitionScheme.from_pgste(bvals, bvecs, delta=delta, TM=TM, TE=0.06)
+    npt.assert_allclose(ov.TE, 0.06)
 
 
 def test_spherical_mean_matches_full_model_with_T1():

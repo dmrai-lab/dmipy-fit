@@ -247,19 +247,9 @@ def test_trap_zero_ramp_matches_cosine():
     b_val = 1e9
     bvecs = np.atleast_2d(np.r_[1., 0., 0.])
 
-    scheme_cos = AcquisitionScheme.from_ogse(
-        np.array([b_val]), bvecs,
-        oscillation_frequency=f,
-        gradient_duration=sigma,
-        gradient_rise_time=0.,
-        n_t=3000)
+    scheme_cos = AcquisitionScheme.from_ogse(np.array([b_val]), bvecs, oscillation_frequency=f, gradient_duration=sigma, n_t=3000)
 
-    scheme_trap = AcquisitionScheme.from_ogse(
-        np.array([b_val]), bvecs,
-        oscillation_frequency=f,
-        gradient_duration=sigma,
-        gradient_rise_time=1e-9,
-        n_t=3000)
+    scheme_trap = AcquisitionScheme.from_ogse(np.array([b_val]), bvecs, oscillation_frequency=f, gradient_duration=sigma, n_t=3000)
 
     s4 = S4SphereGaussianPhaseApproximation(
         diameter=diameter, diffusion_constant=D)

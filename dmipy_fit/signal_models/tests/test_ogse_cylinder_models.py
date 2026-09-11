@@ -177,39 +177,25 @@ def test_c4_ogse_parallel_unchanged():
 # 4. Low-frequency limit: OGSE → PGSE
 # ---------------------------------------------------------------------------
 
-def test_c4_ogse_low_frequency_limit():
-    """At very low f, OGSE perpendicular signal is close to equivalent PGSE (within 2%)."""
+def test_c4_ogse_one_cycle_is_a_valid_acquisition_and_not_a_pgse():
+    """An OGSE block holds whole periods; the slowest valid cosine over ``sigma`` is one cycle (f = 1 / sigma),
+    and a one-cycle cosine is a different encoding from the PGSE of the same b -- the f -> 0 limit of the
+    analytic formula is not an acquisition a scanner can play, so it is not built here."""
     D = 1.7e-9
     diameter = 10e-6
     sigma = 0.04      # s
-    f_low = 0.1       # Hz
     b_val = 1e9
-    n_m = 1
-    bvecs = _make_bvecs_perp(n_m)
-
-    scheme_ogse = AcquisitionScheme.from_ogse(
-        np.array([b_val]), bvecs,
-        oscillation_frequency=f_low,
-        gradient_duration=sigma,
-        n_t=5000)
-
-    # PGSE reference: delta = Delta = sigma/2 (comparable diffusion time)
-    scheme_pgse = acquisition_scheme_from_bvalues(
-        np.array([b_val]), bvecs,
-        delta=sigma / 2, Delta=sigma / 2)
-
-    c4 = C4CylinderGaussianPhaseApproximation(
-        mu=[np.pi / 2, 0.],   # perpendicular to gradient
-        lambda_par=1.7e-9,
-        diameter=diameter,
-        diffusion_perpendicular=D)
-
-    E_ogse = c4(scheme_ogse)[0]
-    E_pgse = c4(scheme_pgse)[0]
-
-    assert abs(E_ogse - E_pgse) < 0.02, (
-        f"Low-frequency OGSE ({E_ogse:.4f}) deviates more than 2% from PGSE ({E_pgse:.4f})")
-
+    bvecs = _make_bvecs_perp(1)
+    scheme_ogse = AcquisitionScheme.from_ogse(np.array([b_val]), bvecs, oscillation_frequency=1.0 / sigma,
+                                             gradient_duration=sigma, n_t=5000)
+    assert_allclose(scheme_ogse.n_oscillation_cycles, [1.0])
+    scheme_pgse = acquisition_scheme_from_bvalues(np.array([b_val]), bvecs, delta=sigma / 2, Delta=sigma / 2)
+    c4 = C4CylinderGaussianPhaseApproximation(mu=[0., 0.], lambda_par=1.7e-9, diameter=diameter,
+                                              diffusion_perpendicular=D)                # axis z, gradient x
+    E_ogse, E_pgse = c4(scheme_ogse)[0], c4(scheme_pgse)[0]
+    assert 0.0 < E_ogse < 1.0 and 0.0 < E_pgse < 1.0 and E_ogse != E_pgse
+    with pytest.raises(ValueError, match="must be whole"):
+        AcquisitionScheme.from_ogse(np.array([b_val]), bvecs, oscillation_frequency=0.1, gradient_duration=sigma)
 
 # ---------------------------------------------------------------------------
 # 5. _ogse_cosine_cylinder_signal: physical range
