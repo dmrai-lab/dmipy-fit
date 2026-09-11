@@ -157,7 +157,8 @@ class PGSEAcquisitionScheme:
                     msg += " Make sure the TE values for b0-measurements have "
                     msg += "not defaulted to 0 for example."
                     raise ValueError(msg)
-                self.N_TE = len(self.shell_TE)
+                # the number of DISTINCT echo times, not of shells: a multi-shell scheme at one TE is one TE
+                self.N_TE = len(np.unique(np.round(self.shell_TE, 9)))
             # Per-shell mixing time TM (stimulated-echo longitudinal storage);
             # None for spin-echo schemes. Carried so the longitudinal-relaxation
             # factor applies in the spherical-mean path just like TE does.
