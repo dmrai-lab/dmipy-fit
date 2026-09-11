@@ -277,3 +277,16 @@ def test_to_gradient_array_raises_without_timing():
     bvecs = np.tile(np.r_[1., 0., 0.], (10, 1))
     scheme_no_timing = acquisition_scheme_from_bvalues(bvals, bvecs)
     assert_raises(ValueError, scheme_no_timing.to_gradient_array)
+
+
+def test_n_te_counts_distinct_echo_times_not_shells():
+    """A multi-shell scheme at one echo time is one TE (the tissue-response estimators refuse N_TE > 1, and
+    counted shells instead of echo times before)."""
+    import numpy as np
+    from dmipy_sim import sequences
+    from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
+    dirs = np.array([[0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 1.0]])
+    b = np.array([0.0, 1e9, 1e9, 1e9, 3e9, 3e9, 3e9])
+    seq = sequences.pgse(dirs, 0.010, 0.030, bvalues=b, TE=0.060)
+    sch = AcquisitionScheme(seq)
+    assert len(sch.shell_bvalues) == 3 and sch.N_TE == 1
