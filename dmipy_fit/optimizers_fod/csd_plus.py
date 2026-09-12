@@ -3,12 +3,8 @@ import numpy as np
 import os as _os
 from os.path import join
 from packaging.version import Version
-from dipy.data import get_sphere, HemiSphere
-from dipy.reconst.shm import real_sh_tournier as real_sym_sh_mrtrix
-from dipy.utils.optpkg import optional_package
-from dipy.reconst.shm import sph_harm_ind_list
-cvxpy, have_cvxpy, _ = optional_package("cvxpy")
-sphere = get_sphere(name='symmetric724')
+from ..utils.sh_basis import optional_module
+cvxpy, have_cvxpy = optional_module("cvxpy")
 
 
 __all__ = [

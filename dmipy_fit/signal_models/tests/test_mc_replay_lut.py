@@ -5,9 +5,8 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-pytest.importorskip("dmipy_sim.canonical")  # pack generator (full sim); public CI skips
-from dmipy_sim.canonical import build_canonical_pack   # noqa: E402
-from dmipy_sim import bank                              # noqa: E402
+from dmipy_sim.replay import write_rpk   # noqa: E402
+from ._replay_packs import build_public_pack   # noqa: E402
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme   # noqa: E402
 from dmipy_fit.data import mc_replay                    # noqa: E402
 from dmipy_fit.data.mc_replay_lut import build_pgse_kernel   # noqa: E402
@@ -24,10 +23,8 @@ def dataset(tmp_path_factory):
         sub = root / "canonical" / f"D0-{D0*1e9:.2f}e-9" / shape
         sub.mkdir(parents=True)
         for d_um in (5.0, 7.0, 9.0):
-            pk = build_canonical_pack(shape, d_um * 1e-6, D0, n_t=150, n_walkers=1500, seed=7,
-                                      K=48, blt_temporal_K=32, surface_relaxivity=True,
-                                      require_gpu=False, verbose=False)
-            bank.write_rpk(str(sub / f"d{d_um:05.2f}um.rpk"), dict(pk.arrays), pk.meta)
+            pk = build_public_pack(shape, d_um * 1e-6, D0, n_t=150, n_walkers=4000, seed=7, K=48, blt_temporal_K=32)
+            write_rpk(str(sub / f"d{d_um:05.2f}um.rpk"), dict(pk.arrays), pk.meta)
     mc_replay._FAMILY_CACHE.clear()
     return str(root)
 

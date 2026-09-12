@@ -25,9 +25,7 @@ A_eq and b_eq are compiled as constants, while 'c' is the batched axis.
 import numpy as np
 import jax
 import jax.numpy as jnp
-from dipy.data import get_sphere, HemiSphere
-from dipy.reconst.shm import real_sh_tournier as real_sym_sh_mrtrix
-from dipy.reconst.shm import sph_harm_ind_list
+from ..utils.sh_basis import positivity_basis, sh_degrees
 
 from jaxopt import OSQP
 
@@ -105,10 +103,7 @@ class CsdOsqpOptimizer:
             )
 
         # --- positivity basis (same as cvxpy version) -----------------------
-        sphere = get_sphere(name='symmetric724')
-        hemisphere = HemiSphere(phi=sphere.phi, theta=sphere.theta)
-        self.L_positivity = real_sym_sh_mrtrix(
-            self.sh_order, hemisphere.theta, hemisphere.phi, legacy=False)[0]
+        self.L_positivity = positivity_basis(self.sh_order)
 
         # --- convolution kernel ---------------------------------------------
         x0_single_voxel = np.reshape(
@@ -144,7 +139,7 @@ class CsdOsqpOptimizer:
             self.vf_indices = np.where(np.hstack(vf_array))[0]
 
         # --- Laplace-Beltrami smoothness matrix -----------------------------
-        sh_l = sph_harm_ind_list(sh_order)[1]
+        sh_l = sh_degrees(sh_order)
         lb_weights = sh_l ** 2 * (sh_l + 1) ** 2
         if self.model.volume_fractions_fixed:
             self.R_smoothness = np.diag(lb_weights)

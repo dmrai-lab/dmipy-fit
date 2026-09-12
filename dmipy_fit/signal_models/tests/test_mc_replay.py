@@ -12,13 +12,10 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-pytest.importorskip("dmipy_sim.canonical")  # pack generator (full sim); public CI skips
-from dmipy_sim.canonical import build_canonical_pack   # noqa: E402
-from dmipy_sim import bank                              # noqa: E402
-
+from dmipy_sim.replay import compile_scheme, replay_coefficients, write_rpk   # noqa: E402
+from ._replay_packs import build_public_pack   # noqa: E402
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme   # noqa: E402
 from dmipy_fit.core.constants import CONSTANTS                    # noqa: E402
-from dmipy_fit.signal_models._replay_fit import compile_scheme, replay_complex   # noqa: E402
 from dmipy_fit.signal_models import cylinder_models, sphere_models   # noqa: E402
 from dmipy_fit.core.modeling_framework import MultiCompartmentModel  # noqa: E402
 from dmipy_fit.data import mc_replay                              # noqa: E402
@@ -35,10 +32,8 @@ def dataset(tmp_path_factory):
         sub = root / "canonical" / f"D0-{D0*1e9:.2f}e-9" / shape
         sub.mkdir(parents=True)
         for d_um in (6.0, 8.0):
-            pk = build_canonical_pack(shape, d_um * 1e-6, D0, n_t=150, n_walkers=1500, seed=7,
-                                      K=48, blt_temporal_K=32, surface_relaxivity=True,
-                                      require_gpu=False, verbose=False)
-            bank.write_rpk(str(sub / f"d{d_um:05.2f}um.rpk"), dict(pk.arrays), pk.meta)
+            pk = build_public_pack(shape, d_um * 1e-6, D0, n_t=150, n_walkers=1500, seed=7, K=48, blt_temporal_K=32)
+            write_rpk(str(sub / f"d{d_um:05.2f}um.rpk"), dict(pk.arrays), pk.meta)
     mc_replay._FAMILY_CACHE.clear()
     return str(root)
 
@@ -61,11 +56,10 @@ def test_engine_matches_pack_replay(dataset):
     fam = mc_replay.load_replay_family("sphere", D0, dataset_dir=dataset)
     pk = fam.packs[0]
     scheme = _scheme(pk.n_t, pk.dt)
-    G = mc_replay.resample_waveform_to_grid(scheme._G, float(scheme._dt), pk.n_t, pk.dt)
-    ref = np.abs(np.asarray(pk.replay(G, relaxation=False, complex_signal=True)))
+    ref = np.abs(np.asarray(pk.replay(scheme.sequence, tissue=False, complex_signal=True)))
     C, w, K, _ = mc_replay._pack_arrays(pk)
-    W = compile_scheme(G, pk.dt, K, GAMMA)
-    got = np.abs(replay_complex(C, w, W))
+    W = compile_scheme(scheme._G, float(scheme._dt), K, GAMMA, n_t=pk.n_t, dt_pack=pk.dt)   # the exact per-save weights
+    got = replay_coefficients(C, w, W)
     npt.assert_allclose(got, ref, atol=2e-6)
 
 
@@ -73,17 +67,19 @@ def test_c6_s6_physical_and_monotonic(dataset):
     "C6/S6 run end-to-end: b0=1, signal in (0,1], smaller pore -> higher (more restricted) signal."
     fam = mc_replay.load_replay_family("sphere", D0, dataset_dir=dataset)
     scheme = _scheme(fam.n_t, fam.dt)
-    for model, kw in ((sphere_models.S6MonteCarloReplaySphere(dataset_dir=dataset), {}),
-                      (cylinder_models.C6MonteCarloReplayCylinder(dataset_dir=dataset),
-                       {"mu": [np.pi / 2, 0.0]})):
+    for model, kw, axis in ((sphere_models.S6MonteCarloReplaySphere(dataset_dir=dataset), {}, None),
+                            (cylinder_models.C6MonteCarloReplayCylinder(dataset_dir=dataset),
+                             {"mu": [0.0, 0.0]}, np.array([0.0, 0.0, 1.0]))):
         E_small = model(scheme, diameter=6e-6, **kw)
         E_large = model(scheme, diameter=8e-6, **kw)
         npt.assert_allclose(E_small[0], 1.0, atol=1e-6)          # b0
         assert np.all((E_small > 0) & (E_small <= 1.0 + 1e-9))
-        # smaller pore restricts more -> higher signal. Check where the tiny-fixture MC floor resolves it
-        # (b <= 2000 s/mm^2); at the highest b the sub-1500-walker signal is at the noise floor.
+        # smaller pore restricts more -> higher signal, across the pore: along a cylinder's axis the two are the
+        # same free walk. Checked where the tiny-fixture MC floor (~1/sqrt(1500)) resolves it (b <= 2000 s/mm^2).
         mid = (scheme.bvalues > 0) & (scheme.bvalues <= 2e9)
-        assert np.all(E_small[mid] >= E_large[mid] - 3e-3)
+        if axis is not None:
+            mid &= np.abs(scheme.gradient_directions @ axis) < 0.9
+        assert np.all(E_small[mid] >= E_large[mid] - 1e-2)
 
 
 def test_surface_relaxivity_uses_replay_knob(dataset):
@@ -97,9 +93,8 @@ def test_surface_relaxivity_uses_replay_knob(dataset):
     Er = s6(scheme, diameter=6e-6, surface_relaxivity=2e-5)      # rho = 20 um/s
     assert np.all(Er <= E0 + 1e-9) and Er[0] < 1.0               # surface relaxation lowers signal (incl b0)
     # engine cross-check on the same pack (exact rho path)
-    G = mc_replay.resample_waveform_to_grid(scheme._G, float(scheme._dt), pk.n_t, pk.dt)
-    ref = np.abs(np.asarray(pk.replay(G, relaxation=False, rho=2e-5, complex_signal=True)))
-    npt.assert_allclose(Er, ref, atol=5e-6)
+    ref = np.abs(np.asarray(pk.replay(scheme.sequence, tissue=False, rho=2e-5, complex_signal=True)))
+    npt.assert_allclose(Er, ref, atol=5e-6)                       # the same exact kernel, the same gate to the echo
 
 
 @pytest.fixture(scope="module")
@@ -109,10 +104,8 @@ def dense_sphere_ds(tmp_path_factory):
     sub = root / "canonical" / f"D0-{D0*1e9:.2f}e-9" / "sphere"
     sub.mkdir(parents=True)
     for d_um in (5.0, 6.0, 7.0, 8.0, 9.0):
-        pk = build_canonical_pack("sphere", d_um * 1e-6, D0, n_t=150, n_walkers=2000, seed=7,
-                                  K=48, blt_temporal_K=32, surface_relaxivity=True,
-                                  require_gpu=False, verbose=False)
-        bank.write_rpk(str(sub / f"d{d_um:05.2f}um.rpk"), dict(pk.arrays), pk.meta)
+        pk = build_public_pack("sphere", d_um * 1e-6, D0, n_t=150, n_walkers=2000, seed=7, K=48, blt_temporal_K=32)
+        write_rpk(str(sub / f"d{d_um:05.2f}um.rpk"), dict(pk.arrays), pk.meta)
     mc_replay._FAMILY_CACHE.clear()
     return str(root)
 

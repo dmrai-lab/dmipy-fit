@@ -5,6 +5,7 @@ __all__ = [
     "exchange_models",
     "gaussian_models",
     "plane_models",
+    "replay_models",
     "sphere_models",
     "spherical_mean_models",
     "tissue_response_models"
