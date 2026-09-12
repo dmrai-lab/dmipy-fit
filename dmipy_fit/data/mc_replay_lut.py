@@ -28,7 +28,8 @@ carries surface relaxivity.
 import numpy as np
 
 from ..core.constants import CONSTANTS
-from ..signal_models._replay_fit import compile_scheme, replay_complex
+from dmipy_sim.replay import compile_scheme, replay_coefficients, surface_logweight
+from dmipy_sim.replay._replay_kernel import bin_gate
 
 _GAMMA = CONSTANTS["water_gyromagnetic_ratio"]
 
@@ -47,7 +48,6 @@ def build_pgse_kernel(family, delta, Delta, b_grid, cos_grid=None, rho_grid=(0.0
 
     Returns a :class:`ReplayKernel`. ``b_grid`` [s/m^2]; ``cos_grid`` in [0,1] (cylinder only; ignored for
     sphere); ``rho_grid`` surface relaxivities [m/s] (default just 0). Built with the exact Tier-1 engine."""
-    from ..data.mc_replay import resample_waveform_to_grid
     from ..core.acquisition_scheme import AcquisitionScheme
     shape = family.shape
     b_grid = np.asarray(b_grid, float)
@@ -87,15 +87,16 @@ def build_pgse_kernel(family, delta, Delta, b_grid, cos_grid=None, rho_grid=(0.0
     # over-estimate near a zero, whereas the full replay interpolates the complex signal then takes abs.
     E = np.zeros((len(family.diameters), len(rho_grid), len(cos_grid), len(b_grid)))
     for di in range(len(family.diameters)):
-        C, w, K, blt = family._pk[di]
+        C, w, K, surface = family._pk[di]
         # per-pack grid: the family is heterogeneous by design (n_t in {2000,4000,8000}, K in {128,196}),
         # so compiling once against family.n_t/family.K would resample onto the wrong grid for most packs
         n_t_i = int(family.n_t_all[di]); dt_i = float(family.dt_all[di]); K_i = int(family.K_all[di])
-        Gp_i = resample_waveform_to_grid(G_lab, float(sch._dt), n_t_i, dt_i)
-        W_i = compile_scheme(Gp_i, dt_i, K_i, _GAMMA, n_t=n_t_i)
+        W_i = compile_scheme(G_lab, float(sch._dt), K_i, _GAMMA, n_t=n_t_i, dt_pack=dt_i)   # exact per-save weights
+        chi_i = bin_gate(np.ones(G_lab.shape[1]), float(sch._dt), n_t_i, dt_i)[0]           # contact to the echo only
         for ri, rho in enumerate(rho_grid):
             rod = (rho / family.diffusivity) if rho else 0.0
-            S = replay_complex(C, w, W_i, blt_dct=blt, rho_over_D=rod, n_t=n_t_i).real
+            slw = None if not rod else surface_logweight(surface[0], rod, surface[1], chi_i)
+            S = replay_coefficients(C, w, W_i, surface_logw=slw, complex_signal=True).real
             E[di, ri] = S.reshape(len(cos_grid), len(b_grid))
     return ReplayKernel(shape, family.diffusivity, np.asarray(family.diameters, float),
                         rho_grid, cos_grid, b_grid, float(delta), float(Delta), E)

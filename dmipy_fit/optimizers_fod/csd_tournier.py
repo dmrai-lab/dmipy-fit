@@ -1,10 +1,6 @@
 import numpy as np
-from dipy.data import get_sphere, HemiSphere
-from dipy.reconst.shm import real_sh_tournier as real_sym_sh_mrtrix
-from dipy.utils.optpkg import optional_package
-from dipy.reconst.shm import sph_harm_ind_list
-sphere = get_sphere(name='symmetric724')
-numba, have_numba, _ = optional_package("numba")
+from ..utils.sh_basis import positivity_basis, sh_degrees, optional_module
+numba, have_numba = optional_module("numba")
 
 
 __all__ = [
@@ -97,12 +93,9 @@ class CsdTournierOptimizer:
         self.sphere_jacobian = 1 / (2 * np.sqrt(np.pi))
 
         # step 1: prepare positivity grid on sphere
-        sphere = get_sphere(name='symmetric724')
-        hemisphere = HemiSphere(phi=sphere.phi, theta=sphere.theta)
-        self.L_positivity = real_sym_sh_mrtrix(
-            self.sh_order, hemisphere.theta, hemisphere.phi, legacy=False)[0]
+        self.L_positivity = positivity_basis(self.sh_order)
 
-        sh_l = sph_harm_ind_list(sh_order)[1]
+        sh_l = sh_degrees(sh_order)
         self.R_smoothness = np.diag(sh_l ** 2 * (sh_l + 1) ** 2)
 
         # check if there is only one model. If so, precompute rh array.

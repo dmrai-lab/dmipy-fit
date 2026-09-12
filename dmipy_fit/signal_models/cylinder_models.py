@@ -1491,7 +1491,7 @@ class C6MonteCarloReplayCylinder(ModelProperties, AnisotropicSignalModelProperti
          'condition_human': 'Intrinsic diffusivity D0 is fixed by the reference dataset (walk-time), not fitted; pick the dataset whose D0 matches your regime.',
          'severity': 'warning', 'source_key': 'substrate_commons'},
         {'id': 'waveform_grid', 'name': 'Waveform save-grid resolution',
-         'condition_human': 'The acquisition waveform is resampled onto the pack save grid; pulses finer than that grid are not resolved.',
+         'condition_human': 'The acquisition waveform is integrated exactly against the path through the saves of the pack; structure finer than the save grid was never stored.',
          'severity': 'info'},
     ]
     _required_acquisition_parameters = ['gradient_directions']
@@ -1517,19 +1517,19 @@ class C6MonteCarloReplayCylinder(ModelProperties, AnisotropicSignalModelProperti
         self.dataset_dir = dataset_dir
 
     def __call__(self, acquisition_scheme, **kwargs):
-        from ..data.mc_replay import (load_replay_family, resample_waveform_to_grid, orient_to_z)
+        from ..data.mc_replay import (load_replay_family, orient_to_z)
         diameter = kwargs.get('diameter', self.diameter)
         mu = kwargs.get('mu', self.mu)
         rho = float(kwargs.get('surface_relaxivity', 0.0) or 0.0)   # m/s; from a surface factor
-        chi_hat = kwargs.get('chi_hat', None)                       # coherence/occupancy schedule (DCT)
+        chi = kwargs.get('coherence_gate', None)                    # the transverse gate per save of the pack grid
         G = getattr(acquisition_scheme, '_G', None)
         if G is None:
             raise ValueError(
                 "C6MonteCarloReplayCylinder needs a waveform-first AcquisitionScheme "
                 "(build with AcquisitionScheme.from_pgse/from_waveform) — no ._G on this scheme.")
         fam = load_replay_family('cylinder', self.diffusivity, dataset_dir=self.dataset_dir)
-        G_pack = resample_waveform_to_grid(np.asarray(G), float(acquisition_scheme._dt), fam.n_t, fam.dt)
+        G_pack = np.asarray(G, np.float64)                              # the scheme's own grid: compiled exactly per pack
         R = orient_to_z(utils.unitsphere2cart_1d(np.asarray(mu, float)))
         G_rot = G_pack @ R.T                                        # lab → canonical (axis = z)
         rho_over_D = (rho / fam.diffusivity) if rho else 0.0        # exact surface replay knob
-        return fam.replay_interpolated(G_rot, float(diameter), rho_over_D=rho_over_D, chi_hat=chi_hat)
+        return fam.replay_interpolated_raw(G_rot, float(acquisition_scheme._dt), float(diameter), rho_over_D=rho_over_D, chi=chi)

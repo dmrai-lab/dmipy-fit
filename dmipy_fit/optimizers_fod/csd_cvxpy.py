@@ -1,12 +1,8 @@
 import warnings
 import numpy as np
 from packaging.version import Version
-from dipy.data import get_sphere, HemiSphere
-from dipy.reconst.shm import real_sh_tournier as real_sym_sh_mrtrix
-from dipy.utils.optpkg import optional_package
-from dipy.reconst.shm import sph_harm_ind_list
-cvxpy, have_cvxpy, _ = optional_package("cvxpy")
-sphere = get_sphere(name='symmetric724')
+from ..utils.sh_basis import positivity_basis, sh_degrees, optional_module
+cvxpy, have_cvxpy = optional_module("cvxpy")
 
 
 __all__ = [
@@ -97,10 +93,7 @@ class CsdCvxpyOptimizer:
         self.unity_constraint = unity_constraint
         self.sphere_jacobian = 2 * np.sqrt(np.pi)
 
-        sphere = get_sphere(name='symmetric724')
-        hemisphere = HemiSphere(phi=sphere.phi, theta=sphere.theta)
-        self.L_positivity = real_sym_sh_mrtrix(
-            self.sh_order, hemisphere.theta, hemisphere.phi, legacy=False)[0]
+        self.L_positivity = positivity_basis(self.sh_order)
 
         x0_single_voxel = np.reshape(
             x0_vector, (-1, x0_vector.shape[-1]))[0]
@@ -133,7 +126,7 @@ class CsdCvxpyOptimizer:
                     self.Ncoef_total += 1
             self.vf_indices = np.where(np.hstack(vf_array))[0]
 
-        sh_l = sph_harm_ind_list(sh_order)[1]
+        sh_l = sh_degrees(sh_order)
         lb_weights = sh_l ** 2 * (sh_l + 1) ** 2  # laplace-beltrami [3]
         if self.model.volume_fractions_fixed:
             self.R_smoothness = np.diag(lb_weights)
