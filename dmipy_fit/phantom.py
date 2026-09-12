@@ -5,7 +5,9 @@ m0=0.7)`` is a stick evaluated at the phantom's pose on the phantom's ``ScannerS
 same SO(3) expansion a pack gets. Orientation belongs to the phantom, never to the model: a model that carries its
 own dispersion (``SD1WatsonDistributed``, ``SD2BinghamDistributed``, any ``DistributedModel``) is refused, since a
 phantom field on it would disperse twice. The file names the model in this package's namespace
-(``"dmipy_fit:C1Stick"``); a reader without dmipy-fit refuses it by name.
+(``"dmipy_fit:C1Stick"``); a reader without dmipy-fit refuses it by name. A model is full-tier with zeros: no
+susceptibility source, so a field of zero at any B0; no wall; a static spin's RF response; its bulk relaxation
+``exp(-TE / T2_s)`` when declared (RPH.md 3.1).
 """
 import numpy as np
 

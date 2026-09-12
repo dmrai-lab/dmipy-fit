@@ -84,13 +84,14 @@ def test_round_trip_and_refusal_without_dmipy_fit(tmp_path):
     assert "REFUSED" in out.stdout and "'dmipy_fit'" in out.stdout, out.stdout + out.stderr
 
 
-def test_physics_the_model_lacks_is_stated_once():
+def test_a_model_is_full_tier_with_zeros():
+    """A compartment model has no susceptibility source: at any B0 its field is zero, the signal is unchanged and
+    nothing is said (RPH.md 3.1: the zeros are the physics)."""
     import warnings
     seq = _seq(); stick = ModelSubstrate(C1Stick(), m0=1.0, lambda_par=1.7e-9)
     ph = Phantom.compose(_grid(), fractions={stick: np.ones((1, 1, 1))},
                          orientation=Peaks(np.zeros((1, 1, 1, 1, 3)) + [0, 0, 1.0]))
-    with warnings.catch_warnings(record=True) as rec:
-        warnings.simplefilter("always")
-        S1 = ph.replay(seq, B0_T=3.0, chi_iso=1e-7); ph.replay(seq, B0_T=3.0, chi_iso=1e-7)
-    assert len([w for w in rec if "closed form" in str(w.message)]) == 1
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        S1 = ph.replay(seq, B0_T=3.0, chi_iso=1e-7)
     npt.assert_allclose(S1, ph.replay(seq))
