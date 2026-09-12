@@ -37,7 +37,9 @@ def test_the_model_is_the_packs_replay_at_its_pose(pack):
 
 
 def test_a_declared_frame_is_honoured(pack):
-    """The same walk stored with its axis along x and its frame declared poses like the z-stored pack."""
+    """The same walk stored with its axis along x and its frame declared: posed by ``mu`` it is the pack's own
+    replay at that axis (exactly, the same rotation), and the z-stored pack's to the walk's Monte-Carlo floor --
+    ``mu`` names an axis and leaves the roll about it to the frame's gauge, which a finite walk is not blind to."""
     import copy
     from dmipy_sim.replay import ReplayPack, so3
     from dmipy_sim.replay.compression import pack_position_arrays, read_position_coeffs
@@ -47,6 +49,8 @@ def test_a_declared_frame_is_honoured(pack):
     meta = copy.deepcopy(pack.meta); meta.setdefault("walk_params", {})["substrate_frame"] = Q.tolist()
     x = ReplayPack(arrays, meta)
     sch = _scheme()
-    npt.assert_allclose(MonteCarloReplay(x)(sch, mu=[0.0, 0.0]), MonteCarloReplay(pack)(sch, mu=[0.0, 0.0]), rtol=1e-5)
-    npt.assert_allclose(MonteCarloReplay(x)(sch, mu=[np.pi / 2, np.pi / 2]),
-                        MonteCarloReplay(pack)(sch, mu=[np.pi / 2, np.pi / 2]), rtol=1e-5)
+    for mu, axis in (([0.0, 0.0], (0.0, 0.0, 1.0)), ([np.pi / 2, np.pi / 2], (0.0, 1.0, 0.0))):
+        npt.assert_allclose(MonteCarloReplay(x)(sch, mu=mu), x.replay(sch.sequence, tissue=False, orientation=axis), atol=2e-6)
+        npt.assert_allclose(MonteCarloReplay(x)(sch, mu=mu), MonteCarloReplay(pack)(sch, mu=mu), atol=3 / np.sqrt(pack.n_walkers))
+    # the pose as a rotation is exact: stored -> lab is R F^T, so the x-stored pack at R = I is the z-stored one
+    npt.assert_allclose(x.replay(sch.sequence, tissue=False, orientation=np.eye(3)), pack.replay(sch.sequence, tissue=False), rtol=1e-5)

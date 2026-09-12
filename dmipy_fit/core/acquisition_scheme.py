@@ -45,9 +45,10 @@ class PGSEAcquisitionScheme:
 
     def __init__(self, bvalues, gradient_directions, qvalues,
                  gradient_strengths, delta, Delta, TE,
-                 min_b_shell_distance, b0_threshold):
+                 min_b_shell_distance, b0_threshold, require_b0=True):
         self.min_b_shell_distance = float(min_b_shell_distance)
         self.b0_threshold = float(b0_threshold)
+        self.require_b0 = bool(require_b0)
         self.bvalues = bvalues.astype(float)
         self.b0_mask = self.bvalues <= b0_threshold
         self.number_of_b0s = np.sum(self.b0_mask)
@@ -150,7 +151,7 @@ class PGSEAcquisitionScheme:
             self.shell_TE = None
             if self.TE is not None:
                 self.shell_TE = self.TE[first_indices]
-                if (len(np.unique(self.TE)) != len(np.unique(
+                if self.require_b0 and (len(np.unique(self.TE)) != len(np.unique(
                         self.TE[self.b0_mask]))):
                     msg = "Not every TE shell has b0 measurements.\n"
                     msg += "This is required to properly normalize the signal."
@@ -594,7 +595,10 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
     so the analytical model and the walk see the identical acquisition.
     """
 
-    def __init__(self, sequence, min_b_shell_distance=50e6, b0_threshold=10e6):
+    def __init__(self, sequence, min_b_shell_distance=50e6, b0_threshold=10e6, require_b0=True):
+        """``require_b0=False`` accepts a sequence without a b = 0 measurement per echo time: what a forward
+        evaluation of a model on an arbitrary acquisition needs (a phantom's, a design's); a fit normalises
+        by the b0 and keeps the default."""
         P = _as_protocol(sequence)
         for seq in P:
             if seq.encoding is None:
@@ -623,7 +627,7 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
         self.refocused = all(_enc(s, "refocused") is not False for s in P)
         for k in ("cpmg_n_echoes", "cpmg_TE", "cpmg_beta_deg", "n_t_per_echo"):
             setattr(self, k, next((_enc(s, k) for s in P if _enc(s, k) is not None), None))
-        super().__init__(bvalues, dirs, qvalues, gs, delta, Delta, TE, min_b_shell_distance, b0_threshold)
+        super().__init__(bvalues, dirs, qvalues, gs, delta, Delta, TE, min_b_shell_distance, b0_threshold, require_b0)
         self.sequence_type = P[0].family if len(P) == 1 else "protocol"
         self._te_auto = any(bool(_enc(s, "te_auto")) for s in P)
         self._colinear_pgse = all(s.family in ("pgse", "pgste") for s in P)
