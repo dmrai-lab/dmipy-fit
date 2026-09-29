@@ -167,7 +167,8 @@ class MultiCompartmentSphericalHarmonicsModel(MultiCompartmentModelProperties):
     def fit(self, acquisition_scheme, data, mask=None, solver='csd',
             lambda_lb=1e-5, unity_constraint='kernel_dependent',
             use_parallel_processing=False,
-            number_of_processors=None, verbose=True, eta=None):
+            number_of_processors=None, verbose=True, eta=None,
+            *, maxiter=None, tol=None):
         """ The main data fitting function of a
         MultiCompartmentSphericalHarmonicsModel.
 
@@ -197,13 +198,13 @@ class MultiCompartmentSphericalHarmonicsModel(MultiCompartmentModelProperties):
         mask : (N-1)-dimensional integer/boolean array of size (N_x, N_y, ...),
             Optional mask of voxels to be included in the optimization.
         solver : string,
-            Can be 'csd', 'csd_tounier07', 'csd_cvxpy' or 'csd_plus', with the
-            default being 'csd'. Using 'csd' will make the algorithm
-            automatically use the 'tournier07' solver [1]_ if there are no
-            volume fractionsto fit or they are fixed. Otherwise, the slower but
-            more general cvxpy solver [2]_ is used, which follows the
-            formulation of [3]_. Using 'csd_plus' will make the algorithm use
-            the global positivity constraints of [5]_.
+            'csd' (the default), 'csd_tournier07', 'csd_tournier07_jax', 'csd_jax',
+            'csd_cvxpy' or 'csd_plus'. 'csd' is the 'tournier07' solver [1]_ when the
+            volume fractions are fixed, else the cvxpy solver [2]_ in the formulation
+            of [3]_. 'csd_tournier07_jax' is the tournier07 iteration for every voxel
+            at once on the JAX device (fixed kernel only); 'csd_jax' is the QP of [3]_
+            solved by jaxopt's OSQP, batched the same way. 'csd_plus' uses the global
+            positivity constraints of [5]_.
         lambda_lb: positive float,
             Weight for Laplace-Beltrami regularization to impose smoothness
             into estimated FODs, follows [4]_.
@@ -224,6 +225,20 @@ class MultiCompartmentSphericalHarmonicsModel(MultiCompartmentModelProperties):
             correction is applied before the QP solve:
             ``data_corrected = sqrt(max(data^2 - eta^2, 0))``.
             Ignored for other solvers.
+        maxiter : int or None,
+            Keyword-only. ``solver='csd_tournier07_jax'``: the solves per voxel at most (default 50).
+            ``solver='csd_jax'``: caps jaxopt's OSQP iterations per voxel
+            (overrides ``CsdOsqpOptimizer``'s own default of 4000). A batched vmap solve runs
+            until every voxel in the batch converges or ``maxiter`` is hit, so one hard voxel
+            drags the whole batch to ``maxiter`` -- a serving process fitting a known acquisition
+            (e.g. sh_order=8, tol=1e-4) can set this from a measured accuracy curve (see
+            ``CsdOsqpOptimizer``'s docstring for the DiSCo-reference table) instead of paying the
+            full 4000. None (default) leaves the optimizer's own default in place. Raises
+            ``ValueError`` if given with any other solver.
+        tol : float or None,
+            Keyword-only. ``solver='csd_jax'`` only: OSQP's primal/dual tolerance (overrides the
+            default 1e-4). None (default) leaves the optimizer's own default in place. Raises
+            ``ValueError`` if given with any other solver.
 
         Returns
         -------
@@ -251,6 +266,13 @@ class MultiCompartmentSphericalHarmonicsModel(MultiCompartmentModelProperties):
             necessary non-negativity constraints for common diffusion MRI models
             using sum of squares programming." NeuroImage 209 (2020): 116405.
         """
+        if maxiter is not None and solver not in ('csd_jax', 'csd_tournier07_jax'):
+            raise ValueError(
+                "maxiter is for solver='csd_jax' (jaxopt.OSQP's iteration cap) or 'csd_tournier07_jax' "
+                "(solves per voxel); got solver={!r}.".format(solver))
+        if tol is not None and solver != 'csd_jax':
+            raise ValueError(
+                "tol is solver='csd_jax'-only (jaxopt.OSQP's tolerance); got solver={!r}.".format(solver))
         self._check_if_kernel_parameters_are_fixed()
         self._check_tissue_model_acquisition_scheme(acquisition_scheme)
         self._check_acquisition_scheme_has_b0s(acquisition_scheme)
@@ -373,11 +395,26 @@ class MultiCompartmentSphericalHarmonicsModel(MultiCompartmentModelProperties):
                     time() - start))
         elif solver == 'csd_jax':
             from ..jax.csd_jax import CsdOsqpOptimizer
+            csd_jax_kwargs = {}
+            if maxiter is not None:
+                csd_jax_kwargs['maxiter'] = maxiter
+            if tol is not None:
+                csd_jax_kwargs['tol'] = tol
             fit_func = CsdOsqpOptimizer(
                 acquisition_scheme, self, x0_, self.sh_order,
-                unity_constraint=self.unity_constraint, lambda_lb=lambda_lb)
+                unity_constraint=self.unity_constraint, lambda_lb=lambda_lb,
+                **csd_jax_kwargs)
             if verbose:
                 print('Setup JAX/OSQP CSD optimizer in {} seconds'.format(
+                    time() - start))
+        elif solver == 'csd_tournier07_jax':
+            from ..jax.csd_tournier_jax import CsdTournierJaxOptimizer
+            fit_func = CsdTournierJaxOptimizer(
+                acquisition_scheme, self, x0_, self.sh_order,
+                unity_constraint=self.unity_constraint, lambda_lb=lambda_lb,
+                **({'max_iter': maxiter} if maxiter is not None else {}))
+            if verbose:
+                print('Setup JAX Tournier07 CSD optimizer in {} seconds'.format(
                     time() - start))
         else:
             msg = "Unknown solver name {}".format(solver)
@@ -386,7 +423,7 @@ class MultiCompartmentSphericalHarmonicsModel(MultiCompartmentModelProperties):
         self.optimizer = fit_func
 
         # --- JAX batch path: solve all voxels in one vmapped kernel ---------
-        if solver == 'csd_jax':
+        if solver in ('csd_jax', 'csd_tournier07_jax'):
             start = time()
             data_masked = np.zeros((N_voxels,
                                     acquisition_scheme.number_of_measurements),
@@ -403,7 +440,7 @@ class MultiCompartmentSphericalHarmonicsModel(MultiCompartmentModelProperties):
                 data_masked, x0_masked, eta=eta)
             fitting_time = time() - start
             if verbose:
-                print('JAX/OSQP fitting of {} voxels complete in {} seconds.'.format(
+                print('JAX fitting of {} voxels complete in {} seconds.'.format(
                     N_voxels, fitting_time))
                 print('Average of {} seconds per voxel.'.format(
                     fitting_time / N_voxels))
