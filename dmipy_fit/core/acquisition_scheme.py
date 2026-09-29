@@ -238,6 +238,34 @@ class PGSEAcquisitionScheme:
         return [(float(self.shell_bvalues[i]), 0.0)
                 for i in self.unique_shell_indices]
 
+    def fingerprint(self):
+        """A sha256 hex digest of the numbers a diffusion-encoding kernel depends on.
+
+        Covers bvalues, gradient directions, delta, Delta, TE, and (when present) TM, tau_perp and the OGSE
+        fields (oscillation_frequency, gradient_duration, n_oscillation_cycles, gradient_rise_time), plus the
+        sequence family -- the full per-measurement Encoding a convolution kernel (CSD, DTI, ...) reads. Two
+        schemes built from the same numbers fingerprint identically; changing one bvalue changes the digest.
+
+        This is an explicit value fingerprint, not object identity: the scheme has no ``__hash__``/``__eq__``,
+        so use ``fingerprint()`` (or ``fingerprint() ==``) wherever two schemes need to compare equal by value,
+        e.g. as part of a compile-cache key.
+        """
+        import hashlib
+        h = hashlib.sha256()
+        h.update(str(self.sequence_type).encode())
+        for name in ('bvalues', 'gradient_directions', 'delta', 'Delta', 'TE',
+                     'TM', 'tau_perp', 'oscillation_frequency', 'gradient_duration',
+                     'n_oscillation_cycles', 'gradient_rise_time'):
+            value = getattr(self, name, None)
+            h.update(name.encode())
+            if value is None:
+                h.update(b'None')
+                continue
+            arr = np.ascontiguousarray(np.asarray(value, dtype=np.float64))
+            h.update(repr(arr.shape).encode())
+            h.update(arr.tobytes())
+        return h.hexdigest()
+
     @property
     def print_acquisition_info(self):
         """

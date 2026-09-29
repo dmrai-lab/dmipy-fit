@@ -86,7 +86,7 @@ model = build_white_matter_model(include_csf=False)
 | `signal_models/` | `cylinder_models` (stick/cylinder/axcaliber), `gaussian_models` (ball/zeppelin), `sphere_models`, `plane_models`, `capped_cylinder_models`, `tissue_response_models`, `exchange_models`. Each restricted geometry has a **Gaussian-phase** model (`C4`/`S4`, low-b closed form) and an **exact matrix-method** model (`C5CylinderMatrixMethod`/`S5SphereMatrixMethod`/`P5PlaneMatrixMethod`, `_restricted_matrix.py`) that solves the Bloch–Torrey equation for the *actual waveform* and stays correct at high b / OGSE. |
 | `signal_models/attenuation.py` | `OccupancyGatedModel` + `TransverseRelaxation`, `IntraPoreSurfaceRelaxivity`, `ExteriorSurfaceRelaxivity` |
 | `distributions/` | Watson / Bingham dispersion, Gamma diameter distribution |
-| `optimizers/`, `optimizers_fod/` | brute2fine, MIX, multi-tissue NNLS; CSD (Tournier / cvxpy / OSQP-JAX) |
+| `optimizers/`, `optimizers_fod/` | brute2fine, MIX, multi-tissue NNLS; CSD (Tournier / cvxpy); the batched device versions are `jax/csd_tournier_jax.py` (`solver='csd_tournier07_jax'`, the Tournier iteration for a whole image, fixed kernel) and `jax/csd_jax.py` (`solver='csd_jax'`, the QP by OSQP) |
 | `custom_optimizers/reference_models.py` | named literature models (NODDI, NEXI, SANDI, VERDICT, IMPULSED, …) |
 | `jax/` | GPU signal models, `vmap_fit`, DTI/CSD/fractions — the `solver="jax"` backend |
 | `white_matter/` | `build_white_matter_model()`, `mwf.t2_spectrum_mwf()` |
