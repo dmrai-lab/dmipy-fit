@@ -66,7 +66,7 @@ def test_a_watson_field_on_a_stick_is_fits_own_watson_stick():
 
 def test_round_trip_and_refusal_without_dmipy_fit(tmp_path):
     seq = _seq(); stick = ModelSubstrate(C1Stick(), m0=0.8, lambda_par=1.7e-9, T2_s=0.08)
-    ball = ModelSubstrate(G1Ball(), m0=1.0, lambda_iso=3e-9)
+    ball = ModelSubstrate(G1Ball(), m0=1.0, lambda_iso=3e-9, T2_s=2.0)      # every substrate relaxes, or none (dmipy-sim#238)
     axis = np.array([0.0, 1.0, 1.0]) / np.sqrt(2)
     ph = Phantom.compose(_grid(), fractions={stick: np.full((1, 1, 1), 0.6)}, remainder=ball,
                          orientation=Peaks(np.broadcast_to(axis, (1, 1, 1, 1, 3)).copy()))
@@ -93,6 +93,6 @@ def test_a_model_is_full_tier_with_zeros():
                          orientation=Peaks(np.zeros((1, 1, 1, 1, 3)) + [0, 0, 1.0]))
     with warnings.catch_warnings(record=True) as rec:
         warnings.simplefilter("always")
-        S1 = ph.replay(seq, B0_T=3.0, chi_iso=1e-7)
+        S1 = ph.replay(seq, scanner=3.0)
     assert not [w for w in rec if "closed form" in str(w.message)]         # fit's own b0 notice is not about this
     npt.assert_allclose(S1, ph.replay(seq))

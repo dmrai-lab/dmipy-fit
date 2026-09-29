@@ -247,9 +247,11 @@ def test_ogse_rotating_signal_lm_vs_iir():
 
         # Parallel component: z-component of rotated waveform
         G_par_1d = G_rot[:, 2]    # (n_t,)
-        # b_par = γ² ∫q_par(t)² dt = γ² × (cumulative integral of G_par)² integral
+        # b_par = ∫ |q_par(t) - q_par(T)|² dt: the moment to the readout, the diffusion weighting of an
+        # unbalanced waveform, as dmipy-sim's b and B-tensor define it (dmipy-sim#392); this waveform is
+        # unbalanced (|q(T)| / max|q| = 0.13) and the two anchorings differ on the parallel projection
         q_par = GAMMA * np.cumsum(G_par_1d) * DT_WF
-        b_par = float(np.trapezoid(q_par**2, dx=DT_WF))
+        b_par = float(np.trapezoid((q_par - q_par[-1])**2, dx=DT_WF))
         E_par = np.exp(-b_par * LAMBDA_PAR)
 
         E_ref = float(E_perp_iir) * float(E_par)
