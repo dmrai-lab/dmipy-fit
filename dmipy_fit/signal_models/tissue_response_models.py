@@ -6,7 +6,7 @@ from ..core.signal_model_properties import (
     AnisotropicSignalModelProperties,
     IsotropicSignalModelProperties)
 from ..utils import utils
-from dmipy_fit.core.acquisition_scheme import gtab_dmipy2dipy
+from dmipy_fit.core.acquisition_scheme import dti_gradient_table
 from dipy.reconst import dti
 
 
@@ -100,31 +100,8 @@ def estimate_TR2_anisotropic_tissue_response_model(
               'multiple TE. Current data has {} TEs.'
         raise NotImplementedError(msg.format(acquisition_scheme.N_TE))
 
-    # DTI eigenvector estimation uses PGSE-only measurements.  OGSE signals
-    # have different b-value scaling and would bias the tensor fit.
-    is_ogse = getattr(acquisition_scheme, 'is_ogse',
-                      np.zeros(acquisition_scheme.number_of_measurements, bool))
-    pgse_mask = ~is_ogse
-    if pgse_mask.all():
-        # Pure PGSE scheme — use existing gtab path
-        gtab = gtab_dmipy2dipy(acquisition_scheme)
-        dti_data = data
-    else:
-        from dipy.core.gradients import gradient_table as _gtab
-        bvals_p = acquisition_scheme.bvalues[pgse_mask] / 1e6
-        bvecs_p = acquisition_scheme.gradient_directions[pgse_mask]
-        delta_p = acquisition_scheme.delta
-        Delta_p = acquisition_scheme.Delta
-        kw = {}
-        if delta_p is not None:
-            d = delta_p[pgse_mask]
-            kw['small_delta'] = d[0] if len(np.unique(d)) == 1 else None
-        if Delta_p is not None:
-            D = Delta_p[pgse_mask]
-            kw['big_delta'] = D[0] if len(np.unique(D)) == 1 else None
-        kw = {k: v for k, v in kw.items() if v is not None}
-        gtab = _gtab(bvals=bvals_p, bvecs=bvecs_p, **kw)
-        dti_data = data[:, pgse_mask]
+    gtab, pgse_mask = dti_gradient_table(acquisition_scheme)
+    dti_data = data[:, pgse_mask]
 
     tenmod = dti.TensorModel(gtab)
     tenfit = tenmod.fit(dti_data)
