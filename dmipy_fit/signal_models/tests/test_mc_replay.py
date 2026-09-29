@@ -9,6 +9,7 @@ Skipped if dmipy_sim (the simulator that builds packs) is unavailable.
 """
 import os
 import numpy as np
+from dmipy_sim.spec import Tissue
 import numpy.testing as npt
 import pytest
 
@@ -56,7 +57,7 @@ def test_engine_matches_pack_replay(dataset):
     fam = mc_replay.load_replay_family("sphere", D0, dataset_dir=dataset)
     pk = fam.packs[0]
     scheme = _scheme(pk.n_t, pk.dt)
-    ref = np.abs(np.asarray(pk.replay(scheme.sequence, tissue=False, complex_signal=True)))
+    ref = np.abs(np.asarray(pk.replay(scheme.sequence, tissue=None, complex_signal=True)))
     C, w, K, _ = mc_replay._pack_arrays(pk)
     W = compile_scheme(scheme._G, float(scheme._dt), K, GAMMA, n_t=pk.n_t, dt_pack=pk.dt)   # the exact per-save weights
     got = replay_coefficients(C, w, W)
@@ -93,7 +94,7 @@ def test_surface_relaxivity_uses_replay_knob(dataset):
     Er = s6(scheme, diameter=6e-6, surface_relaxivity=2e-5)      # rho = 20 um/s
     assert np.all(Er <= E0 + 1e-9) and Er[0] < 1.0               # surface relaxation lowers signal (incl b0)
     # engine cross-check on the same pack (exact rho path)
-    ref = np.abs(np.asarray(pk.replay(scheme.sequence, tissue=False, rho=2e-5, complex_signal=True)))
+    ref = np.abs(np.asarray(pk.replay(scheme.sequence, tissue=Tissue(rho=2e-5), complex_signal=True)))
     npt.assert_allclose(Er, ref, atol=5e-6)                       # the same exact kernel, the same gate to the echo
 
 

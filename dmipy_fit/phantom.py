@@ -67,6 +67,15 @@ class ModelSubstrate:
     def model_name(self):
         return f"dmipy_fit:{type(self.model).__name__}"
 
+    @property
+    def tissue(self):
+        """The :class:`~dmipy_sim.spec.Tissue` this form replays at: its one pool's ``T2`` / ``T1`` when declared,
+        else ``None`` (what a phantom reads from every substrate to refuse an inconsistent readout)."""
+        if self.T2_s is None and self.T1_s is None:
+            return None
+        from dmipy_sim.spec import Tissue
+        return Tissue(T2=self.T2_s, T1=self.T1_s)
+
     def _scheme(self, seq):
         from .core.acquisition_scheme import AcquisitionScheme
         key = id(seq)
