@@ -292,3 +292,94 @@ class TestX64Pinning:
         result = opt.fit_batch(signal, x0)
         assert result.shape == x0.shape
         assert jax.config.jax_enable_x64 is True  # restored
+
+
+# ---------------------------------------------------------------------------
+# Convergence diagnostics (dmipy-fit#32 follow-up: instrument the OSQP iters)
+# ---------------------------------------------------------------------------
+
+class TestConvergenceDiagnostics:
+    def test_diagnostics_matches_plain_fit(self):
+        scheme = _small_scheme(seed=0)
+        mc = _stick_ball_model(scheme)
+        x0 = np.reshape(mc.parameter_initial_guess_to_parameter_vector(), (1, -1))
+        opt = CsdOsqpOptimizer(scheme, mc, x0, sh_order=4)
+
+        rng = np.random.default_rng(3)
+        data = rng.uniform(0.1, 1.0, size=(5, scheme.number_of_measurements))
+        x0_all = np.tile(x0, (5, 1))
+
+        plain = opt.fit_batch(data, x0_all)
+        with_diag, diag = opt.fit_batch(data, x0_all, diagnostics=True)
+        np.testing.assert_allclose(plain, with_diag, rtol=1e-5, atol=1e-6)
+
+    def test_diagnostics_shape_and_batch_iterations(self):
+        scheme = _small_scheme(seed=0)
+        mc = _stick_ball_model(scheme)
+        x0 = np.reshape(mc.parameter_initial_guess_to_parameter_vector(), (1, -1))
+        opt = CsdOsqpOptimizer(scheme, mc, x0, sh_order=4, maxiter=200, tol=1e-4)
+
+        rng = np.random.default_rng(4)
+        data = rng.uniform(0.1, 1.0, size=(6, scheme.number_of_measurements))
+        x0_all = np.tile(x0, (6, 1))
+        _, diag = opt.fit_batch(data, x0_all, diagnostics=True)
+
+        assert diag['iter_num'].shape == (6,)
+        assert (diag['iter_num'] >= 0).all()
+        assert (diag['iter_num'] <= 200).all()
+        assert diag['batch_iterations'] == [int(diag['iter_num'].max())]
+
+    def test_diagnostics_is_a_separate_lazy_compile(self):
+        """diagnostics=False never triggers the diagnostics kernel's compile."""
+        scheme = _small_scheme(seed=0)
+        mc = _stick_ball_model(scheme)
+        x0 = np.reshape(mc.parameter_initial_guess_to_parameter_vector(), (1, -1))
+        opt = CsdOsqpOptimizer(scheme, mc, x0, sh_order=4)
+        assert getattr(opt, '_diag_fit_batch_fn', None) is None
+
+        data = np.ones((1, scheme.number_of_measurements))
+        opt.fit_batch(data, x0)
+        assert getattr(opt, '_diag_fit_batch_fn', None) is None  # still not built
+
+        opt.fit_batch(data, x0, diagnostics=True)
+        assert opt._diag_fit_batch_fn is not None
+
+
+# ---------------------------------------------------------------------------
+# .fit(solver='csd_jax', maxiter=..., tol=...) passthrough
+# ---------------------------------------------------------------------------
+
+class TestFitMaxiterTolPassthrough:
+    def test_maxiter_tol_reach_the_optimizer(self):
+        scheme = _small_scheme(seed=0)
+        mc = MultiCompartmentSphericalHarmonicsModel(models=[C1Stick(), G1Ball()], sh_order=4)
+        mc.set_fixed_parameter('C1Stick_1_lambda_par', 1.7e-9)
+        mc.set_fixed_parameter('G1Ball_1_lambda_iso', 3.0e-9)
+        mu = [np.pi / 3, np.pi / 5]
+        signal = 0.7 * C1Stick()(scheme, lambda_par=1.7e-9, mu=mu) + 0.3 * G1Ball()(scheme, lambda_iso=3.0e-9)
+
+        result = mc.fit(scheme, signal[None], solver='csd_jax', maxiter=77, tol=2e-3,
+                         use_parallel_processing=False, verbose=False)
+        assert mc.optimizer.maxiter == 77
+        assert mc.optimizer.tol == 2e-3
+        assert result.fitted_parameters['sh_coeff'].shape[0] == 1
+
+    def test_maxiter_tol_default_to_the_library_default(self):
+        scheme = _small_scheme(seed=0)
+        mc = MultiCompartmentSphericalHarmonicsModel(models=[C1Stick(), G1Ball()], sh_order=4)
+        mc.set_fixed_parameter('C1Stick_1_lambda_par', 1.7e-9)
+        mc.set_fixed_parameter('G1Ball_1_lambda_iso', 3.0e-9)
+        signal = C1Stick()(scheme, lambda_par=1.7e-9, mu=[0.1, 0.2])
+
+        mc.fit(scheme, signal[None], solver='csd_jax', use_parallel_processing=False, verbose=False)
+        assert mc.optimizer.maxiter == 4000
+        assert mc.optimizer.tol == 1e-4
+
+    def test_maxiter_refused_for_other_solvers(self):
+        scheme = _small_scheme(seed=0)
+        mc = MultiCompartmentSphericalHarmonicsModel(models=[C1Stick()], sh_order=4)
+        mc.set_fixed_parameter('C1Stick_1_lambda_par', 1.7e-9)
+        signal = C1Stick()(scheme, lambda_par=1.7e-9, mu=[0.1, 0.2])
+        with pytest.raises(ValueError, match="csd_jax"):
+            mc.fit(scheme, signal[None], solver='csd_tournier07', maxiter=10,
+                   use_parallel_processing=False, verbose=False)

@@ -66,7 +66,7 @@ _KERNEL_CACHE_MAXSIZE = 16
 
 @functools.lru_cache(maxsize=_KERNEL_CACHE_MAXSIZE)
 def _compiled_fit_batch(scheme_fingerprint, sh_order, unity_constraint,
-                         lambda_lb, maxiter, tol, dtype_name, batch):
+                         lambda_lb, maxiter, tol, dtype_name, batch, diagnostics=False):
     """Build (once per key) the jit+vmap OSQP kernel for one CSD shape.
 
     Returns a callable ``fit_one_batch(signal, Q, AT, G, h)`` (or, when
@@ -78,6 +78,15 @@ def _compiled_fit_batch(scheme_fingerprint, sh_order, unity_constraint,
     arguments, not captured).  Repeated calls with an equal key return the
     exact same Python callable, so a repeat ``.fit(solver='csd_jax')`` on an
     equal scheme pays no compile.
+
+    ``diagnostics`` (a separate cache entry, never built unless requested via
+    ``fit_batch(..., diagnostics=True)``) makes the kernel also return
+    ``sol.state.iter_num`` per voxel: jaxopt's OSQP already tracks convergence
+    per vmap lane internally (a voxel's own iteration counter stops advancing
+    once *that voxel* meets ``tol``, even though the outer ``lax.while_loop``
+    -- one loop shared by the whole batch -- keeps running until every lane
+    is done or ``maxiter`` is hit), so this is free instrumentation, not a
+    manual per-voxel mask.
     """
     dtype = jnp.dtype(dtype_name)
     solver = OSQP(
@@ -95,6 +104,8 @@ def _compiled_fit_batch(scheme_fingerprint, sh_order, unity_constraint,
                 params_eq=(A_eq, b_eq),
                 params_ineq=(G, h),
             )
+            if diagnostics:
+                return sol.params.primal, sol.state.iter_num
             return sol.params.primal  # KKTSolution.primal
 
         return jax.jit(jax.vmap(fit_one, in_axes=(0, None, None, None, None, None, None)))
@@ -106,6 +117,8 @@ def _compiled_fit_batch(scheme_fingerprint, sh_order, unity_constraint,
                 params_obj=(Q, c),
                 params_ineq=(G, h),
             )
+            if diagnostics:
+                return sol.params.primal, sol.state.iter_num
             return sol.params.primal
 
         return jax.jit(jax.vmap(fit_one, in_axes=(0, None, None, None, None)))
@@ -375,16 +388,36 @@ class CsdOsqpOptimizer:
         maxiter = int(os.environ.get("DMIPY_CSD_JAX_MAXITER", self.maxiter))
         tol = float(os.environ.get("DMIPY_CSD_JAX_TOL", self.tol))
         batch = int(os.environ.get("DMIPY_CSD_JAX_BATCH", "16384"))
+        # Resolved (env-override-applied) values, kept so a later diagnostics
+        # kernel (built lazily, see _get_diagnostics_fn) uses the identical key.
+        self._resolved_maxiter = maxiter
+        self._resolved_tol = tol
+        self._resolved_batch = batch
 
         self._fit_batch_fn = _compiled_fit_batch(
             self.acquisition_scheme.fingerprint(), self.sh_order, self.unity_constraint,
             float(self.lambda_lb), maxiter, tol, jnp.dtype(dtype).name, batch)
 
+    def _get_diagnostics_fn(self):
+        """Lazily fetch (and cache) the diagnostics variant of the compiled kernel.
+
+        Built only on first use -- a caller that never asks for ``diagnostics=True``
+        never pays this extra compile.
+        """
+        fn = getattr(self, '_diag_fit_batch_fn', None)
+        if fn is None:
+            fn = _compiled_fit_batch(
+                self.acquisition_scheme.fingerprint(), self.sh_order, self.unity_constraint,
+                float(self.lambda_lb), self._resolved_maxiter, self._resolved_tol,
+                jnp.dtype(self._solve_dtype).name, self._resolved_batch, diagnostics=True)
+            self._diag_fit_batch_fn = fn
+        return fn
+
     # ------------------------------------------------------------------
     # Batch fitting (GPU-parallel over voxels)
     # ------------------------------------------------------------------
 
-    def fit_batch(self, data_all, x0_all, eta=None):
+    def fit_batch(self, data_all, x0_all, eta=None, *, diagnostics=False):
         """Fit all voxels; float32 (jax_enable_x64=False) for the OSQP solve.
 
         CSD is a float32 production path: the FOD is thresholded / peak-extracted, so it sits
@@ -403,6 +436,8 @@ class CsdOsqpOptimizer:
         - **Unpinned** (the default, ordinary/script use): save the flag, force it off for this
           solve, restore it afterwards -- robust to whatever the ambient global flag was, at the
           cost of a save/restore on every call.
+
+        ``diagnostics`` (default off, no extra cost when unused): see :meth:`_fit_batch_impl`.
         """
         if _x64_pinned_off:
             if jax.config.jax_enable_x64:
@@ -411,18 +446,18 @@ class CsdOsqpOptimizer:
                     "dmipy_fit.jax.csd_jax.pin_x64_off(). Something (e.g. a preceding cylinder "
                     "fit) re-enabled it; fix that caller -- csd_jax will not silently flip a "
                     "process-wide flag back off underneath a concurrent server.")
-            return self._fit_batch_impl(data_all, x0_all, eta)
+            return self._fit_batch_impl(data_all, x0_all, eta, diagnostics=diagnostics)
 
         _prev_x64 = jax.config.jax_enable_x64
         if _prev_x64:
             jax.config.update("jax_enable_x64", False)
         try:
-            return self._fit_batch_impl(data_all, x0_all, eta)
+            return self._fit_batch_impl(data_all, x0_all, eta, diagnostics=diagnostics)
         finally:
             if _prev_x64:
                 jax.config.update("jax_enable_x64", True)
 
-    def _fit_batch_impl(self, data_all, x0_all, eta=None):
+    def _fit_batch_impl(self, data_all, x0_all, eta=None, diagnostics=False):
         """Fit all voxels in parallel using jaxopt.OSQP + jax.vmap.
 
         Parameters
@@ -438,10 +473,21 @@ class CsdOsqpOptimizer:
             When provided, a pre-processing bias correction is applied:
             ``data_corrected = sqrt(max(data^2 - eta^2, 0))``.
             This removes the Rician bias before the QP solve.
+        diagnostics : bool
+            When True (voxel-varying-kernel path excluded -- see below), also runs the
+            OSQP convergence instrumentation and returns ``(fitted_parameters, diagnostics)``
+            instead of just ``fitted_parameters``, where ``diagnostics`` is a dict:
+            ``iter_num`` (per-voxel OSQP iteration count at convergence or ``maxiter``, shape
+            ``(N_voxels,)``) and ``batch_iterations`` (list, one entry per internal chunk: the
+            iteration the *whole chunk's* ``lax.while_loop`` actually stopped at, i.e.
+            ``max(iter_num)`` over that chunk -- the number the slowest voxel forces on everyone).
+            Uses a separate compiled kernel (built lazily on first use; see
+            :meth:`_get_diagnostics_fn`), so ordinary fitting never pays for it.
 
         Returns
         -------
         fitted_parameters : np.array, shape (N_voxels, N_parameters)
+            Or, when ``diagnostics=True``, ``(fitted_parameters, diagnostics)``.
         """
         N_voxels = data_all.shape[0]
 
@@ -469,6 +515,9 @@ class CsdOsqpOptimizer:
             qp_args = (self._Q_jax, self._AT_jax, self._G_jax, self._h_jax)
             if self.unity_constraint:
                 qp_args = qp_args + (self._A_eq_jax, self._b_eq_jax)
+            fit_fn = self._get_diagnostics_fn() if diagnostics else self._fit_batch_fn
+            iter_num_all = np.zeros(N_voxels, dtype=int) if diagnostics else None
+            batch_iterations = [] if diagnostics else None
             for s in rng:
                 chunk = data_all[s:s + batch]
                 n = chunk.shape[0]
@@ -476,12 +525,22 @@ class CsdOsqpOptimizer:
                     chunk = np.concatenate(
                         [chunk, np.zeros((batch - n, chunk.shape[1]),
                                          dtype=chunk.dtype)], axis=0)
-                out = np.array(self._fit_batch_fn(
-                    jnp.array(chunk, dtype=self._solve_dtype), *qp_args))
+                result = fit_fn(jnp.array(chunk, dtype=self._solve_dtype), *qp_args)
+                if diagnostics:
+                    out, iter_num = (np.array(a) for a in result)
+                    iter_num_all[s:s + n] = iter_num[:n]
+                    batch_iterations.append(int(iter_num.max()))
+                else:
+                    out = np.array(result)
                 if x_solutions is None:
                     x_solutions = np.zeros((N_voxels, out.shape[1]), dtype=float)
                 x_solutions[s:s + n] = out[:n]
         else:
+            if diagnostics:
+                raise NotImplementedError(
+                    "diagnostics=True is only implemented for the fixed-kernel (single_convolution_kernel) "
+                    "path; this optimizer has a voxel-varying kernel, which falls back to a sequential "
+                    "per-voxel jaxopt.OSQP.run() that isn't the vmapped kernel this instruments.")
             # Voxel-varying kernel: fall back to sequential per-voxel fitting.
             # A future optimisation could batch voxels with the same kernel.
             x_solutions = np.zeros((N_voxels, self.Ncoef_total), dtype=float)
@@ -492,7 +551,10 @@ class CsdOsqpOptimizer:
                     acquisition_scheme=self.acquisition_scheme, **params_dict)
                 x_solutions[i] = self._solve_single(A_i, data_all[i])
 
-        return self._postprocess_batch(x_solutions, x0_all)
+        fitted_parameters = self._postprocess_batch(x_solutions, x0_all)
+        if diagnostics:
+            return fitted_parameters, {'iter_num': iter_num_all, 'batch_iterations': batch_iterations}
+        return fitted_parameters
 
     def _solve_single(self, A, signal):
         """Build per-voxel QP matrices and run OSQP (voxel-varying kernel)."""
