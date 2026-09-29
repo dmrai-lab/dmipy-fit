@@ -33,6 +33,8 @@ jobs:
           # (public) GitHub repo so the versioned `dmipy-sim>=2.0` requirement resolves.
           pip install "dmipy-sim @ git+https://github.com/dmrai-lab/dmipy-sim.git"
           pip install -e ".[jax,all]"
+          # the torch CSD solver is checked against the JAX one (dmipy-fit#37): the CPU wheel
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Run tests
         run: |

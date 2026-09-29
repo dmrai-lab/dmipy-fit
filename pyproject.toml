@@ -36,6 +36,10 @@ jax = [
 ]
 # GPU fitting (whole slice on device). Needs a working CUDA 12 stack; see the
 # dmipy-sim README / dmipy.org install page for the LD_LIBRARY_PATH note.
+# The PyTorch backend of the batched Tournier CSD (solver='csd_tournier07_torch', dmipy-fit#37).
+torch = [
+    "torch>=2.2",
+]
 jax-gpu = [
     "jax[cuda12]>=0.6.2",
     "jaxopt>=0.8",
