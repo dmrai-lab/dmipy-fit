@@ -290,3 +290,26 @@ def test_n_te_counts_distinct_echo_times_not_shells():
     seq = sequences.pgse(dirs, 0.010, 0.030, bvalues=b, TE=0.060)
     sch = AcquisitionScheme(seq)
     assert len(sch.shell_bvalues) == 3 and sch.N_TE == 1
+
+
+def test_dti_gradient_table_multi_delta_scheme():
+    """A per-shell delta/Delta protocol is a valid tensor input: every measurement is in the table
+    and the timings, not unique, are left off it; a single-timing scheme carries its timings."""
+    from dmipy_fit.core.acquisition_scheme import (
+        acquisition_scheme_from_bvalues, dti_gradient_table)
+    rng = np.random.default_rng(0)
+    dirs = rng.normal(size=(20, 3))
+    dirs /= np.linalg.norm(dirs, axis=1)[:, None]
+    dirs[:2] = 0.
+    bvals = np.r_[0., 0., np.full(9, 1000e6), np.full(9, 3000e6)]
+    delta = np.r_[np.full(11, 10.2e-3), np.full(9, 7.6e-3)]
+    Delta = np.r_[np.full(11, 16.7e-3), np.full(9, 45.9e-3)]
+    multi = acquisition_scheme_from_bvalues(bvals, dirs, delta=delta, Delta=Delta)
+    gtab, pgse_mask = dti_gradient_table(multi)
+    assert pgse_mask.all()
+    assert gtab.bvals.shape == (20,)
+    assert gtab.small_delta is None and gtab.big_delta is None
+    np.testing.assert_allclose(gtab.bvals, bvals / 1e6)
+    single = acquisition_scheme_from_bvalues(bvals, dirs, delta=10.2e-3, Delta=16.7e-3)
+    gtab1, _ = dti_gradient_table(single)
+    np.testing.assert_allclose([gtab1.small_delta, gtab1.big_delta], [10.2e-3, 16.7e-3])

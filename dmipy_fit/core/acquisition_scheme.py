@@ -24,7 +24,8 @@ __all__ = [
     'calculate_shell_bvalues_and_indices',
     'check_acquisition_scheme',
     'gtab_dipy2dmipy',
-    'gtab_dmipy2dipy'
+    'gtab_dmipy2dipy',
+    'dti_gradient_table'
 ]
 
 
@@ -1539,6 +1540,34 @@ def gtab_dipy2dmipy(dipy_gradient_table, min_b_shell_distance=50e6,
         bvalues=bvals, gradient_directions=bvecs, delta=delta, Delta=Delta,
         min_b_shell_distance=min_b_shell_distance, b0_threshold=b0_threshold)
     return gtab_dmipy
+
+
+def dti_gradient_table(acquisition_scheme):
+    """The dipy GradientTable of a scheme's PGSE measurements, for a tensor fit, with the mask of those
+    measurements. A tensor fit reads b-values and directions only: the pulse timings are set on the
+    table when they are unique across the PGSE measurements and left off otherwise (a per-shell
+    delta/Delta protocol is a valid tensor input). OGSE measurements are excluded: their b-value
+    scaling differs and biases the tensor.
+
+    Returns
+    -------
+    gtab : dipy GradientTable
+    pgse_mask : (N,) bool array, True for the measurements the table holds
+    """
+    from dipy.core.gradients import gradient_table
+    is_ogse = getattr(acquisition_scheme, 'is_ogse',
+                      np.zeros(acquisition_scheme.number_of_measurements, bool))
+    pgse_mask = ~is_ogse
+    kw = {}
+    for name, values in (('small_delta', acquisition_scheme.delta),
+                         ('big_delta', acquisition_scheme.Delta)):
+        if values is not None:
+            unique = np.unique(np.asarray(values)[pgse_mask])
+            if len(unique) == 1:
+                kw[name] = float(unique[0])
+    gtab = gradient_table(bvals=acquisition_scheme.bvalues[pgse_mask] / 1e6,
+                          bvecs=acquisition_scheme.gradient_directions[pgse_mask], **kw)
+    return gtab, pgse_mask
 
 
 def gtab_dmipy2dipy(dmipy_gradient_table):

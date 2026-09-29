@@ -62,3 +62,20 @@ def test_tournier07_picks_single_peak():
     assert_array_almost_equal(
         wm(scheme, mu=[0., 0.]),
         data_cross[0], 4)
+
+
+def test_tournier07_accepts_per_shell_timings():
+    """The response of a scheme whose shells carry their own delta/Delta (as DiSCo's does) is the
+    single-fibre voxel's signal, as with a single-timing scheme."""
+    from dmipy_fit.core.acquisition_scheme import acquisition_scheme_from_bvalues
+    b = scheme.bvalues
+    shell = np.digitize(b, [500e6, 2000e6])
+    delta = np.choose(shell, [10.2e-3, 10.2e-3, 7.6e-3])
+    Delta = np.choose(shell, [16.7e-3, 16.7e-3, 45.9e-3])
+    multi = acquisition_scheme_from_bvalues(b, scheme.gradient_directions, delta=delta, Delta=Delta)
+    assert len(np.unique(multi.delta)) == 2
+    zeppelin = G2Zeppelin(lambda_par=1.7e-9, lambda_perp=1e-9, mu=[0., 0.])
+    single = zeppelin(multi)
+    data = np.array([single, single + zeppelin(multi, mu=[np.pi / 2, np.pi / 2])])
+    S0, wm, _ = white_matter_response_tournier07(multi, data, peak_ratio_setting='mrtrix', N_candidate_voxels=1)
+    assert_array_almost_equal(wm(multi, mu=[0., 0.]), single, 4)
