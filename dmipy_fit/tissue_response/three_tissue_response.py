@@ -197,14 +197,14 @@ def _host(data, rows):
 
 def _mean_b0_and_sdm(acquisition_scheme, data):
     """``(mean_b0 (N,), SDM (N,))`` as float64 numpy arrays for ``data (N, N_meas)``: the per-shell means are one
-    product with the averaging matrix of the scheme, on the data's device."""
+    float64 product with the averaging matrix of the scheme, on the data's device."""
     W = _shell_averaging_matrix(acquisition_scheme)                    # (N_meas, 1 + N_dwi_shells)
     if type(data).__module__.startswith('torch'):
         import torch
         from ..torch.csd_tournier_torch import full_precision
         with full_precision():
-            means = data @ torch.as_tensor(W, dtype=data.dtype, device=data.device)
-        means = means.double().cpu().numpy()
+            means = data.double() @ torch.as_tensor(W, dtype=torch.float64, device=data.device)
+        means = means.cpu().numpy()
     else:
         means = np.asarray(data, float) @ W
     return means[:, 0], _sdm_from_means(means)
