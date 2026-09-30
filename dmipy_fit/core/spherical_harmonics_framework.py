@@ -199,12 +199,15 @@ class MultiCompartmentSphericalHarmonicsModel(MultiCompartmentModelProperties):
             Optional mask of voxels to be included in the optimization.
         solver : string,
             'csd' (the default), 'csd_tournier07', 'csd_tournier07_jax', 'csd_tournier07_torch', 'csd_jax',
-            'csd_cvxpy' or 'csd_plus'. 'csd' is the 'tournier07' solver [1]_ when the
+            'csd_msmt_torch', 'csd_cvxpy' or 'csd_plus'. 'csd' is the 'tournier07' solver [1]_ when the
             volume fractions are fixed, else the cvxpy solver [2]_ in the formulation
             of [3]_. 'csd_tournier07_jax' ('csd_tournier07_torch' in PyTorch) is the tournier07 iteration for every voxel
             at once on the JAX device (fixed kernel only); 'csd_jax' is the QP of [3]_
-            solved by jaxopt's OSQP, batched the same way. 'csd_plus' uses the global
-            positivity constraints of [5]_.
+            solved by jaxopt's OSQP, batched the same way. 'csd_msmt_torch' is the
+            multi-tissue problem of [3]_ (one anisotropic and any number of isotropic
+            kernels, the fractions estimated) by a batched interior-point method in
+            PyTorch, every voxel at once. 'csd_plus' uses the global positivity
+            constraints of [5]_.
         lambda_lb: positive float,
             Weight for Laplace-Beltrami regularization to impose smoothness
             into estimated FODs, follows [4]_.
@@ -226,7 +229,8 @@ class MultiCompartmentSphericalHarmonicsModel(MultiCompartmentModelProperties):
             ``data_corrected = sqrt(max(data^2 - eta^2, 0))``.
             Ignored for other solvers.
         maxiter : int or None,
-            Keyword-only. ``solver='csd_tournier07_jax'``: the solves per voxel at most (default 50).
+            Keyword-only. ``solver='csd_tournier07_jax'`` / ``'csd_tournier07_torch'``: the solves per voxel at
+            most (default 50). ``solver='csd_msmt_torch'``: the interior-point iterations per voxel at most.
             ``solver='csd_jax'``: caps jaxopt's OSQP iterations per voxel
             (overrides ``CsdOsqpOptimizer``'s own default of 4000). A batched vmap solve runs
             until every voxel in the batch converges or ``maxiter`` is hit, so one hard voxel
@@ -266,10 +270,12 @@ class MultiCompartmentSphericalHarmonicsModel(MultiCompartmentModelProperties):
             necessary non-negativity constraints for common diffusion MRI models
             using sum of squares programming." NeuroImage 209 (2020): 116405.
         """
-        if maxiter is not None and solver not in ('csd_jax', 'csd_tournier07_jax', 'csd_tournier07_torch'):
+        if maxiter is not None and solver not in ('csd_jax', 'csd_tournier07_jax', 'csd_tournier07_torch',
+                                                  'csd_msmt_torch'):
             raise ValueError(
-                "maxiter is for solver='csd_jax' (jaxopt.OSQP's iteration cap) or 'csd_tournier07_jax' "
-                "(solves per voxel); got solver={!r}.".format(solver))
+                "maxiter is for solver='csd_jax' (jaxopt.OSQP's iteration cap), 'csd_tournier07_jax' / "
+                "'csd_tournier07_torch' (solves per voxel) or 'csd_msmt_torch' (interior-point iterations per "
+                "voxel); got solver={!r}.".format(solver))
         if tol is not None and solver != 'csd_jax':
             raise ValueError(
                 "tol is solver='csd_jax'-only (jaxopt.OSQP's tolerance); got solver={!r}.".format(solver))
@@ -419,6 +425,15 @@ class MultiCompartmentSphericalHarmonicsModel(MultiCompartmentModelProperties):
             if verbose:
                 print('Setup batched Tournier07 CSD optimizer ({}) in {} seconds'.format(
                     solver, time() - start))
+        elif solver == 'csd_msmt_torch':
+            from ..torch.csd_msmt_torch import CsdMsmtTorchOptimizer
+            fit_func = CsdMsmtTorchOptimizer(
+                acquisition_scheme, self, x0_, self.sh_order,
+                unity_constraint=self.unity_constraint, lambda_lb=lambda_lb,
+                **({'max_iter': maxiter} if maxiter is not None else {}))
+            if verbose:
+                print('Setup batched MSMT CSD optimizer ({}) in {} seconds'.format(
+                    solver, time() - start))
         else:
             msg = "Unknown solver name {}".format(solver)
             raise ValueError(msg)
@@ -426,18 +441,14 @@ class MultiCompartmentSphericalHarmonicsModel(MultiCompartmentModelProperties):
         self.optimizer = fit_func
 
         # --- JAX batch path: solve all voxels in one vmapped kernel ---------
-        if solver in ('csd_jax', 'csd_tournier07_jax', 'csd_tournier07_torch'):
+        if solver in ('csd_jax', 'csd_tournier07_jax', 'csd_tournier07_torch', 'csd_msmt_torch'):
             start = time()
-            data_masked = np.zeros((N_voxels,
-                                    acquisition_scheme.number_of_measurements),
-                                   dtype=float)
-            x0_masked = np.zeros((N_voxels, N_parameters), dtype=float)
-            for idx, pos in enumerate(zip(*mask_pos)):
-                if self.fit_S0_response:
-                    data_masked[idx] = data_[pos] / self.max_S0_response
-                else:
-                    data_masked[idx] = data_[pos] / S0[pos]
-                x0_masked[idx] = x0_[pos]
+            if self.fit_S0_response:
+                data_masked = data_[mask] / float(self.max_S0_response)       # keeps the data's dtype
+            else:
+                S0_masked = np.asarray(S0)[mask]
+                data_masked = data_[mask] / (S0_masked[:, None] if S0_masked.ndim == 1 else S0_masked)
+            x0_masked = np.asarray(x0_[mask], dtype=float)
 
             fitted_parameters_lin = fit_func.fit_batch(
                 data_masked, x0_masked, eta=eta)

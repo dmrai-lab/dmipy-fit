@@ -58,7 +58,7 @@ def test_it_is_the_jax_solver_and_the_numpy_reference(scheme, unity):
     assert_allclose(got_t, expected, rtol=1e-4, atol=2e-5)           # the reference's float64 against float32 solves
     np.testing.assert_array_equal(diag_t['iter_num'], diag_j['iter_num'])   # the same active-set path, voxel for voxel
     err = np.abs(got_t - got_j).max()
-    assert err < 5e-6, err                                             # two float32 solvers of the same systems: measured 3.4e-7 (CPU)
+    assert err < 5e-6, err                                             # two float32 solvers of the same systems: measured 7.0e-7 (CPU)
     if unity:
         assert_allclose(got_t[:, tc._sh_slice][:, 0], 1.0 / (2.0 * np.sqrt(np.pi)))
 

@@ -1024,9 +1024,7 @@ class RotationalHarmonicsAcquisitionScheme:
                 self.shell_sh_orders[shell_index], thetas, phis, legacy=False)[0]
 
         self.inverse_rh_matrix = {
-            rh_order: np.linalg.pinv(real_sym_rh_basis(
-                rh_order, thetas, phis
-            )) for rh_order in np.arange(0, 15, 2)
+            rh_order: np.linalg.pinv(real_sym_rh_basis(rh_order, thetas)) for rh_order in np.arange(0, 15, 2)
         }
 
     def btensor(self):

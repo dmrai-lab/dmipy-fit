@@ -86,11 +86,11 @@ model = build_white_matter_model(include_csf=False)
 | `signal_models/` | `cylinder_models` (stick/cylinder/axcaliber), `gaussian_models` (ball/zeppelin), `sphere_models`, `plane_models`, `capped_cylinder_models`, `tissue_response_models`, `exchange_models`. Each restricted geometry has a **Gaussian-phase** model (`C4`/`S4`, low-b closed form) and an **exact matrix-method** model (`C5CylinderMatrixMethod`/`S5SphereMatrixMethod`/`P5PlaneMatrixMethod`, `_restricted_matrix.py`) that solves the Bloch–Torrey equation for the *actual waveform* and stays correct at high b / OGSE. |
 | `signal_models/attenuation.py` | `OccupancyGatedModel` + `TransverseRelaxation`, `IntraPoreSurfaceRelaxivity`, `ExteriorSurfaceRelaxivity` |
 | `distributions/` | Watson / Bingham dispersion, Gamma diameter distribution |
-| `optimizers/`, `optimizers_fod/` | brute2fine, MIX, multi-tissue NNLS; CSD (Tournier / cvxpy); the batched device versions are `jax/csd_tournier_jax.py` (`solver='csd_tournier07_jax'`, the Tournier iteration for a whole image, fixed kernel) and `jax/csd_jax.py` (`solver='csd_jax'`, the QP by OSQP) |
+| `optimizers/`, `optimizers_fod/` | brute2fine, MIX, multi-tissue NNLS; CSD (Tournier / cvxpy); the batched device versions are `jax/csd_tournier_jax.py` / `torch/csd_tournier_torch.py` (`solver='csd_tournier07_jax'` / `'csd_tournier07_torch'`, the Tournier iteration for a whole image, fixed kernel), `torch/csd_msmt_torch.py` (`solver='csd_msmt_torch'`, multi-tissue CSD with the fractions estimated: an interior-point method for a whole image, cvxpy's problem) and `jax/csd_jax.py` (`solver='csd_jax'`, the QP by OSQP) |
 | `custom_optimizers/reference_models.py` | named literature models (NODDI, NEXI, SANDI, VERDICT, IMPULSED, …) |
 | `jax/` | GPU signal models, `vmap_fit`, DTI/CSD/fractions — the `solver="jax"` backend |
 | `white_matter/` | `build_white_matter_model()`, `mwf.t2_spectrum_mwf()` |
-| `tissue_response/`, `audit/` (`biophysical_constants`), `utils/`, `_gpu_config.py` | responses, cited constants, helpers, GPU mem cap |
+| `tissue_response/`, `audit/` (`biophysical_constants`), `utils/`, `_gpu_config.py` | responses (`three_tissue_response_dhollander16(scheme, data, mask=...)`, the brain mask required; the tensors on `backend='torch'` (`torch/dti_torch.py`) or `'jax'`), cited constants, helpers, GPU mem cap |
 
 ## Where to look for X
 

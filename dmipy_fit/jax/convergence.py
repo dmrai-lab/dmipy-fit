@@ -69,26 +69,9 @@ class SDMStratifiedSampler:
         return ['low_sdm', 'mid_sdm', 'high_sdm']
 
     def _compute_sdm(self, data_flat, scheme):
-        """Signal Decay Metric, shape (N_vox,).
-
-        Inlined from three_tissue_response.signal_decay_metric so it works
-        on flat (N_vox, N_meas) arrays without reshaping.
-        """
-        b0_mask = np.array(scheme.b0_mask, dtype=bool)
-        mean_b0 = data_flat[:, b0_mask].mean(axis=1)           # (N_vox,)
-
-        shells = np.array(scheme.unique_dwi_indices)
-        shell_idx = np.array(scheme.shell_indices)
-        shell_means = np.stack([
-            data_flat[:, shell_idx == s].mean(axis=1)
-            for s in shells
-        ], axis=1)                                              # (N_vox, n_shells)
-
-        sdm = np.zeros(data_flat.shape[0])
-        ok  = (mean_b0 > 0) & (shell_means.min(axis=1) > 0)
-        sdm[ok] = np.mean(
-            np.log(mean_b0[ok, None] / shell_means[ok]), axis=1)
-        return np.clip(sdm, 0, 10)
+        """Signal Decay Metric of every voxel, shape (N_vox,)."""
+        from ..tissue_response.three_tissue_response import signal_decay_metric
+        return signal_decay_metric(scheme, data_flat)
 
     def sample(self, data_flat, scheme):
         """Draw a stratified sample.

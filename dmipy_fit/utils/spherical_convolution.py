@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from dipy.reconst.shm import real_sh_descoteaux_from_index as real_sph_harm
-from dipy.utils.optpkg import optional_package
-numba, have_numba, _ = optional_package("numba")
+from scipy.special import eval_legendre
+
+from .sh_basis import optional_module
+
+numba, have_numba = optional_module("numba")
 
 __all__ = [
     'real_sym_rh_basis',
@@ -10,38 +12,14 @@ __all__ = [
 ]
 
 
-def real_sym_rh_basis(sh_order, theta, phi):
-    r"""Samples a real symmetric rotational harmonic basis at point on the sphere
-
-    Samples the basis functions up to order `sh_order` at points on the sphere
-    given by `theta` and `phi`. The basis functions are defined here the same
-    way as in fibernavigator, where the real harmonic $Y^m_n$ is defined to
-    be:
-
-        $Y^0_n$                     if m = 0
-
-    Parameters
-    -----------
-    sh_order : int
-        even int > 0, max spherical harmonic degree
-    theta : float [0, 2*pi]
-        The azimuthal (longitudinal) coordinate.
-    phi : float [0, pi]
-        The polar (colatitudinal) coordinate.
-
-    Returns
-    --------
-    real_rh_matrix : array of shape ()
-        The real harmonic $Y^0_n$ sampled at `theta` and `phi`
+def real_sym_rh_basis(sh_order, theta):
+    r"""The real symmetric rotational harmonics ``Y_l^0`` of even degree up to ``sh_order`` at polar angles
+    ``theta``: ``(n, sh_order // 2 + 1)``, ``Y_l^0(theta) = sqrt((2l + 1) / (4 pi)) P_l(cos theta)`` with ``P_l``
+    the Legendre polynomial (the orthonormal basis; axially symmetric, so the azimuth does not enter).
     """
-    n = np.arange(0, sh_order + 1, 2)
-    m = np.zeros(sh_order // 2 + 1)
-
-    phi = np.reshape(phi, [-1, 1])
-    theta = np.reshape(theta, [-1, 1])
-
-    real_rh_matrix = real_sph_harm(m, n, theta, phi, legacy=False)
-    return real_rh_matrix
+    x = np.cos(np.reshape(np.asarray(theta, float), [-1]))
+    degrees = np.arange(0, int(sh_order) + 1, 2)
+    return np.stack([np.sqrt((2 * l + 1) / (4 * np.pi)) * eval_legendre(l, x) for l in degrees], axis=1)
 
 
 def sh_convolution(f_distribution_sh, kernel_rh):

@@ -67,6 +67,10 @@ class CsdCvxpyOptimizer:
     lambda_lb: positive float,
         Laplace-Belrami regularization weight to impose smoothness in the
         FOD. Same as is done in [3]_.
+    solve_kwargs: dict or None,
+        keyword arguments of ``cvxpy.Problem.solve`` (the solver and its
+        tolerances); None is cvxpy's default solver at its default tolerances.
+        After a call, ``last_status`` is cvxpy's status of that voxel's problem.
 
     References
     ----------
@@ -83,7 +87,7 @@ class CsdCvxpyOptimizer:
     """
 
     def __init__(self, acquisition_scheme, model, x0_vector=None, sh_order=8,
-                 unity_constraint=True, lambda_lb=0.):
+                 unity_constraint=True, lambda_lb=0., solve_kwargs=None):
         self.model = model
         self.acquisition_scheme = acquisition_scheme
         self.sh_order = sh_order
@@ -91,6 +95,7 @@ class CsdCvxpyOptimizer:
         self.Nmodels = len(self.model.models)
         self.lambda_lb = lambda_lb
         self.unity_constraint = unity_constraint
+        self.solve_kwargs = dict(solve_kwargs or {})
         self.sphere_jacobian = 2 * np.sqrt(np.pi)
 
         self.L_positivity = positivity_basis(self.sh_order)
@@ -201,8 +206,10 @@ class CsdCvxpyOptimizer:
                 self.lambda_lb * cvxpy.quad_form(sh_coef, self.R_smoothness))
         problem = cvxpy.Problem(cvxpy.Minimize(cost), constraints)
         try:
-            problem.solve()
+            problem.solve(**self.solve_kwargs)
+            self.last_status = problem.status
         except cvxpy.error.SolverError:
+            self.last_status = 'solver_error'
             warnings.warn(
                 'CsdCvxpyOptimizer: CVXPY solver raised SolverError. '
                 'Returning zero vector. Check solver installation.',

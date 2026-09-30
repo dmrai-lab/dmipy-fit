@@ -7,7 +7,7 @@ from dmipy_fit.tissue_response.three_tissue_response import (
 
 
 def single_shell_three_tissue_csd(
-        acquisition_scheme, data, tissue_response_models=None,
+        acquisition_scheme, data, *, mask, tissue_response_models=None,
         S0_tissue_responses=None, N_iterations=4, return_all_csd_fits=False,
         csd_fit_verbose=False, ss3t_verbose=True):
     """
@@ -41,7 +41,10 @@ def single_shell_three_tissue_csd(
     acquisition_scheme: Dmipy acquisition scheme,
         single shell (or whatever-shell) acquisition scheme.
     data: ND-array of shape (Nx...., NDWI),
-        the fitted that is to be fitted.
+        the data that is to be fitted.
+    mask: boolean array of shape (Nx....), required keyword,
+        the brain mask: the voxels that are fitted, and the voxels the
+        Dhollander16 responses are selected from when they are not given.
     tissue_response_models: list of Dmipy tissue response models,
         assumed to be in the same order as they are generated using the
         dhollander16 tissue response estimation, i.e. [wm, gm, csf].
@@ -77,13 +80,12 @@ def single_shell_three_tissue_csd(
     """
     if tissue_response_models is None:
         S0_tissue_responses, tissue_response_models, selection_map = (
-            three_tissue_response_dhollander16(acquisition_scheme, data))
+            three_tissue_response_dhollander16(acquisition_scheme, data, mask=mask))
 
     fit_args = {
         'acquisition_scheme': acquisition_scheme,
         'data': data,
-        'mask': data[..., 0] > 0,
-        'fit_S0_response': True,
+        'mask': mask,
         'verbose': csd_fit_verbose}
 
     if return_all_csd_fits:
