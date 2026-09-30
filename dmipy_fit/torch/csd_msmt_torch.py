@@ -370,7 +370,8 @@ class CsdMsmtTorchOptimizer:
         its own dtype, float32 data at half the bytes, and cast there); ``x0_all``
         ``(N_voxels, N_parameters)`` carries the other parameters into the result. ``eta`` applies the Rician bias
         correction ``sqrt(max(s^2 - eta^2, 0))`` first. Voxels are solved in chunks of ``DMIPY_CSD_MSMT_BATCH``
-        (default 131072).
+        (default 16384: the largest chunk whose per-voxel normal matrices, factors and directions fit a 44 GB device
+        with the whole brain of 90,205 voxels; one chunk of every voxel exhausted it).
         """
         import torch
         data_all = np.asarray(data_all)
@@ -380,7 +381,7 @@ class CsdMsmtTorchOptimizer:
         if eta is not None and eta > 0:
             data_all = np.sqrt(np.maximum(data_all ** 2 - eta ** 2, 0.0))
         n = data_all.shape[0]
-        batch = max(1, int(os.environ.get("DMIPY_CSD_MSMT_BATCH", "131072")))
+        batch = max(1, int(os.environ.get("DMIPY_CSD_MSMT_BATCH", "16384")))
         X = np.zeros((n, self.A.shape[1]))
         iters = np.zeros(n, int)
         conv = np.zeros(n, bool)
