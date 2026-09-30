@@ -1,13 +1,11 @@
 import warnings
-from scipy.optimize import brute
-from scipy.stats import pearsonr
+
 import numpy as np
-from dipy.reconst import dti
-from ..core.acquisition_scheme import dti_gradient_table
-from dipy.segment.mask import median_otsu
+
 from . import white_matter_response
 from ..signal_models.tissue_response_models import (
     estimate_TR1_isotropic_tissue_response_model)
+from ..utils.tensor_backend import check_backend, tensor_fa_and_direction
 
 _white_matter_response_algorithms = {
     'tournier07': white_matter_response.white_matter_response_tournier07,
@@ -16,8 +14,9 @@ _white_matter_response_algorithms = {
 
 
 def three_tissue_response_dhollander16(
-        acquisition_scheme, data, wm_algorithm='tournier13',
-        wm_N_candidate_voxels=300, gm_perc=0.02, csf_perc=0.1, **kwargs):
+        acquisition_scheme, data, *, mask, wm_algorithm='tournier13',
+        wm_N_candidate_voxels=300, gm_perc=0.02, csf_perc=0.1, backend='torch',
+        **kwargs):
     """
     Heuristic approach to estimating the white matter, grey matter and CSF
     tissue response kernels [1]_, to be used in e.g. Multi-Tissue CSD [2]_. The
@@ -30,8 +29,11 @@ def three_tissue_response_dhollander16(
     ----------
     acquisition_scheme : PGSEAcquisitionScheme instance,
         An acquisition scheme that has been instantiated using dMipy.
-    data : NDarray,
-        Measured diffusion signal array.
+    data : array of size (..., N_DWIs),
+        Measured diffusion signal array (numpy, or a torch tensor with
+        ``backend='torch'``).
+    mask : boolean array of size data.shape[:-1], required keyword,
+        The brain mask: the voxels the three tissues are selected from.
     wm_algorithm : string,
         selection of white matter response estimation algorithm:
         - 'tournier07': classic FA-based estimation,
@@ -45,6 +47,12 @@ def three_tissue_response_dhollander16(
     csf_perc : positive float between [0, 1],
         fraction of candidate voxels to use in CSF response function.
         Default: 0.1 as done in [1]_.
+    backend : 'torch' or 'jax',
+        where the signal decay metric, the diffusion tensors and the white
+        matter FODs are computed (the names of the batched CSD solvers,
+        ``solver='csd_tournier07_torch'`` / ``'csd_tournier07_jax'``); the
+        thresholds and the selections are array operations on the voxels'
+        metrics.
     kwargs : optional keyword arguments for WM algorithm,
         see white matter algorithms themselves for possible arguments.
 
@@ -56,7 +64,7 @@ def three_tissue_response_dhollander16(
             TR2AnisotropicTissueResponseModel and
             2 TR1IsotropicTissueResponseModels,
         Modelfree signal representations of white/grey matter and csf.
-    three_tissue_selection: array of size (x, y, z, 3),
+    three_tissue_selection: array of size data.shape[:-1] + (3,),
         RGB mask of selected voxels used for white/grey matter and csf.
 
     References
@@ -77,108 +85,153 @@ def three_tissue_response_dhollander16(
         directions for high-angular-resolution diffusion-weighted imaging."
         NMR in Biomedicine 26.12 (2013): 1775-1786.
     """
-    # Create Signal Decay Metric (SDM)
-    mean_b0 = np.mean(data[..., acquisition_scheme.b0_mask], axis=-1)
-    SDM = signal_decay_metric(acquisition_scheme, data)
+    check_backend(backend)
+    if mask is None:
+        raise ValueError(
+            "three_tissue_response_dhollander16 needs mask=, the brain mask (a boolean array of the data's "
+            "spatial shape): the three tissues are selected inside it")
+    mask = np.asarray(mask, bool)
+    if mask.shape != tuple(data.shape[:-1]):
+        raise ValueError("mask has shape {}, the data's spatial shape is {}".format(
+            mask.shape, tuple(data.shape[:-1])))
+    if wm_algorithm not in _white_matter_response_algorithms:
+        raise ValueError("wm_algorithm must be one of {}, got {!r}".format(
+            sorted(_white_matter_response_algorithms), wm_algorithm))
+    brain = np.flatnonzero(mask)
+    brain_data = data[_index(mask, data)]                       # (N, N_meas) on the data's device, C order
+    if backend == 'torch' and not type(brain_data).__module__.startswith('torch'):
+        import torch                                            # one upload serves the SDM, the tensors and the rows
+        brain_data = torch.as_tensor(brain_data, device='cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Make Mask
-    b0_mask, mask = median_otsu(
-        input_volume=data,
-        vol_idx=np.where(acquisition_scheme.b0_mask)[0],
-        median_radius=4, numpass=4)  # based on dipy default
-    gtab, pgse_mask = dti_gradient_table(acquisition_scheme)
-    dti_input = b0_mask[..., pgse_mask]
-    tenmod = dti.TensorModel(gtab)
-    tenfit = tenmod.fit(dti_input)
-    fa = tenfit.fa
+    # the signal decay metric (SDM), the mean b0 and the FA of every brain voxel, on the backend
+    mean_b0, SDM = _mean_b0_and_sdm(acquisition_scheme, brain_data)
+    fa, _ = tensor_fa_and_direction(acquisition_scheme, brain_data, backend=backend)
+    has_b0 = mean_b0 > 0
+
     mask_WM = fa > 0.2
 
-    # Separate grey and CSF based on optimal threshold
-    # take FA < 0.2 but inside brain mask.
-    opt = optimal_threshold(SDM[np.all([fa < 0.2, mean_b0 > 0], axis=0)])
-    mask_CSF = np.all([mean_b0 > 0, mask, fa < 0.2, SDM > opt], axis=0)
-    mask_GM = np.all([mean_b0 > 0, mask, fa < 0.2, SDM < opt], axis=0)
+    # Separate grey and CSF based on optimal threshold of the FA < 0.2 voxels
+    opt = optimal_threshold(SDM[(fa < 0.2) & has_b0])
+    mask_CSF = has_b0 & (fa < 0.2) & (SDM > opt)
+    mask_GM = has_b0 & (fa < 0.2) & (SDM < opt)
 
     # Refine Mask, high WM SDM outliers above Q 3 +(Q 3 -Q 1 ) are removed.
-    median_WM = np.median(SDM[mask_WM])
-    Q1 = (SDM[mask_WM].min() + median_WM) / 2.0
-    Q3 = (SDM[mask_WM].max() + median_WM) / 2.0
+    SDM_WM = SDM[mask_WM]
+    median_WM = np.median(SDM_WM)
+    Q1 = (SDM_WM.min() + median_WM) / 2.0
+    Q3 = (SDM_WM.max() + median_WM) / 2.0
     SDM_upper_threshold = Q3 + (Q3 - Q1)
-    mask_WM_refine = np.all([mask_WM, SDM < SDM_upper_threshold], axis=0)
-    WM_outlier = np.all([mask_WM, SDM > SDM_upper_threshold], axis=0)
+    mask_WM_refine = mask_WM & (SDM < SDM_upper_threshold)
+    WM_outlier = mask_WM & (SDM > SDM_upper_threshold)
 
     # For both the voxels below and above the GM SDM median, optimal thresholds
-    # [4] are computed and both parts closer to the initial GM median are
+    # [3] are computed and both parts closer to the initial GM median are
     # retained.
     SDM_GM = SDM[mask_GM]
     median_GM = np.median(SDM_GM)
     optimal_threshold_upper = optimal_threshold(SDM_GM[SDM_GM > median_GM])
     optimal_threshold_lower = optimal_threshold(SDM_GM[SDM_GM < median_GM])
-    mask_GM_refine = np.all(
-        [mask_GM,
-         SDM > optimal_threshold_lower,
-         SDM < optimal_threshold_upper], axis=0)
+    mask_GM_refine = (
+        mask_GM & (SDM > optimal_threshold_lower) & (SDM < optimal_threshold_upper))
 
     # The high SDM outliers that were removed from the WM are reconsidered for
     # the CSF if they have higher SDM than the current minimal CSF SDM.
     SDM_CSF_min = SDM[mask_CSF].min()
-    WM_outlier_to_include = np.all([WM_outlier, SDM > SDM_CSF_min], axis=0)
-    mask_CSF_updated = np.any([mask_CSF, WM_outlier_to_include], axis=0)
+    mask_CSF_updated = mask_CSF | (WM_outlier & (SDM > SDM_CSF_min))
 
-    # An optimal threshold [4] is computed for the resulting CSF and only the
+    # An optimal threshold [3] is computed for the resulting CSF and only the
     # higher SDM valued voxels are retained.
     optimal_threshold_CSF = optimal_threshold(SDM[mask_CSF_updated])
-    mask_CSF_refine = np.all(
-        [mask_CSF_updated, SDM > optimal_threshold_CSF], axis=0)
-
-    data_wm = data[mask_WM_refine]
+    mask_CSF_refine = mask_CSF_updated & (SDM > optimal_threshold_CSF)
 
     # for WM we use WM response selection algorithm
+    wm_voxels = np.flatnonzero(mask_WM_refine)
     response_wm_algorithm = _white_matter_response_algorithms[wm_algorithm]
     S0_wm, TR2_wm_model, indices_wm_selected = response_wm_algorithm(
-        acquisition_scheme, data_wm, N_candidate_voxels=wm_N_candidate_voxels,
-        **kwargs)
+        acquisition_scheme, _host(brain_data, wm_voxels),
+        N_candidate_voxels=wm_N_candidate_voxels, backend=backend, **kwargs)
 
-    # for GM, the voxels closest 2% to GM SDM median are selected.
-    median_GM = np.median(SDM[mask_GM_refine])
-    N_threshold = int(np.sum(mask_GM_refine) * gm_perc)
+    # for GM, the voxels closest gm_perc to GM SDM median are selected.
+    gm_voxels = np.flatnonzero(mask_GM_refine)
+    median_GM = np.median(SDM[gm_voxels])
+    N_threshold = int(len(gm_voxels) * gm_perc)
     indices_gm_selected = np.argsort(
-        np.abs(SDM[mask_GM_refine] - median_GM))[:N_threshold]
+        np.abs(SDM[gm_voxels] - median_GM))[:N_threshold]
     S0_gm, TR1_gm_model = estimate_TR1_isotropic_tissue_response_model(
-        acquisition_scheme, data[mask_GM_refine][indices_gm_selected])
+        acquisition_scheme, _host(brain_data, gm_voxels[indices_gm_selected]))
 
-    # for GM, the 10% highest SDM valued voxels are selected.
-    N_threshold = int(np.sum(mask_CSF_refine) * csf_perc)
-    indices_csf_selected = np.argsort(SDM[mask_CSF_refine])[::-1][:N_threshold]
+    # for CSF, the csf_perc highest SDM valued voxels are selected.
+    csf_voxels = np.flatnonzero(mask_CSF_refine)
+    N_threshold = int(len(csf_voxels) * csf_perc)
+    indices_csf_selected = np.argsort(SDM[csf_voxels])[::-1][:N_threshold]
     S0_csf, TR1_csf_model = estimate_TR1_isotropic_tissue_response_model(
-        acquisition_scheme, data[mask_CSF_refine][indices_csf_selected])
+        acquisition_scheme, _host(brain_data, csf_voxels[indices_csf_selected]))
 
-    # generate selected WM/GM/CSF response function voxels masks.
-    pos_WM_refine = np.c_[np.where(mask_WM_refine)]
-    mask_WM_selected = np.zeros_like(mask_WM_refine)
-    pos_WM_selected = pos_WM_refine[indices_wm_selected]
-    for pos in pos_WM_selected:
-        mask_WM_selected[pos[0], pos[1], pos[2]] = 1
-
-    pos_GM_refine = np.c_[np.where(mask_GM_refine)]
-    mask_GM_selected = np.zeros_like(mask_GM_refine)
-    pos_GM_selected = pos_GM_refine[indices_gm_selected]
-    for pos in pos_GM_selected:
-        mask_GM_selected[pos[0], pos[1], pos[2]] = 1
-
-    pos_CSF_refine = np.c_[np.where(mask_CSF_refine)]
-    mask_CSF_selected = np.zeros_like(mask_CSF_refine)
-    pos_CSF_selected = pos_CSF_refine[indices_csf_selected]
-    for pos in pos_CSF_selected:
-        mask_CSF_selected[pos[0], pos[1], pos[2]] = 1
-
-    three_tissue_selection = np.array(
-        [mask_WM_selected, mask_GM_selected, mask_CSF_selected], dtype=float)
-    three_tissue_selection = np.transpose(three_tissue_selection, (1, 2, 3, 0))
+    # the selected WM/GM/CSF voxels as an RGB volume of the data's spatial shape.
+    selection = np.zeros((mask.size, 3))
+    selection[brain[wm_voxels[indices_wm_selected]], 0] = 1
+    selection[brain[gm_voxels[indices_gm_selected]], 1] = 1
+    selection[brain[csf_voxels[indices_csf_selected]], 2] = 1
+    three_tissue_selection = selection.reshape(mask.shape + (3,))
 
     return ([S0_wm, S0_gm, S0_csf],
             [TR2_wm_model, TR1_gm_model, TR1_csf_model],
             three_tissue_selection)
+
+
+def _index(indices, like):
+    """``indices`` in the form that indexes ``like`` (a torch tensor takes them on its device)."""
+    if type(like).__module__.startswith('torch'):
+        import torch
+        return torch.as_tensor(indices, device=like.device)
+    return indices
+
+
+def _host(data, rows):
+    """``data[rows]`` as a float64 numpy array, the rows gathered on the data's device first."""
+    sub = data[_index(rows, data)]
+    if type(sub).__module__.startswith('torch'):
+        sub = sub.cpu().numpy()
+    return np.asarray(sub, float)
+
+
+def _mean_b0_and_sdm(acquisition_scheme, data):
+    """``(mean_b0 (N,), SDM (N,))`` as float64 numpy arrays for ``data (N, N_meas)``: the per-shell means are one
+    product with the averaging matrix of the scheme, on the data's device."""
+    W = _shell_averaging_matrix(acquisition_scheme)                    # (N_meas, 1 + N_dwi_shells)
+    if type(data).__module__.startswith('torch'):
+        import torch
+        from ..torch.csd_tournier_torch import full_precision
+        with full_precision():
+            means = data @ torch.as_tensor(W, dtype=data.dtype, device=data.device)
+        means = means.double().cpu().numpy()
+    else:
+        means = np.asarray(data, float) @ W
+    return means[:, 0], _sdm_from_means(means)
+
+
+def _shell_averaging_matrix(acquisition_scheme):
+    """``(N_meas, 1 + N_dwi_shells)``: column 0 averages the b0 measurements, column j the j-th DWI shell."""
+    cols = [np.asarray(acquisition_scheme.b0_mask, float)]
+    for index in acquisition_scheme.unique_dwi_indices:
+        cols.append(np.asarray(acquisition_scheme.shell_indices == index, float))
+    W = np.stack(cols, axis=1)
+    return W / W.sum(0)
+
+
+def _sdm_from_means(means):
+    """The SDM from ``means (N, 1 + N_dwi_shells)`` (the mean b0 first): the mean over the shells of
+    ``log(mean_b0 / mean_shell)`` where every mean is positive, else 0; clipped to [0, 10] with a warning when
+    it leaves that range."""
+    ok = means.min(-1) > 0
+    SDM = np.zeros(means.shape[0])
+    SDM[ok] = np.mean(np.log(means[ok, :1] / means[ok, 1:]), axis=-1)
+    if SDM.size and (SDM.max() > 10 or SDM.min() < 0):
+        warnings.warn(("The signal decay metric reached unrealistically " +
+                      "high or negative values and was clipped to [0, 10]"),
+                      RuntimeWarning)
+        SDM = np.clip(SDM, 0, 10)
+    return SDM
 
 
 def signal_decay_metric(acquisition_scheme, data):
@@ -207,43 +260,26 @@ def signal_decay_metric(acquisition_scheme, data):
         MR data without a co-registered T1 image. ISMRM Workshop on Breaking
         the Barriers of Diffusion MRI, 2016, 5
     """
-    mean_b0 = np.mean(data[..., acquisition_scheme.b0_mask], axis=-1)
-    data_shape = data.shape[:-1]
-    mean_dwi_shells = np.zeros(
-        np.r_[data_shape, len(acquisition_scheme.unique_dwi_indices)])
-    for i, index in enumerate(acquisition_scheme.unique_dwi_indices):
-        shell_mask = acquisition_scheme.shell_indices == index
-        mean_dwi_shells[..., i] = np.mean(data[..., shell_mask], axis=-1)
-
-    SDM = np.zeros(data_shape)
-    mask = np.min(np.concatenate((np.expand_dims(mean_b0, axis=-1),
-                                  mean_dwi_shells), axis=-1), axis=-1) > 0
-    ratio = np.log(mean_b0[mask, None] / mean_dwi_shells[mask])
-    SDM[mask] = np.mean(ratio, axis=-1)
-
-    if np.max(SDM) > 10 or np.min(SDM) < 0:
-        warnings.warn(("The signal decay metric reached unrealistically " +
-                      "high or negative values and was clipped to [0, 10]"),
-                      RuntimeWarning)
-        SDM = np.clip(SDM, 0, 10)
-    return SDM
+    data = np.asarray(data, float)
+    means = data.reshape((-1, data.shape[-1])) @ _shell_averaging_matrix(acquisition_scheme)
+    return _sdm_from_means(means).reshape(data.shape[:-1])
 
 
 def optimal_threshold(data):
-    """Optimal image threshold based on pearson correlation [1]_. The idea is
-    that an 'optimal' mask of some arbitrary image data should be found by
-    thresholding at a value that maximizes the pearson correlation between the
-    original image and the mask, i.e:
+    """Optimal image threshold based on pearson correlation [1]_: the
+    threshold T* whose mask ``data > T*`` correlates best with the data,
 
-    T* = argmax_T (\rho(data, data>T))
-       = argmin_T -(\rho(data, data>T))
+    T* = argmax_T (\rho(data, data>T)).
 
-    This function estimates T* based on the second equation on arbitrary input
-    arrays.
+    The correlation of the data with the mask of its k largest values is
+    ``(mean of those k - mean) sqrt(p / (1 - p)) / std`` with ``p = k / n``;
+    it is evaluated for every k at once from the sorted data, and T* is the
+    midpoint between the two values the best k separates (a k that would
+    split equal values is not a threshold).
 
     Parameters
     ----------
-    scalar_data: 1D array,
+    data: 1D array,
         scalar array to estimate an 'optimal' threshold on.
 
     Returns
@@ -258,18 +294,15 @@ def optimal_threshold(data):
         voxel-based morphometry of atrophied brains." Neuroimage 44.1 (2009):
         99-111.
     """
-    min_bound = data.min()
-    max_bound = data.max()
-    eps = 1e-10
-    optimal_threshold = brute(
-        func=_cost_function,
-        Ns=100,
-        args=(data,),
-        ranges=([min_bound + eps, max_bound - eps],))[0]
-    return optimal_threshold
-
-
-def _cost_function(threshold, image):
-    "The cost function used by the optimal_threshold function."
-    rho = -pearsonr(image, image > threshold)[0]
-    return rho
+    x = np.sort(np.asarray(data, float).ravel())
+    n = x.size
+    if n < 2 or x[0] == x[-1]:
+        raise ValueError("an optimal threshold needs at least two distinct values, got {}".format(n))
+    k = np.arange(1, n)                                          # the mask holds the k largest values
+    top_mean = np.cumsum(x[::-1])[:-1] / k
+    p = k / n
+    rho = (top_mean - x.mean()) * np.sqrt(p / (1 - p))
+    lower, upper = x[n - k - 1], x[n - k]                        # the values below / above the cut
+    rho[lower == upper] = -np.inf
+    best = int(np.argmax(rho))
+    return 0.5 * (lower[best] + upper[best])

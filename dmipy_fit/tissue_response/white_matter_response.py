@@ -1,17 +1,24 @@
-from dipy.reconst import dti
-from ..core.acquisition_scheme import dti_gradient_table
+import numpy as np
+
 from ..core.modeling_framework import (
     MultiCompartmentSphericalHarmonicsModel)
-import numpy as np
-from dipy.segment.mask import median_otsu
-from dipy.data import get_sphere, HemiSphere
 from ..signal_models.tissue_response_models import (
     estimate_TR2_anisotropic_tissue_response_model)
-from scipy.ndimage import binary_erosion
+from ..utils.sh_basis import fod_peak_values
+from ..utils.tensor_backend import check_backend, tensor_fa_and_direction
+
+
+def _candidate_voxels(data):
+    """``data`` as ``(N_voxels, N_meas)``; anything but a 2-D array is refused (the caller masks its brain)."""
+    if np.ndim(data) != 2:
+        raise ValueError(
+            "data must be (N_voxels, N_meas), the candidate voxels (e.g. data[mask]); got shape {}".format(
+                np.shape(data)))
+    return data
 
 
 def white_matter_response_tournier07(
-        acquisition_scheme, data, N_candidate_voxels=300, **kwargs):
+        acquisition_scheme, data, N_candidate_voxels=300, *, backend='torch', **kwargs):
     """The original white matter response estimation algorithm according to
     [1]_. In essence, it just takes the 300 voxels with the highest FA, aligns
     them with the z-axis, and estimates the averaged white matter response from
@@ -21,8 +28,14 @@ def white_matter_response_tournier07(
     ----------
     acquisition_scheme : PGSEAcquisitionScheme instance,
         An acquisition scheme that has been instantiated using dMipy.
-    data : NDarray,
-        Measured diffusion signal array.
+    data : 2D array of size (N_voxels, N_DWIs),
+        The candidate voxels' signal, e.g. ``data[mask]`` for a brain mask
+        (eroded by three voxels in [1]_).
+    N_candidate_voxels : integer,
+        Number of voxels the response is estimated from (default 300).
+    backend : 'torch' or 'jax',
+        where the diffusion tensors are fitted.
+
     Returns
     -------
     S0_wm : positive float,
@@ -39,8 +52,9 @@ def white_matter_response_tournier07(
         non-negativity constrained super-resolved spherical deconvolution."
         Neuroimage 35.4 (2007): 1459-1472.
     """
-    data_shape = np.atleast_2d(data).shape
-    N_voxels = int(np.prod(data_shape[:-1]))
+    check_backend(backend)
+    data = _candidate_voxels(data)
+    N_voxels = data.shape[0]
     if N_voxels < N_candidate_voxels:
         msg = "The original algorithm uses 300 candidate voxels to estimate "
         msg += "the tissue response. Currently only {} ".format(N_voxels)
@@ -48,38 +62,19 @@ def white_matter_response_tournier07(
         print(msg)
         N_candidate_voxels = N_voxels
 
-    if data.ndim == 4:
-        # calculate brain mask on 4D data (x, y, z, DWI)
-        b0_mask, mask = median_otsu(
-            input_volume=data,
-            vol_idx=np.where(acquisition_scheme.b0_mask)[0],
-            median_radius=4, numpass=4)  # based on dipy default
-        # needs to be eroded 3 times.
-        mask_eroded = binary_erosion(mask, iterations=3)
-        data_to_fit = data[mask_eroded]
-    else:
-        # can't calculate brain mask on other than 4D data.
-        # assume the data was prepared.
-        data_to_fit = data.reshape([-1, data_shape[-1]])
-
-    gtab, pgse_mask = dti_gradient_table(acquisition_scheme)
-    dti_data = data_to_fit[:, pgse_mask]
-
-    tenmod = dti.TensorModel(gtab)
-    tenfit = tenmod.fit(dti_data)
-    fa = tenfit.fa
+    fa, _ = tensor_fa_and_direction(acquisition_scheme, data, backend=backend)
 
     # selected based on FA
     selected_indices = np.argsort(fa)[-N_candidate_voxels:]
-    selected_data = data_to_fit[selected_indices]
+    selected_data = np.asarray(data[selected_indices], float)
     S0_wm, TR2_wm_model = estimate_TR2_anisotropic_tissue_response_model(
-        acquisition_scheme, selected_data)
+        acquisition_scheme, selected_data, backend=backend)
     return S0_wm, TR2_wm_model, selected_indices
 
 
 def white_matter_response_tournier13(
         acquisition_scheme, data, max_iter=5, sh_order=10,
-        N_candidate_voxels=300, peak_ratio_setting='mrtrix'):
+        N_candidate_voxels=300, peak_ratio_setting='mrtrix', *, backend='torch'):
     """
     Iterative model-free white matter response function estimation according to
     [1]_. Quoting the paper, the steps are the following:
@@ -106,8 +101,9 @@ def white_matter_response_tournier13(
     ----------
     acquisition_scheme : PGSEAcquisitionScheme instance,
         An acquisition scheme that has been instantiated using dMipy.
-    data : NDarray,
-        Measured diffusion signal array.
+    data : 2D array of size (N_voxels, N_DWIs),
+        The candidate voxels' signal, e.g. ``data[mask]`` for a brain mask
+        (eroded by three voxels in [1]_).
     max_iter : Positive integer,
         Defines the maximum amount of iterations to be done for the single-
         fibre response kernel.
@@ -122,6 +118,10 @@ def white_matter_response_tournier13(
         between two peaks is actually calculated as the ratio, or a more
         complicated version as 1 / sqrt(peak1 * (1 - peak2 / peak1)) ** 2, to
         avoid favouring small, yet low SNR FODs [2]_.
+    backend : 'torch' or 'jax',
+        where the diffusion tensors and the FODs are fitted (the FODs by
+        ``solver='csd_tournier07_torch'`` / ``'csd_tournier07_jax'``); the two
+        largest FOD peaks are :func:`~dmipy_fit.utils.sh_basis.fod_peak_values`.
 
     Returns
     -------
@@ -140,8 +140,9 @@ def white_matter_response_tournier13(
         NMR in Biomedicine 26.12 (2013): 1775-1786.
     .. [2] MRtrix 3.0 readthedocs
     """
-    data_shape = np.atleast_2d(data).shape
-    N_voxels = int(np.prod(data_shape[:-1]))
+    check_backend(backend)
+    data_to_fit = np.asarray(_candidate_voxels(data), float)
+    N_voxels = data_to_fit.shape[0]
     if N_voxels < N_candidate_voxels:
         msg = "The parameter N_candidate voxels is set to {} but only ".format(
             N_candidate_voxels)
@@ -155,31 +156,10 @@ def white_matter_response_tournier13(
         msg = 'peak_ratio_setting must be in {}'.format(ratio_settings)
         raise ValueError(msg)
 
-    if data.ndim == 4:
-        # calculate brain mask on 4D data (x, y, z, DWI)
-        b0_mask, mask = median_otsu(
-            input_volume=data,
-            vol_idx=np.where(acquisition_scheme.b0_mask)[0],
-            median_radius=4, numpass=4)  # based on dipy default
-        # needs to be eroded 3 times.
-        mask_eroded = binary_erosion(mask, iterations=3)
-        data_to_fit = data[mask_eroded]
-    else:
-        # can't calculate brain mask on other than 4D data.
-        # assume the data was prepared.
-        data_to_fit = data.reshape([-1, data_shape[-1]])
-
-    gtab, pgse_mask = dti_gradient_table(acquisition_scheme)
-    dti_data = data_to_fit[:, pgse_mask]
-
-    tenmod = dti.TensorModel(gtab)
-    tenfit = tenmod.fit(dti_data)
-    fa = tenfit.fa
+    fa, _ = tensor_fa_and_direction(acquisition_scheme, data_to_fit, backend=backend)
 
     # selected based on FA
     selected_indices = np.argsort(fa)[-N_candidate_voxels:]
-    sphere = get_sphere(name='symmetric724')
-    hemisphere = HemiSphere(theta=sphere.theta, phi=sphere.phi)
     # iterate until convergence
     it = 0
     while True:
@@ -187,20 +167,23 @@ def white_matter_response_tournier13(
         selected_data = data_to_fit[selected_indices]
 
         S0_wm, TR2_wm_model = estimate_TR2_anisotropic_tissue_response_model(
-            acquisition_scheme, selected_data)
+            acquisition_scheme, selected_data, backend=backend)
         sh_model = MultiCompartmentSphericalHarmonicsModel(
             [TR2_wm_model], sh_order=sh_order)
         sh_fit = sh_model.fit(acquisition_scheme, data_to_fit,
-                              solver='csd_tournier07',
-                              use_parallel_processing=False,
-                              lambda_lb=0.)
-        peaks, values, indices = sh_fit.peaks_directions(
-            hemisphere, max_peaks=2, relative_peak_threshold=0.)
-        if peak_ratio_setting == 'ratio':
-            ratio = values[..., 1] / values[..., 0]
-        elif peak_ratio_setting == 'mrtrix':
-            ratio = 1. / np.sqrt(
-                values[..., 0] * (1 - values[..., 1] / values[..., 0])) ** 2
+                              solver='csd_tournier07_' + backend,
+                              lambda_lb=0., verbose=False)
+        sh_coeff = sh_fit.fitted_parameters['sh_coeff']
+        if backend == 'torch':                    # the peaks on the torch device
+            import torch
+            sh_coeff = torch.as_tensor(sh_coeff, device='cuda' if torch.cuda.is_available() else 'cpu')
+        values = fod_peak_values(sh_coeff, sh_order, max_peaks=2)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            if peak_ratio_setting == 'ratio':
+                ratio = values[..., 1] / values[..., 0]
+            elif peak_ratio_setting == 'mrtrix':
+                ratio = 1. / np.sqrt(
+                    values[..., 0] * (1 - values[..., 1] / values[..., 0])) ** 2
         selected_indices_old = selected_indices
         selected_indices = np.argsort(ratio)[:N_candidate_voxels]
         percentage_overlap = 100 * float(len(np.intersect1d(

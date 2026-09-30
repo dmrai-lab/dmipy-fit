@@ -56,3 +56,14 @@ def test_spherical_convolution_watson_sh(sh_order=4):
         )
         min_position_opposite = sphere_positions[opposite_index]
         assert_equal(min_position_opposite, mu_index)
+
+
+def test_real_sym_rh_basis_is_dipys_zonal_harmonics():
+    """The Legendre form of Y_l^0 is dipy's real_sh_descoteaux_from_index at m = 0 (non-legacy)."""
+    from dipy.reconst.shm import real_sh_descoteaux_from_index
+    from dmipy_fit.utils.spherical_convolution import real_sym_rh_basis
+    theta = np.linspace(0, np.pi, 37)
+    l = np.arange(0, 15, 2)
+    ref = real_sh_descoteaux_from_index(np.zeros(len(l)), l, theta[:, None], np.zeros((len(theta), 1)),
+                                        legacy=False)
+    np.testing.assert_allclose(real_sym_rh_basis(14, theta), ref, rtol=1e-12, atol=1e-14)

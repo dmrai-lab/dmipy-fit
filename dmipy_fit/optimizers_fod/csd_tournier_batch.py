@@ -17,7 +17,8 @@ QP solver approaches the same optimum along a ``1/k`` tail. With ``unity_constra
 at ``1 / (2 sqrt(pi))`` and never solved for, as in the reference.
 
 :class:`CsdTournierBatch` builds the matrices, locates ``sh_coeff`` in the parameter vector and feeds the image in
-chunks of ``DMIPY_CSD_TOURNIER_BATCH`` voxels (default 4096), zero-padded to the chunk; a device solver subclasses it
+chunks of ``DMIPY_CSD_TOURNIER_BATCH`` voxels (default the solver's ``DEFAULT_BATCH``: 4096, one compiled shape, for
+JAX; 16384 for torch), zero-padded to the chunk; a device solver subclasses it
 and implements :meth:`_solve_chunk` (the JAX one in :mod:`dmipy_fit.jax.csd_tournier_jax`, the torch one in
 :mod:`dmipy_fit.torch.csd_tournier_torch`). Every matrix product in a solver runs at full float32 precision: a
 float32 matmul on a CUDA device is TF32 by default (a 10-bit mantissa), which put the DiSCo FODs 5e-4 off the float64
@@ -62,6 +63,8 @@ class CsdTournierBatch:
     dtype : numpy dtype
         The device dtype (default float32).
     """
+    DEFAULT_BATCH = 4096
+
     _citations = {
         'definition': [
             {'key': 'tournier2007', 'authors': 'Tournier J-D, Calamante F, Connelly A',
@@ -140,14 +143,14 @@ class CsdTournierBatch:
         ``data_all`` is ``(N_voxels, N_meas)`` normalised signal; ``x0_all`` ``(N_voxels, N_parameters)``, whose
         non-``sh_coeff`` entries are carried into the result unchanged. ``eta`` applies the Rician bias correction
         ``sqrt(max(s^2 - eta^2, 0))`` before the solve. Voxels are solved in chunks of ``DMIPY_CSD_TOURNIER_BATCH``
-        (default 4096), the last chunk zero-padded (a zero signal converges in one iteration to a zero FOD).
+        (default ``DEFAULT_BATCH``), the last chunk zero-padded (a zero signal converges in one iteration to a zero FOD).
         """
         data_all = np.asarray(data_all, float)
         x0_all = np.asarray(x0_all, float)
         n = data_all.shape[0]
         if eta is not None and eta > 0:
             data_all = np.sqrt(np.maximum(data_all ** 2 - eta ** 2, 0.0))
-        batch = max(1, min(int(os.environ.get("DMIPY_CSD_TOURNIER_BATCH", "4096")), n))
+        batch = max(1, min(int(os.environ.get("DMIPY_CSD_TOURNIER_BATCH", self.DEFAULT_BATCH)), n))
         f_all = np.zeros((n, self.Ncoef), float)
         iters = np.zeros(n, int)
         for s in range(0, n, batch):

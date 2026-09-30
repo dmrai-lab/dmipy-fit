@@ -848,9 +848,17 @@ class MultiCompartmentModelProperties:
             graph_model.node(parameter_uuid, parameter_name)
             graph_model.edge(parameter_uuid, entry_uuid)
 
+    _TISSUE_RESPONSE_SHELL_FIELDS = (
+        'shell_bvalues', 'shell_delta', 'shell_Delta', 'shell_gradient_strengths')
+
     def _check_tissue_model_acquisition_scheme(self, acquisition_scheme):
-        """Tests if acquisition scheme between MC-model and tissue response
-        model are the same.
+        """Refuses a scheme whose shells differ from those a tissue response
+        model was estimated on: the fields of
+        ``_TISSUE_RESPONSE_SHELL_FIELDS`` (b-value, delta, Delta, gradient
+        strength per shell) are compared by name, each to a relative 1e-6;
+        a field the two schemes both lack (a scheme built from b-values and
+        directions has no timing) is not compared, a field only one of them
+        has is a difference.
 
         Parameters
         ----------
@@ -858,24 +866,24 @@ class MultiCompartmentModelProperties:
             An acquisition scheme that has been instantiated using Dmipy.
         """
         for model in self.models:
-            if model._model_type == 'TissueResponseModel':
-                mc_scheme_params = [
-                    acquisition_scheme.shell_bvalues,
-                    acquisition_scheme.shell_delta,
-                    acquisition_scheme.shell_Delta,
-                    acquisition_scheme.shell_gradient_strengths]
-                tr_scheme_params = [
-                    model.acquisition_scheme.shell_bvalues,
-                    model.acquisition_scheme.shell_delta,
-                    model.acquisition_scheme.shell_Delta,
-                    model.acquisition_scheme.shell_gradient_strengths]
-                try:
-                    np.testing.assert_array_almost_equal(
-                        mc_scheme_params, tr_scheme_params)
-                except AssertionError:
-                    msg = "Acquisition scheme of MC-model and tissue response "
-                    msg += "model are not the same."
-                    raise ValueError(msg)
+            if model._model_type != 'TissueResponseModel':
+                continue
+            differ = []
+            for name in self._TISSUE_RESPONSE_SHELL_FIELDS:
+                ours = getattr(acquisition_scheme, name, None)
+                theirs = getattr(model.acquisition_scheme, name, None)
+                if ours is None and theirs is None:
+                    continue
+                if ours is None or theirs is None:
+                    differ.append(name)
+                    continue
+                ours, theirs = np.asarray(ours, float), np.asarray(theirs, float)
+                if ours.shape != theirs.shape or not np.allclose(ours, theirs, rtol=1e-6, atol=0.):
+                    differ.append(name)
+            if differ:
+                raise ValueError(
+                    "Acquisition scheme of MC-model and tissue response model are not the same: {} "
+                    "differ.".format(', '.join(differ)))
 
     def _check_acquisition_scheme_has_b0s(self, acquisition_scheme):
         """
