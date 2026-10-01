@@ -16,7 +16,7 @@ _white_matter_response_algorithms = {
 def three_tissue_response_dhollander16(
         acquisition_scheme, data, *, mask, wm_algorithm='tournier13',
         wm_N_candidate_voxels=300, gm_perc=0.02, csf_perc=0.1, backend='torch',
-        **kwargs):
+        erode=3, **kwargs):
     """
     Heuristic approach to estimating the white matter, grey matter and CSF
     tissue response kernels [1]_, to be used in e.g. Multi-Tissue CSD [2]_. The
@@ -33,7 +33,8 @@ def three_tissue_response_dhollander16(
         Measured diffusion signal array (numpy, or a torch tensor with
         ``backend='torch'``).
     mask : boolean array of size data.shape[:-1], required keyword,
-        The brain mask: the voxels the three tissues are selected from.
+        The brain mask. The three tissues are selected from its erosion
+        (see ``erode``).
     wm_algorithm : string,
         selection of white matter response estimation algorithm:
         - 'tournier07': classic FA-based estimation,
@@ -53,6 +54,12 @@ def three_tissue_response_dhollander16(
         ``solver='csd_tournier07_torch'`` / ``'csd_tournier07_jax'``); the
         thresholds and the selections are array operations on the voxels'
         metrics.
+    erode : non-negative integer, keyword,
+        Passes of binary erosion applied to ``mask`` before any voxel is
+        selected, each pass removing every voxel with a face neighbour (the
+        6-connected cross in 3-D) outside the mask or outside the image, as
+        MRtrix3's ``maskfilter erode``. Default 3, the ``-erode`` default of
+        MRtrix3's ``dwi2response dhollander``; 0 selects from ``mask`` itself.
     kwargs : optional keyword arguments for WM algorithm,
         see white matter algorithms themselves for possible arguments.
 
@@ -65,7 +72,8 @@ def three_tissue_response_dhollander16(
             2 TR1IsotropicTissueResponseModels,
         Modelfree signal representations of white/grey matter and csf.
     three_tissue_selection: array of size data.shape[:-1] + (3,),
-        RGB mask of selected voxels used for white/grey matter and csf.
+        RGB mask of selected voxels used for white/grey matter and csf, all
+        inside the eroded mask.
 
     References
     ----------
@@ -97,6 +105,10 @@ def three_tissue_response_dhollander16(
     if wm_algorithm not in _white_matter_response_algorithms:
         raise ValueError("wm_algorithm must be one of {}, got {!r}".format(
             sorted(_white_matter_response_algorithms), wm_algorithm))
+    mask = erode_mask(mask, erode)
+    if not mask.any():
+        raise ValueError("the mask eroded by {} pass(es) is empty: no voxel to select the tissues from".format(
+            erode))
     brain = np.flatnonzero(mask)
     brain_data = data[_index(mask, data)]                       # (N, N_meas) on the data's device, C order
     if backend == 'torch' and not type(brain_data).__module__.startswith('torch'):
@@ -177,6 +189,20 @@ def three_tissue_response_dhollander16(
     return ([S0_wm, S0_gm, S0_csf],
             [TR2_wm_model, TR1_gm_model, TR1_csf_model],
             three_tissue_selection)
+
+
+def erode_mask(mask, passes):
+    """``mask`` after ``passes`` passes of binary erosion, each removing every voxel with a face neighbour (the
+    cross-shaped, 6-connected neighbourhood in 3-D) outside the mask or outside the image: MRtrix3's
+    ``maskfilter erode -npass passes``. ``passes = 0`` returns the mask unchanged."""
+    from scipy.ndimage import binary_erosion, generate_binary_structure
+    if int(passes) != passes or passes < 0:
+        raise ValueError("erode must be a non-negative integer, got {!r}".format(passes))
+    mask = np.asarray(mask, bool)
+    if passes == 0:
+        return mask
+    return binary_erosion(mask, structure=generate_binary_structure(mask.ndim, 1), iterations=int(passes),
+                          border_value=0)
 
 
 def _index(indices, like):

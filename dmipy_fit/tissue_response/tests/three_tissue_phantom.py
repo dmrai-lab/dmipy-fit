@@ -54,10 +54,11 @@ def voxels(scheme, n=500, seed=1, sigma=0.02):
     return data + rng.normal(0, sigma, data.shape), fr
 
 
-def volume(scheme, shape=(24, 24, 12), seed=2, sigma=0.01):
+def volume(scheme, shape=(48, 24, 16), seed=2, sigma=0.01):
     """``(data shape + (N_meas,), mask shape, fractions shape + (3,))``: a brain of mostly-pure tissue blocks
     (x < 1/2 white matter with half the voxels crossing, 1/2 <= x < 5/6 grey matter, the rest free water; every
-    voxel 85-100 % its tissue, the rest split between the others) inside a zero background ring of 2 voxels."""
+    voxel 85-100 % its tissue, the rest split between the others) inside a zero background ring of 2 voxels; every
+    tissue keeps voxels after the 3 erosion passes of the response selection."""
     rng = np.random.default_rng(seed)
     nx = shape[0]
     x = np.arange(nx)[:, None, None] * np.ones(shape)
