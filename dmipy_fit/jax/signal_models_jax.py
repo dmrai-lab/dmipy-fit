@@ -8,6 +8,8 @@ coordinates (3-vector); callers must run unitsphere2cart_1d_jax first.
 import jax
 import jax.numpy as jnp
 
+from dmipy_sim.constants import GAMMA
+
 
 # ---------------------------------------------------------------------------
 # G1Ball
@@ -493,34 +495,28 @@ def build_c3cylinder_jax_fn(alpha_table, diffusion_perpendicular):
     return c3cylinder_signal
 
 
-def matrix_restricted_signal_jax(g_axis, dt, diffusivity, size,
-                                 gyromagnetic_ratio, lam_unit, beta, U):
-    """JAX-compilable EXACT matrix / MCF restricted signal for a projected 1-D gradient schedule.
-
-    The GPU/differentiable twin of ``signal_models._restricted_matrix.matrix_restricted_signal``. The
-    geometry-fixed mode data — Laplacian eigenvalues on the unit geometry ``lam_unit`` and the
-    eigendecomposition ``(beta, U)`` of the unit position matrix — are precomputed once on the host (scipy)
-    and passed in as constants, so only the cheap, differentiable scalings enter the graph:
-    ``lam = lam_unit / size**2`` and the per-step rotation ``gamma*dt*size*beta``. The propagator is a
-    Strang split evaluated with ``jax.lax.scan`` over time; gradients flow w.r.t. ``size`` (radius/
-    thickness) and ``diffusivity``, so axon-radius fitting is differentiable.
+def matrix_restricted_signal_jax(g_axis, dt, diffusivity, lam, beta, U):
+    """JAX-compilable exact matrix/MCF restricted signal for a projected 1-D gradient schedule, for ONE
+    pore's eigenvalues ``lam`` and position-operator eigendecomposition ``(beta, U)``
+    (``dmipy_sim.math.matrix_method.MatrixPore(shape, size_m, D, n_modes=).lam`` and ``eigh(.B)``,
+    computed once per pore on the host and passed in as constants). The propagator is a Strang split
+    evaluated with ``jax.lax.scan`` over time, using ``dmipy_sim``'s gyromagnetic ratio; gradients flow
+    w.r.t. ``diffusivity``.
 
     Parameters
     ----------
-    g_axis : jnp.array (n_t,)      projected gradient magnitude along the restricted axis [T/m]
-    dt : float                     time step [s]
-    diffusivity : float            free diffusivity [m^2/s]
-    size : float                   radius (cylinder/sphere) or slab thickness (plane) [m]
-    gyromagnetic_ratio : float     [rad/s/T]
-    lam_unit, beta, U : jnp.array  host-precomputed unit-geometry modes (constants)
+    g_axis : jnp.array (n_t,)   projected gradient magnitude along the restricted axis [T/m]
+    dt : float                  time step [s]
+    diffusivity : float         free diffusivity [m^2/s]
+    lam, beta, U : jnp.array    the pore's own (size-scaled) eigenvalues and position-matrix
+                                eigendecomposition
 
     Returns
     -------
     scalar jnp.float : signal attenuation E in [0, 1]. Use jax_enable_x64 for reference-grade precision.
     """
-    lam = lam_unit / size ** 2
     half = jnp.exp(-0.5 * dt * diffusivity * lam)          # half diffusion step (diagonal), (N,)
-    rot = gyromagnetic_ratio * dt * size * beta            # rotation phase per unit g, (N,)
+    rot = GAMMA * dt * beta                                 # rotation phase per unit g, (N,)
     Ut = U.T
     # complex dtype follows the active precision: complex128 under jax_enable_x64 (reference grade,
     # as the fit backend sets globally), else complex64. Reference runs should enable x64.
@@ -537,9 +533,7 @@ def matrix_restricted_signal_jax(g_axis, dt, diffusivity, size,
     return jnp.abs(cN[0])
 
 
-def matrix_restricted_signal_jax_batch(g_axes, dt, diffusivity, size,
-                                       gyromagnetic_ratio, lam_unit, beta, U):
+def matrix_restricted_signal_jax_batch(g_axes, dt, diffusivity, lam, beta, U):
     """vmap of :func:`matrix_restricted_signal_jax` over measurements. ``g_axes`` is (n_meas, n_t)."""
     return jax.vmap(
-        lambda g: matrix_restricted_signal_jax(
-            g, dt, diffusivity, size, gyromagnetic_ratio, lam_unit, beta, U))(g_axes)
+        lambda g: matrix_restricted_signal_jax(g, dt, diffusivity, lam, beta, U))(g_axes)

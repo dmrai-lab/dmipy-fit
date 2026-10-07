@@ -83,7 +83,7 @@ model = build_white_matter_model(include_csf=False)
 | `core/spherical_mean_framework.py`, `core/spherical_harmonics_framework.py` | spherical-mean & SH (CSD/FOD) frameworks |
 | `core/fitted_modeling_framework.py` | fit result: `.fitted_parameters`, multi-tissue fractions |
 | `core/acquisition_scheme.py` | `AcquisitionScheme(sequence)` -- the analytical shell / SH / rotational-harmonics layer over dmipy-sim's acquisition object (a `ScannerSequence`, or a `Protocol` of them for a multi-TE scheme, interleaved as acquired); every per-measurement quantity a model reads is the object's `Encoding`, `_G`/`_dt` its effective gradient and grid (`waveform_of(m)` when the sequences differ), `.waveform` the object itself (what `dmipy_sim.simulate` reads), `tau_exc`/`tau_180`/`tau_90` the schedule's pulse durations (read-only; a finite-RF sequence is built to a `timing=` budget). `from_*` (PGSE/PGSTE/CPMG/OGSE/waveform/b-tensor) are dmipy-sim's builders plus the shell parameters; `concatenate` is a Protocol, nothing resampled. `PGSEAcquisitionScheme` is the legacy waveform-free analytical scheme |
-| `signal_models/` | `cylinder_models` (stick/cylinder/axcaliber), `gaussian_models` (ball/zeppelin), `sphere_models`, `plane_models`, `capped_cylinder_models`, `tissue_response_models`, `exchange_models`. Each restricted geometry has a **Gaussian-phase** model (`C4`/`S4`, low-b closed form) and an **exact matrix-method** model (`C5CylinderMatrixMethod`/`S5SphereMatrixMethod`/`P5PlaneMatrixMethod`, `_restricted_matrix.py`) that solves the Bloch–Torrey equation for the *actual waveform* and stays correct at high b / OGSE. |
+| `signal_models/` | `cylinder_models` (stick/cylinder/axcaliber), `gaussian_models` (ball/zeppelin), `sphere_models`, `plane_models`, `capped_cylinder_models`, `tissue_response_models`, `exchange_models`. Each restricted geometry has a **Gaussian-phase** model (`C4`/`S4`, low-b closed form) and an **exact matrix-method** model (`C5CylinderMatrixMethod`/`S5SphereMatrixMethod`/`P5PlaneMatrixMethod`) that calls the shared eigenmode solver `dmipy_sim.math.matrix_method` (exact for a piecewise-constant waveform, Strang split otherwise) for the *actual waveform* and stays correct at high b / OGSE; `_matrix_adapter.py` holds the model-side glue (the `n_modes` → sim's `(angular, radial)` pair, the scalar-timing/dominant-direction waveform reconstruction). |
 | `signal_models/attenuation.py` | `OccupancyGatedModel` + `TransverseRelaxation`, `IntraPoreSurfaceRelaxivity`, `ExteriorSurfaceRelaxivity` |
 | `distributions/` | Watson / Bingham dispersion, Gamma diameter distribution |
 | `optimizers/`, `optimizers_fod/` | brute2fine, MIX, multi-tissue NNLS; CSD (Tournier / cvxpy); the batched device versions are `jax/csd_tournier_jax.py` / `torch/csd_tournier_torch.py` (`solver='csd_tournier07_jax'` / `'csd_tournier07_torch'`, the Tournier iteration for a whole image, fixed kernel), `torch/csd_msmt_torch.py` (`solver='csd_msmt_torch'`, multi-tissue CSD with the fractions estimated: an interior-point method for a whole image, cvxpy's problem) and `jax/csd_jax.py` (`solver='csd_jax'`, the QP by OSQP) |
@@ -100,9 +100,10 @@ model = build_white_matter_model(include_csf=False)
   (`OccupancyGatedModel`).
 - **GPU / whole-slice speed** → `solver="jax"`, `jax/`.
 - **Exact restricted signal at high b / OGSE / arbitrary waveform** (beyond the Gaussian-phase
-  approximation) → the matrix-method compartments `C5`/`S5`/`P5` (`signal_models/_restricted_matrix.py`);
-  see `examples/02_signal_models/exact_matrix_method.md`. Use the closed-form `C4`/`S4` GPA models when b
-  is low-to-moderate (cheaper).
+  approximation) → the matrix-method compartments `C5`/`S5`/`P5` (`signal_models/cylinder_models.py` /
+  `sphere_models.py` / `plane_models.py`, calling `dmipy_sim.math.matrix_method` through
+  `signal_models/_matrix_adapter.py`); see `examples/02_signal_models/exact_matrix_method.md`. Use the
+  closed-form `C4`/`S4` GPA models when b is low-to-moderate (cheaper).
 - **A standard model by name** → `custom_optimizers/reference_models.py`.
 - **Cross-checking against ground truth** → build the same tissue in dmipy-sim, fit the MC
   signal; parity tolerance is roughly `max(0.02, 1/√N)`.

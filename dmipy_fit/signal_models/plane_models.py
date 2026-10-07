@@ -2,8 +2,8 @@
 import numpy as np
 from ..core.modeling_framework import ModelProperties
 from ..core.constants import CONSTANTS
-from ._restricted_matrix import (
-    matrix_restricted_signal, matrix_restricted_batch, project_fixed_direction, pgse_waveform)
+from ._matrix_adapter import (
+    matrix_signal, matrix_signal_batch, project_fixed_direction, pgse_waveform)
 
 from ..core.constants import DIAMETER_SCALING
 
@@ -228,11 +228,13 @@ class P3PlaneCallaghanApproximation(ModelProperties):
 
 
 class P5PlaneMatrixMethod(ModelProperties):
-    r"""Exact matrix / multiple-correlation-function model of diffusion between two parallel planes
-    (a 1-D slab) for an *arbitrary* gradient waveform (Callaghan 1997; Grebenkov 2007). The
-    Stejskal-Tanner (P2) and Callaghan (P3) plane models are its short-pulse limits. Like P2/P3 this is
-    a 1-D building block: the gradient is taken along the restricting axis. Consumes the stored waveform
-    ``_G`` when present; otherwise reconstructs a rectangular PGSE waveform from the scalar timing.
+    r"""Slab (two parallel planes) whose restricted signal is the Bloch-Torrey eigenmode propagator of
+    ``dmipy_sim.math.matrix_method`` (Callaghan 1997; Grebenkov 2007) for an arbitrary gradient
+    waveform: exact for a piecewise-constant waveform (one matrix exponential per run of constant
+    amplitude), a Strang split of diffusion and precession otherwise. The Stejskal-Tanner (P2) and
+    Callaghan (P3) plane models are its short-pulse limits. Like P2/P3 this is a 1-D building block: the
+    gradient is taken along the restricting axis. Consumes the stored waveform ``_G`` when present;
+    otherwise reconstructs a rectangular PGSE waveform from the scalar timing.
 
     Parameters
     ----------
@@ -240,7 +242,9 @@ class P5PlaneMatrixMethod(ModelProperties):
         slab thickness in meters.
     n_modes : int, optional
         Laplacian eigenmodes kept (accuracy knob; default 24). Increase for very high q or short
-        gradient pulses (the plane needs more modes than the cylinder/sphere at matched q).
+        gradient pulses (the plane needs more modes than the cylinder/sphere at matched q). Mapped onto
+        ``dmipy_sim.math.matrix_method``'s ``(angular, radial)`` pair as
+        ``(n_modes, max(4, n_modes // 2 + 2))``.
 
     See ``examples/02_signal_models/exact_matrix_method.md`` for a worked comparison against the
     Gaussian-phase and short-pulse plane models.
@@ -280,23 +284,20 @@ class P5PlaneMatrixMethod(ModelProperties):
                  n_modes=24):
         self.diameter = diameter
         self.diffusion_constant = diffusion_constant
-        self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
         self.n_modes = int(n_modes)
 
     def __call__(self, acquisition_scheme, use_jax=False, **kwargs):
         """Signal of the exact-matrix slab for the acquisition's gradient waveform.
         ``use_jax=True`` uses the differentiable GPU batch path (needs the ``[jax]`` extra and a stored
         waveform ``_G``; falls back to NumPy for scalar-timing schemes)."""
-        L = kwargs.get('diameter', self.diameter)          # slab thickness
+        L = kwargs.get('diameter', self.diameter)          # slab thickness == sim's plate separation
         D = self.diffusion_constant
-        gamma = self.gyromagnetic_ratio
         _G = getattr(acquisition_scheme, '_G', None)
         if _G is not None:
             dt = float(acquisition_scheme._dt)
             _Gd = np.asarray(_G, np.float64)
             g_axes = np.stack([project_fixed_direction(_Gd[m], dt)[1] for m in range(_Gd.shape[0])])
-            return matrix_restricted_batch(
-                'plane', g_axes, dt, D, L, gamma, self.n_modes, use_jax=use_jax)
+            return matrix_signal_batch('plane', g_axes, dt, D, L, self.n_modes, use_jax=use_jax)
         n_meas = len(acquisition_scheme.gradient_strengths)
         E = np.ones(n_meas)
         for m in range(n_meas):
@@ -307,7 +308,7 @@ class P5PlaneMatrixMethod(ModelProperties):
                 g, acquisition_scheme.delta[m], acquisition_scheme.Delta[m],
                 acquisition_scheme.gradient_directions[m])
             _, g_signed = project_fixed_direction(G_m, dt)
-            E[m] = matrix_restricted_signal('plane', g_signed, dt, D, L, gamma, self.n_modes)
+            E[m] = matrix_signal('plane', g_signed, dt, D, L, self.n_modes)
         return E
 
 
