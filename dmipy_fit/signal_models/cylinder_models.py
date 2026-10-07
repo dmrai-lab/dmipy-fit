@@ -8,8 +8,7 @@ from ..utils import utils
 from ..core.constants import CONSTANTS
 from ..core.modeling_framework import ModelProperties
 from ..core.signal_model_properties import AnisotropicSignalModelProperties
-from ._restricted_matrix import (
-    matrix_restricted_signal, matrix_restricted_batch, pgse_waveform)
+from ._matrix_adapter import matrix_signal, matrix_signal_batch, pgse_waveform
 from dipy.utils.optpkg import optional_package
 from dipy.reconst.shm import real_sh_tournier as _real_sh_tournier
 
@@ -1318,11 +1317,10 @@ if have_numba:
 
 
 class C5CylinderMatrixMethod(ModelProperties, AnisotropicSignalModelProperties):
-    r"""Exact matrix / multiple-correlation-function model of a finite-radius cylinder.
-
-    Perpendicular restriction is solved *exactly* (to the number of eigenmodes kept) for the actual
-    gradient waveform via the Bloch-Torrey eigenmode propagator (Callaghan 1997; Barzykin 1999;
-    Grebenkov 2007), of which the Gaussian-phase model
+    r"""Finite-radius cylinder whose perpendicular restriction is the Bloch-Torrey eigenmode propagator
+    of ``dmipy_sim.math.matrix_method`` (Callaghan 1997; Barzykin 1999; Grebenkov 2007): exact for a
+    piecewise-constant gradient waveform (one matrix exponential per run of constant amplitude), a
+    Strang split of diffusion and precession otherwise, of which the Gaussian-phase model
     :class:`C4CylinderGaussianPhaseApproximation` is the low-b limit. Parallel diffusion is free
     (Gaussian). The stored gradient waveform ``_G`` is consumed when present (any PGSE / OGSE /
     fixed-direction waveform); otherwise a rectangular PGSE waveform is reconstructed from the scalar
@@ -1339,7 +1337,9 @@ class C5CylinderMatrixMethod(ModelProperties, AnisotropicSignalModelProperties):
         cylinder diameter in meters.
     n_modes : int, optional
         Laplacian eigenmodes kept (accuracy knob; default 16 is converged well below 1e-4 for typical
-        b). Increase for very high q or short gradient pulses.
+        b). Increase for very high q or short gradient pulses. Mapped onto
+        ``dmipy_sim.math.matrix_method``'s ``(angular, radial)`` pair as
+        ``(n_modes, max(4, n_modes // 2 + 2))``.
 
     See ``examples/02_signal_models/exact_matrix_method.md`` for a worked comparison against the
     Gaussian-phase model.
@@ -1402,7 +1402,6 @@ class C5CylinderMatrixMethod(ModelProperties, AnisotropicSignalModelProperties):
         self.lambda_par = lambda_par
         self.diameter = diameter
         self.diffusion_perpendicular = diffusion_perpendicular
-        self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
         self.n_modes = int(n_modes)
 
     def __call__(self, acquisition_scheme, use_jax=False, **kwargs):
@@ -1414,7 +1413,6 @@ class C5CylinderMatrixMethod(ModelProperties, AnisotropicSignalModelProperties):
         mu = kwargs.get('mu', self.mu)
         R = diameter / 2.
         D = self.diffusion_perpendicular
-        gamma = self.gyromagnetic_ratio
         mu_cart = utils.unitsphere2cart_1d(np.array(mu))
 
         _G = getattr(acquisition_scheme, '_G', None)
@@ -1429,8 +1427,8 @@ class C5CylinderMatrixMethod(ModelProperties, AnisotropicSignalModelProperties):
             perp_frac = np.sqrt(np.clip(1. - cos_par ** 2, 0., None))   # (n_meas,)
             g_axes = (np.einsum('mtc,mc->mt', np.asarray(_G, np.float64), n)  # project onto gradient dir
                       * perp_frac[:, None])                                   # then take perp magnitude
-            E_perp = matrix_restricted_batch(
-                'cylinder', g_axes, dt, D, R, gamma, self.n_modes, use_jax=use_jax)
+            E_perp = matrix_signal_batch(
+                'cylinder', g_axes, dt, D, 2 * R, self.n_modes, use_jax=use_jax)
         else:                                                          # scalar-timing fallback (NumPy)
             n_meas = len(acquisition_scheme.gradient_strengths)
             E_perp = np.ones(n_meas)
@@ -1441,8 +1439,8 @@ class C5CylinderMatrixMethod(ModelProperties, AnisotropicSignalModelProperties):
                 G_m, dt = pgse_waveform(
                     g, acquisition_scheme.delta[m], acquisition_scheme.Delta[m], n[m])
                 perp_frac = np.sqrt(max(0., 1. - cos_par[m] ** 2))
-                E_perp[m] = matrix_restricted_signal(
-                    'cylinder', (G_m @ n[m]) * perp_frac, dt, D, R, gamma, self.n_modes)
+                E_perp[m] = matrix_signal(
+                    'cylinder', (G_m @ n[m]) * perp_frac, dt, D, 2 * R, self.n_modes)
         return E_par * E_perp
 
 

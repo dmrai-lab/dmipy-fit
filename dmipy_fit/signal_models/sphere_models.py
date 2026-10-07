@@ -5,8 +5,7 @@ from scipy import special
 import numpy as np
 
 from ..core.constants import DIAMETER_SCALING
-from ._restricted_matrix import (
-    matrix_restricted_signal, matrix_restricted_batch, pgse_waveform)
+from ._matrix_adapter import matrix_signal, matrix_signal_batch, pgse_waveform
 
 __all__ = [
     'S1Dot',
@@ -761,14 +760,14 @@ class S4SphereGaussianPhaseApproximation(
 
 
 class S5SphereMatrixMethod(ModelProperties, IsotropicSignalModelProperties):
-    r"""Exact matrix / multiple-correlation-function model of a sphere.
-
-    The restricted signal is solved *exactly* (to the number of eigenmodes kept) for the actual
-    gradient waveform via the Bloch-Torrey eigenmode propagator (Callaghan 1997; Grebenkov 2007), of
-    which the Gaussian-phase model :class:`S4SphereGaussianPhaseApproximation` is the low-b limit.
-    Consumes the stored gradient waveform ``_G`` when present (any PGSE / OGSE / fixed-direction
-    waveform); otherwise a rectangular PGSE waveform is reconstructed from the scalar timing. Rotating /
-    b-tensor waveforms are projected onto their dominant direction (exact only for fixed-direction).
+    r"""Sphere whose restricted signal is the Bloch-Torrey eigenmode propagator of
+    ``dmipy_sim.math.matrix_method`` (Callaghan 1997; Grebenkov 2007): exact for a piecewise-constant
+    gradient waveform (one matrix exponential per run of constant amplitude), a Strang split of
+    diffusion and precession otherwise, of which the Gaussian-phase model
+    :class:`S4SphereGaussianPhaseApproximation` is the low-b limit. Consumes the stored gradient
+    waveform ``_G`` when present (any PGSE / OGSE / fixed-direction waveform); otherwise a rectangular
+    PGSE waveform is reconstructed from the scalar timing. Rotating / b-tensor waveforms are projected
+    onto their dominant direction (exact only for fixed-direction).
 
     Parameters
     ----------
@@ -776,7 +775,9 @@ class S5SphereMatrixMethod(ModelProperties, IsotropicSignalModelProperties):
         sphere diameter in meters.
     n_modes : int, optional
         Laplacian eigenmodes kept (accuracy knob; default 16 is converged well below 1e-4 for typical
-        b). Increase for very high q or short gradient pulses.
+        b). Increase for very high q or short gradient pulses. Mapped onto
+        ``dmipy_sim.math.matrix_method``'s ``(angular, radial)`` pair as
+        ``(n_modes, max(4, n_modes // 2 + 2))``.
 
     See ``examples/02_signal_models/exact_matrix_method.md`` for a worked comparison against the
     Gaussian-phase model.
@@ -819,7 +820,6 @@ class S5SphereMatrixMethod(ModelProperties, IsotropicSignalModelProperties):
                  n_modes=16):
         self.diameter = diameter
         self.diffusion_constant = diffusion_constant
-        self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
         self.n_modes = int(n_modes)
 
     def __call__(self, acquisition_scheme, use_jax=False, **kwargs):
@@ -829,14 +829,13 @@ class S5SphereMatrixMethod(ModelProperties, IsotropicSignalModelProperties):
         diameter = kwargs.get('diameter', self.diameter)
         R = diameter / 2.
         D = self.diffusion_constant
-        gamma = self.gyromagnetic_ratio
         _G = getattr(acquisition_scheme, '_G', None)
         n = acquisition_scheme.gradient_directions
         if _G is not None:
             dt = float(acquisition_scheme._dt)
             g_axes = np.einsum('mtc,mc->mt', np.asarray(_G, np.float64), n)   # isotropic: along grad dir
-            return matrix_restricted_batch(
-                'sphere', g_axes, dt, D, R, gamma, self.n_modes, use_jax=use_jax)
+            return matrix_signal_batch(
+                'sphere', g_axes, dt, D, 2 * R, self.n_modes, use_jax=use_jax)
         n_meas = len(acquisition_scheme.gradient_strengths)
         E = np.ones(n_meas)
         for m in range(n_meas):
@@ -845,7 +844,7 @@ class S5SphereMatrixMethod(ModelProperties, IsotropicSignalModelProperties):
                 continue
             G_m, dt = pgse_waveform(
                 g, acquisition_scheme.delta[m], acquisition_scheme.Delta[m], n[m])
-            E[m] = matrix_restricted_signal('sphere', G_m @ n[m], dt, D, R, gamma, self.n_modes)
+            E[m] = matrix_signal('sphere', G_m @ n[m], dt, D, 2 * R, self.n_modes)
         return E
 
 
