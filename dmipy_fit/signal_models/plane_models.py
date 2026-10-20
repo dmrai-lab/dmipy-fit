@@ -403,8 +403,8 @@ class P6MonteCarloReplayPlane(ModelProperties):
     gradient waveform, with no short-pulse or Gaussian-phase assumption. Diffusion is restricted across
     the slab (along the plane normal ``mu``) and free in the plane.
 
-    Forward evaluation uses the compiled-scheme engine (``_replay_fit``): the waveform is projected onto
-    the pack's DCT temporal basis once, then each replay is a single matmul. ``diameter`` (slab thickness)
+    Forward evaluation is dmipy-sim's compiled replay: the waveform is projected onto the pack's stored sine
+    bands once, then each replay is a single matmul. ``diameter`` (slab thickness)
     interpolates across the dataset's per-diameter packs; the normal ``mu`` rotates the waveform onto the
     pack's canonical restricted axis (x). Surface relaxivity is exact (the boundary-local-time replay knob,
     optionally coherence-gated), not the analytic ``exp(-TE rho S/V)`` tag-on.
@@ -431,8 +431,8 @@ class P6MonteCarloReplayPlane(ModelProperties):
         {'id': 'fixed_diffusivity', 'name': 'Fixed intrinsic diffusivity',
          'condition_human': 'Intrinsic diffusivity D0 is fixed by the reference dataset (walk-time), not fitted; pick the dataset whose D0 matches your regime.',
          'severity': 'warning', 'source_key': 'substrate_commons'},
-        {'id': 'waveform_grid', 'name': 'Waveform save-grid resolution',
-         'condition_human': 'The acquisition waveform is integrated exactly against the path through the saves of the pack; structure finer than the save grid was never stored.',
+        {'id': 'waveform_band', 'name': 'Waveform within the stored band',
+         'condition_human': 'The acquisition waveform is projected exactly onto the bands the pack stores; gradient structure above the band K / (2 T) of the pack was never stored.',
          'severity': 'info'},
     ]
     _required_acquisition_parameters = ['gradient_directions']
@@ -457,7 +457,7 @@ class P6MonteCarloReplayPlane(ModelProperties):
         diameter = kwargs.get('diameter', self.diameter)
         mu = kwargs.get('mu', self.mu)
         rho = float(kwargs.get('surface_relaxivity', 0.0) or 0.0)
-        chi = kwargs.get('coherence_gate', None)                    # the transverse gate per save of the pack grid
+        chi = kwargs.get('coherence_gate', None)                    # the transverse gate on the acquisition's own grid
         G = getattr(acquisition_scheme, '_G', None)
         if G is None:
             raise ValueError(

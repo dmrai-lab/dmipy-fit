@@ -876,8 +876,8 @@ class S6MonteCarloReplaySphere(ModelProperties, IsotropicSignalModelProperties):
         {'id': 'fixed_diffusivity', 'name': 'Fixed intrinsic diffusivity',
          'condition_human': 'Intrinsic diffusivity D0 is fixed by the reference dataset (walk-time), not fitted; pick the dataset whose D0 matches your regime.',
          'severity': 'warning', 'source_key': 'substrate_commons'},
-        {'id': 'waveform_grid', 'name': 'Waveform save-grid resolution',
-         'condition_human': 'The acquisition waveform is integrated exactly against the path through the saves of the pack; structure finer than the save grid was never stored.',
+        {'id': 'waveform_band', 'name': 'Waveform within the stored band',
+         'condition_human': 'The acquisition waveform is projected exactly onto the bands the pack stores; gradient structure above the band K / (2 T) of the pack was never stored.',
          'severity': 'info'},
     ]
     _required_acquisition_parameters = ['gradient_directions']
@@ -896,7 +896,7 @@ class S6MonteCarloReplaySphere(ModelProperties, IsotropicSignalModelProperties):
         from ..data.mc_replay import load_replay_family
         diameter = kwargs.get('diameter', self.diameter)
         rho = float(kwargs.get('surface_relaxivity', 0.0) or 0.0)
-        chi = kwargs.get('coherence_gate', None)                    # the transverse gate per save of the pack grid
+        chi = kwargs.get('coherence_gate', None)                    # the transverse gate on the acquisition's own grid
         G = getattr(acquisition_scheme, '_G', None)
         if G is None:
             raise ValueError(
