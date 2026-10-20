@@ -3,19 +3,16 @@
 The canonical families (``C6`` / ``S6`` / ``P6``) interpolate a *dataset* over diameter; this model cites ONE
 pack -- a CACTUS bundle, a mesh, a canonical pore at a fixed diameter -- and gives its replay as a compartment
 signal, so "fit a pack" is one line: the pack's own axis (its declared substrate frame, RPK.md 4.2) is the
-orientation parameter ``mu``, the acquisition is compiled through dmipy-sim's exact replay kernel, and surface
-relaxivity is the pack's boundary-local-time replay knob.
+orientation parameter ``mu``, the acquisition is projected onto the pack's stored bands (dmipy-sim's compiled
+replay, window by window), and surface relaxivity is the pack's boundary-local-time replay knob.
 """
 import os
 
 import numpy as np
 
-from ..core.constants import CONSTANTS
 from ..core.model_properties import ModelProperties
 from ..core.signal_model_properties import AnisotropicSignalModelProperties
 from ..utils import utils
-
-_GAMMA = CONSTANTS["water_gyromagnetic_ratio"]
 
 __all__ = ["MonteCarloReplay"]
 
@@ -25,10 +22,12 @@ class MonteCarloReplay(ModelProperties, AnisotropicSignalModelProperties):
 
     ``mu`` is the lab direction of the pack's own structural axis (column 3 of its ``substrate_frame``: the fibre
     bundle, the cylinder axis); the acquisition is rotated into the pack's stored coordinates by
-    ``ReplayPack.pose_rotation``, exact by pose covariance, and compiled through
-    :func:`dmipy_sim.replay.compile_scheme`. An isotropic pack (a sphere, a free walk) is the same at every
+    ``ReplayPack.pose_rotation``, exact by pose covariance, and compiled onto the pack's bands
+    (:class:`~dmipy_fit.data.mc_replay.PackCoefficients`). An isotropic pack (a sphere, a free walk) is the same at every
     ``mu``. ``surface_relaxivity`` (m/s) is the pack's exact C2 replay knob, with the pack's walk diffusivity;
-    relaxation is a compartment ``eta`` model's business, as for every other compartment.
+    relaxation is a compartment ``eta`` model's business, as for every other compartment. ``coherence_gate`` is
+    the transverse gate on the acquisition's own grid (``(n_wf,)``, its last sample the readout), 1 over the
+    acquisition by default.
 
     Parameters
     ----------
@@ -72,38 +71,33 @@ class MonteCarloReplay(ModelProperties, AnisotropicSignalModelProperties):
         """The pack's walk diffusivity (m^2/s): fixed at walk time."""
         return self.pack.diffusivity
 
-    def _arrays(self):
+    def _coefficients(self):
+        """The pack's coefficients as the fit contracts them (:class:`~dmipy_fit.data.mc_replay.PackCoefficients`),
+        read once."""
         if self._coeffs is None:
-            from dmipy_sim.replay.compression import read_position_coeffs
-            C = read_position_coeffs(self.pack.arrays, dtype=np.float64)
-            w = np.asarray(self.pack.arrays.get("spin_weights", np.ones(C.shape[0])), np.float64)
-            self._coeffs = (C, w)
+            from ..data.mc_replay import PackCoefficients
+            self._coeffs = PackCoefficients(self.pack)
         return self._coeffs
 
     def __call__(self, acquisition_scheme, **kwargs):
-        from dmipy_sim.replay import compile_scheme, replay_coefficients, surface_logweight
-        from dmipy_sim.replay._replay_kernel import bin_gate
         mu = kwargs.get('mu', self.mu)
         if mu is None:
             raise ValueError("MonteCarloReplay needs mu, the lab direction of the pack's axis")
         rho = float(kwargs.get('surface_relaxivity', 0.0) or 0.0)
-        chi = kwargs.get('coherence_gate', None)
+        chi = kwargs.get('coherence_gate', None)                    # the gate on the acquisition's own grid
         G = getattr(acquisition_scheme, '_G', None)
         if G is None:
             raise ValueError("MonteCarloReplay needs a waveform-first AcquisitionScheme "
                              "(build with AcquisitionScheme.from_pgse/from_waveform) -- no ._G on this scheme.")
         dt = float(acquisition_scheme._dt)
-        pk = self.pack
-        R = pk.pose_rotation(utils.unitsphere2cart_1d(np.asarray(mu, float)))     # stored -> lab
-        G_stored = np.asarray(G, np.float64) @ R                                    # the lab waveform in stored coordinates
-        W = compile_scheme(G_stored, dt, pk.K, _GAMMA, n_t=pk.n_t, dt_pack=pk.dt)
-        C, w = self._arrays()
-        slw = None
+        R = self.pack.pose_rotation(utils.unitsphere2cart_1d(np.asarray(mu, float)))     # stored -> lab
+        G_stored = np.asarray(G, np.float64) @ R                                           # the lab waveform in stored coordinates
+        pk = self._coefficients()
+        rho_over_D = 0.0
         if rho:
             D = self.diffusivity
             if D is None:
                 raise ValueError("surface relaxivity needs the walk's diffusivity, which this pack did not record")
-            cm = (pk.meta.get("compression", {}).get("channels", {}) or {}).get("boundary_local_time")
-            gate = chi if chi is not None else bin_gate(np.ones(G_stored.shape[1]), dt, pk.n_t, pk.dt)[0]
-            slw = surface_logweight(pk.arrays, rho / float(D), cm, gate)
-        return replay_coefficients(C, w, W, surface_logw=slw)
+            rho_over_D = rho / float(D)
+        gate = np.ones(G_stored.shape[1]) if chi is None else chi
+        return np.abs(pk.signal(pk.compile(G_stored, dt), rho_over_D=rho_over_D, gate=gate, dt_gate=dt))

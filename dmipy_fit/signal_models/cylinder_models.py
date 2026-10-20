@@ -1451,9 +1451,9 @@ class C6MonteCarloReplayCylinder(ModelProperties, AnisotropicSignalModelProperti
     Monte-Carlo floor) for **any** gradient waveform, with no short-pulse or Gaussian-phase assumption.
     This is the *generalized pore*: the same machinery replays arbitrary (e.g. mesh) substrates.
 
-    Forward evaluation uses the compiled-scheme engine (``_replay_fit``): the waveform is projected onto
-    the pack's DCT temporal basis once, then each replay is a single matmul — identical to the engine's
-    ``pack.replay`` but fast enough to fit. ``diameter`` interpolates across the dataset's per-diameter
+    Forward evaluation is dmipy-sim's compiled replay: the waveform is projected onto the pack's stored sine
+    bands once, then each replay is a single matmul — identical to the engine's ``pack.replay`` but fast enough
+    to fit. ``diameter`` interpolates across the dataset's per-diameter
     packs; orientation rotates the waveform onto the pack's canonical (axis = z) frame.
 
     **Surface relaxivity is exact, not analytic.** When a surface-relaxivity factor supplies
@@ -1488,8 +1488,8 @@ class C6MonteCarloReplayCylinder(ModelProperties, AnisotropicSignalModelProperti
         {'id': 'fixed_diffusivity', 'name': 'Fixed intrinsic diffusivity',
          'condition_human': 'Intrinsic diffusivity D0 is fixed by the reference dataset (walk-time), not fitted; pick the dataset whose D0 matches your regime.',
          'severity': 'warning', 'source_key': 'substrate_commons'},
-        {'id': 'waveform_grid', 'name': 'Waveform save-grid resolution',
-         'condition_human': 'The acquisition waveform is integrated exactly against the path through the saves of the pack; structure finer than the save grid was never stored.',
+        {'id': 'waveform_band', 'name': 'Waveform within the stored band',
+         'condition_human': 'The acquisition waveform is projected exactly onto the bands the pack stores; gradient structure above the band K / (2 T) of the pack was never stored.',
          'severity': 'info'},
     ]
     _required_acquisition_parameters = ['gradient_directions']
@@ -1519,7 +1519,7 @@ class C6MonteCarloReplayCylinder(ModelProperties, AnisotropicSignalModelProperti
         diameter = kwargs.get('diameter', self.diameter)
         mu = kwargs.get('mu', self.mu)
         rho = float(kwargs.get('surface_relaxivity', 0.0) or 0.0)   # m/s; from a surface factor
-        chi = kwargs.get('coherence_gate', None)                    # the transverse gate per save of the pack grid
+        chi = kwargs.get('coherence_gate', None)                    # the transverse gate on the acquisition's own grid
         G = getattr(acquisition_scheme, '_G', None)
         if G is None:
             raise ValueError(

@@ -1,5 +1,5 @@
 """Tier-3 signal-LUT fit form: the KB-scale kernel reproduces the full replay for a PGSE family, is far
-smaller than the packs, and is fast to evaluate. Skipped if dmipy_sim is unavailable."""
+smaller than the packs, and is fast to evaluate."""
 import os
 import numpy as np
 import numpy.testing as npt
@@ -23,7 +23,7 @@ def dataset(tmp_path_factory):
         sub = root / "canonical" / f"D0-{D0*1e9:.2f}e-9" / shape
         sub.mkdir(parents=True)
         for d_um in (5.0, 7.0, 9.0):
-            pk = build_public_pack(shape, d_um * 1e-6, D0, n_t=150, n_walkers=4000, seed=7, K=48, blt_temporal_K=32)
+            pk = build_public_pack(shape, d_um * 1e-6, D0, n_walkers=4000, seed=7, K=48, blt_temporal_K=32)
             write_rpk(str(sub / f"d{d_um:05.2f}um.rpk"), dict(pk.arrays), pk.meta)
     mc_replay._FAMILY_CACHE.clear()
     return str(root)
@@ -39,15 +39,23 @@ def _pgse_scheme():
     return AcquisitionScheme.from_pgse(np.array(bv), np.array(gd), DELTA, DELTAB)
 
 
+def _floor(E, n):
+    """Three standard errors of a mean of ``n`` unit phasors whose mean is ``E``: what two directions of one finite
+    walk differ by at most. The kernel is built from one direction per angle and the full replay reads the walk in
+    every direction, so their difference carries this besides the kernel's interpolation error."""
+    return 3 * np.sqrt((1 - np.asarray(E) ** 2) / (2 * n))
+
+
 def test_sphere_lut_matches_full_replay(dataset):
     fam = mc_replay.load_replay_family("sphere", D0, dataset_dir=dataset)
+    n = fam.packs[0].n_walkers
     ker = build_pgse_kernel(fam, DELTA, DELTAB, b_grid=np.linspace(0, 3e9, 25))
     scheme = _pgse_scheme()
     s6 = sphere_models.S6MonteCarloReplaySphere(dataset_dir=dataset)
     for d in (5.5e-6, 7e-6, 8.5e-6):
         full = s6(scheme, diameter=d)
         lut = ker.signal(scheme.bvalues, scheme.gradient_directions, d)
-        npt.assert_allclose(lut, full, atol=5e-3)      # interpolation-grade vs the exact replay
+        assert np.all(np.abs(lut - full) <= 5e-3 + _floor(full, n))      # interpolation-grade vs the exact replay
     # leanness: the kernel is orders of magnitude smaller than one pack
     one_pack = os.path.getsize(sorted(__import__("glob").glob(
         os.path.join(dataset, "canonical", "*", "sphere", "*.rpk")))[0])
@@ -58,15 +66,17 @@ def test_cylinder_lut_matches_full_replay(dataset):
     fam = mc_replay.load_replay_family("cylinder", D0, dataset_dir=dataset)
     ker = build_pgse_kernel(fam, DELTA, DELTAB, b_grid=np.linspace(0, 3e9, 25),
                             cos_grid=np.linspace(0, 1, 19))
+    n = fam.packs[0].n_walkers
     scheme = _pgse_scheme()
     c6 = cylinder_models.C6MonteCarloReplayCylinder(dataset_dir=dataset)
     mu = [np.pi / 2, 0.0]
     for d in (5.5e-6, 7e-6, 8.5e-6):
         full = c6(scheme, diameter=d, mu=mu)
         lut = ker.signal(scheme.bvalues, scheme.gradient_directions, d, mu=mu)
-        # interpolation-grade; the extra error over the sphere is the angular (cos) interpolation,
-        # tightened by a finer cos_grid (halves at 2x density).
-        npt.assert_allclose(lut, full, atol=1.5e-2)
+        # interpolation-grade; the extra error over the sphere is the angular (cos) interpolation, tightened by a
+        # finer cos_grid (halves at 2x density). Along the axis the kernel's closed form meets the full replay's
+        # finite-walk axial noise, which is the floor's.
+        assert np.all(np.abs(lut - full) <= 1.5e-2 + _floor(full, n))
 
 
 def test_surface_axis_in_lut(dataset):
@@ -82,8 +92,9 @@ def test_surface_axis_in_lut(dataset):
     full = s6(scheme, diameter=7e-6, surface_relaxivity=rho_on)
     lut = ker.signal(scheme.bvalues, scheme.gradient_directions, 7e-6, rho=rho_on)
     assert lut[0] < 1.0                                    # surface decays b0
-    npt.assert_allclose(lut, full, atol=5e-3)
+    n = fam.packs[0].n_walkers
+    assert np.all(np.abs(lut - full) <= 5e-3 + _floor(full, n))
     # off-grid rho stays in a sane band (documented interpolation-grade, ~1e-2 at this rho density)
     lut_off = ker.signal(scheme.bvalues, scheme.gradient_directions, 7e-6, rho=1.5e-5)
     full_off = s6(scheme, diameter=7e-6, surface_relaxivity=1.5e-5)
-    npt.assert_allclose(lut_off, full_off, atol=3e-2)
+    assert np.all(np.abs(lut_off - full_off) <= 3e-2 + _floor(full_off, n))

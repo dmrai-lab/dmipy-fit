@@ -13,7 +13,7 @@ D0 = 2.0e-9
 
 @pytest.fixture(scope="module")
 def pack():
-    return build_public_pack("cylinder", 6e-6, D0, n_t=150, n_walkers=1200, seed=3, K=48, blt_temporal_K=32)
+    return build_public_pack("cylinder", 6e-6, D0, n_walkers=1200, seed=3, K=48, blt_temporal_K=32)
 
 
 def _scheme():
@@ -31,7 +31,7 @@ def test_the_model_is_the_packs_replay_at_its_pose(pack):
                         pack.replay(sch.sequence, tissue=None, orientation=(1.0, 0.0, 0.0)), atol=2e-6)   # along x
     assert not np.allclose(m(sch, mu=[0.0, 0.0]), m(sch, mu=[np.pi / 2, 0.0]))                            # a pose matters
     npt.assert_allclose(m(sch, mu=[0.0, 0.0], surface_relaxivity=2e-5),
-                        pack.replay(sch.sequence, tissue=Tissue(rho=2e-5)), atol=5e-6)                      # the C2 knob
+                        pack.replay(sch.sequence, tissue=Tissue(rho2=2e-5)), atol=5e-6)                      # the C2 knob
     assert m(sch, mu=[0.0, 0.0], surface_relaxivity=2e-5)[0] < 1.0
     with pytest.raises(ValueError, match="mu"):
         m(sch)
@@ -46,7 +46,8 @@ def test_a_declared_frame_is_honoured(pack):
     from dmipy_sim.replay.compression import pack_position_arrays, read_position_coeffs
     Q = so3.rotation_of((1.0, 0.0, 0.0))
     C = read_position_coeffs(pack.arrays, dtype=np.float64) @ Q.T
-    arrays = dict(pack.arrays); arrays.update(pack_position_arrays(C, np.float32))
+    arrays = {k: v for k, v in pack.arrays.items() if not k.startswith("pos_")}     # the rotated walk in the float container
+    arrays.update(pack_position_arrays(C, np.float32))
     meta = copy.deepcopy(pack.meta); meta.setdefault("walk_params", {})["substrate_frame"] = Q.tolist()
     x = ReplayPack(arrays, meta)
     sch = _scheme()

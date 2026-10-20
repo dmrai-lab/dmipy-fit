@@ -76,6 +76,14 @@ exercises every compartment × scheme × framework × wrapper combination.
   O(1/n_t) quadrature error that mis-scaled anisotropic Gaussian models).
 
 ### Changed (breaking)
+- **Replay compartments read coefficient-form packs** (dmipy-sim#740). A pack is its walk as bands on one
+  basis (continuous sines over each storage window, RPK.md 9.5); there is no save grid. `data/mc_replay.py`
+  compiles an acquisition onto the pack's bands per window (`PackCoefficients`), carries `K` / `block` /
+  `windows` per pack (`PackGrid`) in place of `n_t`, and refuses by name a pack or manifest row written on a
+  save grid, through dmipy-sim's own reader (`fetch_pack_prefix` applies the same refusal before any tensor
+  bytes move). The coherence gate of a replay compartment is the gate on the acquisition's own grid. The
+  `ReplayFamily` attributes `n_t`, `dt`, `n_t_all`, `dt_all` are gone; the test packs are walked with
+  `simulate_trajectories` + `build_replay_pack` (the band deriving the block).
 - **Relaxation/relaxivity are opt-in factors only.** `surface_relaxivity` (and `T2`/`T1`) are no longer
   baked into bare compartments (`S2/S3/S4`, `C2/C3/C4`) or `X0GeneralizedKarger`; add them via
   `OccupancyGatedModel([... , TransverseRelaxation()/SurfaceRelaxivity()])`.
