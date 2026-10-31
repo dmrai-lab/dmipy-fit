@@ -2,6 +2,8 @@
 
 import os as _os
 
+import dmipy_sim as _dmipy_sim  # noqa: F401  applies DMIPY_GPU_MEM_GB before JAX initialises (dmipy_sim.configure)
+
 # XLA's Triton-GEMM autotuner fails to find a valid config for the small-
 # contracting-dimension matmuls in the CSD/OSQP solver and the dispersed-model
 # forward on some GPUs ("Too small divisible part of the contracting
@@ -14,7 +16,7 @@ if 'triton_gemm' not in _xla_flags:
     _os.environ['XLA_FLAGS'] = (
         _xla_flags + ' --xla_gpu_enable_triton_gemm=false').strip()
 
-from .losses_jax import mse_loss, rician_nll, rician_nll_fittable, nc_chi_nll
+from .losses_jax import mse_loss, rician_nll, rician_nll_fittable
 from .dti_jax import build_dti_fitter, detect_mu_indices
 from .convergence import (analyze_convergence,
                            SDMStratifiedSampler,

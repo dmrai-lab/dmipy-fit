@@ -109,7 +109,7 @@ def _collect_fixed_parameters(model):
         'source_citation': citation dict (if value matches a biophysical constant),
     }
     """
-    from .biophysical_constants import BIOPHYSICAL_CONSTANTS
+    from dmipy_sim.substrate.biophysical_constants import BIOPHYSICAL_CONSTANTS
 
     # Build reverse lookup: value -> constant entry
     value_lookup = {}

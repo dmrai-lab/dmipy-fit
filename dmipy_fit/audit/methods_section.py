@@ -1,7 +1,7 @@
 """Methods-section and BibTeX generation from citation graph results."""
 
-from . import biophysical_constants as _bp_mod
-from .biophysical_constants import BIOPHYSICAL_CONSTANTS
+from dmipy_sim.substrate import biophysical_constants as _bp_mod
+from dmipy_sim.substrate.biophysical_constants import BIOPHYSICAL_CONSTANTS
 
 # Reverse lookup: source_key -> citation dict (for author/year formatting).
 # Built from (1) main citations in BIOPHYSICAL_CONSTANTS, and (2) module-level

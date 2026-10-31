@@ -46,7 +46,7 @@ class MultiCompartmentModel(MultiCompartmentModelProperties):
         the models to combine into the MultiCompartmentModel.
     parameter_links : list of iterables (model, parameter name, link function,
         argument list),
-        deprecated, for testing only.
+        an internal hook the tests use.
     '''
     _citations = {
         'definition': [

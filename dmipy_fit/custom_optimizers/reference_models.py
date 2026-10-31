@@ -88,7 +88,6 @@ from dmipy_fit.signal_models.gaussian_models import (
 from dmipy_fit.signal_models.cylinder_models import (
     C1Stick,
     C3CylinderCallaghanApproximation,
-    C4CylinderGaussianPhaseApproximation,
 )
 from dmipy_fit.signal_models.sphere_models import (
     S1Dot,
@@ -402,61 +401,6 @@ def active_ax():
     """
     mcm = MultiCompartmentModel([
         C3CylinderCallaghanApproximation(), G2Zeppelin(), G1Ball()])
-    mcm.set_fixed_parameter('G1Ball_1_lambda_iso', _Dcsf)
-    return mcm
-
-
-def charmed_c4():
-    """CHARMED with C4 Gaussian Phase cylinder (Van Gelderen) instead of C3 Callaghan.
-
-    Cheaper to JIT/run than C3; valid when delta >> R^2/D (long pulses).
-    Use as a fast alternative to charmed() on clinical scanners.
-
-    Assaf & Basser 2005, NeuroImage 27, doi:10.1016/j.neuroimage.2005.03.042
-    """
-    cyl  = C4CylinderGaussianPhaseApproximation()
-    zepp = G2Zeppelin()
-    mcm  = MultiCompartmentModel([cyl, zepp])
-    mcm.set_tortuous_parameter(
-        'G2Zeppelin_1_lambda_perp',
-        'C4CylinderGaussianPhaseApproximation_1_lambda_par',
-        'partial_volume_0',
-        'partial_volume_1',
-    )
-    mcm.set_equal_parameter(
-        'C4CylinderGaussianPhaseApproximation_1_mu', 'G2Zeppelin_1_mu')
-    mcm.set_equal_parameter(
-        'C4CylinderGaussianPhaseApproximation_1_lambda_par', 'G2Zeppelin_1_lambda_par')
-    return mcm
-
-
-def axcaliber_c4():
-    """AxCaliber with C4 Gaussian Phase cylinders (Van Gelderen) instead of C3 Callaghan.
-
-    Gamma-distributed cylinder diameters + Zeppelin.  C4 is much cheaper
-    to JIT-compile and avoids the CUDA graph OOM that C3×Ns=4 hits.
-
-    Assaf et al. 2008, MRM 59 — doi:10.1002/mrm.21577
-    """
-    gamma_cyl = DD1GammaDistributed([C4CylinderGaussianPhaseApproximation()])
-    mcm = MultiCompartmentModel([gamma_cyl, G2Zeppelin()])
-    mcm.set_equal_parameter(
-        'DD1GammaDistributed_1_C4CylinderGaussianPhaseApproximation_1_mu',
-        'G2Zeppelin_1_mu',
-    )
-    return mcm
-
-
-def active_ax_c4():
-    """ActiveAx with C4 Gaussian Phase cylinder (Van Gelderen) instead of C3 Callaghan.
-
-    Single representative diameter + Zeppelin + CSF Ball.  C4 is faster
-    and avoids the 2 GB constant-table allocation that C3×Ns=3 hits.
-
-    Alexander et al. 2010, NeuroImage 52 — doi:10.1016/j.neuroimage.2010.05.043
-    """
-    mcm = MultiCompartmentModel([
-        C4CylinderGaussianPhaseApproximation(), G2Zeppelin(), G1Ball()])
     mcm.set_fixed_parameter('G1Ball_1_lambda_iso', _Dcsf)
     return mcm
 

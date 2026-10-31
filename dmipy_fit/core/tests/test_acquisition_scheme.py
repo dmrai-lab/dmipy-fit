@@ -252,8 +252,7 @@ def test_to_gradient_array_shape():
 
 def test_to_gradient_array_b_roundtrip():
     """b-values computed from to_gradient_array() match scheme.bvalues within 1%."""
-    from dmipy_fit.core.constants import CONSTANTS
-    GAMMA = CONSTANTS['water_gyromagnetic_ratio']
+    from dmipy_replay.constants import GAMMA
 
     scheme, _ = _make_pgse_scheme()
     G_arr, dt = scheme.to_gradient_array(n_t=1000)
@@ -283,7 +282,7 @@ def test_n_te_counts_distinct_echo_times_not_shells():
     """A multi-shell scheme at one echo time is one TE (the tissue-response estimators refuse N_TE > 1, and
     counted shells instead of echo times before)."""
     import numpy as np
-    from dmipy_sim import sequences
+    from dmipy_replay import sequences
     from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
     dirs = np.array([[0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 1.0]])
     b = np.array([0.0, 1e9, 1e9, 1e9, 3e9, 3e9, 3e9])

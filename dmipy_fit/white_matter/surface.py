@@ -90,16 +90,6 @@ def b_hat_sphere(alpha, scale_diameter, rho_int, tau_perp, volume_weighted=True)
     return _b_hat_gamma_closed_form(a, beta, c)
 
 
-def mean_inv_diameter_4(alpha, scale_diameter, volume_weighted=True):
-    """<4/d> for the (volume- or number-weighted) Gamma distribution.
-
-    number:  4 beta/(alpha-1);   volume (d^2 P): 4 beta/(alpha+1).
-    """
-    a = alpha + 2.0 if volume_weighted else alpha
-    beta = 1.0 / scale_diameter
-    return 4.0 * beta / (a - 1.0)
-
-
 def b_hat_ea_long(rho_ext, S_ext_over_V_EA, tau_perp):
     """Extra-axonal long-time (clinical PGSE) surface attenuation (eq:b_hat_ext_long)."""
     return np.exp(-rho_ext * S_ext_over_V_EA * np.asarray(tau_perp, float))

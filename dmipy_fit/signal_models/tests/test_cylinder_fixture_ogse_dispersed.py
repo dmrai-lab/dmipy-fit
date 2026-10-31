@@ -38,7 +38,6 @@ import pytest
 from numpy.polynomial.legendre import leggauss
 
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
-from dmipy_fit.core.constants import CONSTANTS
 from dmipy_fit.signal_models.cylinder_models import (
     C4CylinderGaussianPhaseApproximation,
     _ogse_cosine_cylinder_signal,
@@ -47,7 +46,7 @@ from dmipy_fit.signal_models.cylinder_models import (
     watson_odf_lm,
 )
 
-GAMMA       = CONSTANTS['water_gyromagnetic_ratio']
+from dmipy_replay.constants import GAMMA
 D_PERP      = 1.7e-9    # m²/s
 LAMBDA_PAR  = 1.7e-9    # m²/s
 FREQ_HZ     = 50

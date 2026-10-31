@@ -7,7 +7,8 @@ long/short forms.
 import numpy as np
 
 from dmipy_fit.white_matter.surface import (
-    b_hat_ia, mean_inv_diameter_4, b_hat_ea_long, b_hat_ea_short)
+    b_hat_ia, b_hat_ea_long, b_hat_ea_short)
+from dmipy_sim.substrate.substrate import mean_inv_diameter_4
 
 
 def test_weak_limit_recovers_exp_rate():

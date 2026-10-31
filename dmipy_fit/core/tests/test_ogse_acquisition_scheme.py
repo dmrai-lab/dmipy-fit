@@ -12,10 +12,9 @@ import pytest
 from numpy.testing import assert_allclose, assert_array_equal
 
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
-from dmipy_fit.core.constants import CONSTANTS
 
 
-GAMMA = CONSTANTS['water_gyromagnetic_ratio']
+from dmipy_replay.constants import GAMMA
 
 
 def _make_bvecs(n_m):

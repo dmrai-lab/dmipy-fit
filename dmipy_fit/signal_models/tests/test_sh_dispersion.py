@@ -27,9 +27,7 @@ from dmipy_fit.signal_models.cylinder_models import (
     _cylinder_signal_from_gamma_lm,
 )
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
-from dmipy_fit.core.constants import CONSTANTS
 
-GAMMA = CONSTANTS['water_gyromagnetic_ratio']
 
 # Physical parameters matching the fast-eigenmode-valid regime
 R = 2e-6          # 2 um cylinder radius

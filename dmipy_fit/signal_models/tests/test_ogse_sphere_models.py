@@ -21,9 +21,7 @@ from dmipy_fit.core.acquisition_scheme import (
     acquisition_scheme_from_bvalues,
     acquisition_scheme_from_gradient_strengths,
 )
-from dmipy_fit.core.constants import CONSTANTS
 
-GAMMA = CONSTANTS['water_gyromagnetic_ratio']
 
 
 def _make_bvecs(n_m):

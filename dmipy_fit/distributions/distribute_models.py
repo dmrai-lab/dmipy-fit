@@ -7,7 +7,7 @@ import numpy as np
 from . import distributions
 from ..core.signal_model_properties import AnisotropicSignalModelProperties
 from ..utils.spherical_convolution import sh_convolution
-from ..utils.utils import T1_tortuosity, parameter_equality
+from ..utils.utils import T1_tortuosity, add_linked_parameters, parameter_equality
 
 __all__ = [
     'DistributedModel',
@@ -221,30 +221,7 @@ class DistributedModel:
         parameters: dictionary of model parameters,
             contains the optimzed and linked parameters.
         """
-        if len(self.parameter_links) == 0:
-            return parameters
-        parameters = parameters.copy()
-        for parameter in self.parameter_links[::-1]:
-            parameter_model, parameter_name, parameter_function, arguments = \
-                parameter
-            parameter_name = self._inverted_parameter_map[
-                (parameter_model, parameter_name)
-            ]
-
-            if len(arguments) > 0:
-                argument_values = []
-                for argument in arguments:
-                    argument_name = self._inverted_parameter_map[argument]
-                    argument_values.append(parameters.get(
-                        argument_name
-                    ))
-
-                parameters[parameter_name] = parameter_function(
-                    *argument_values
-                )
-            else:
-                parameters[parameter_name] = parameter_function()
-        return parameters
+        return add_linked_parameters(self.parameter_links, self._inverted_parameter_map, parameters)
 
     def set_fixed_parameter(self, parameter_name, value):
         """
@@ -961,7 +938,50 @@ class SD3SphericalHarmonicsDistributed(DistributedModel,
                 self.mu_param = param
 
 
-class DD1GammaDistributed(DistributedModel, AnisotropicSignalModelProperties):
+class _GammaOrPoissonDistributed(DistributedModel, AnisotropicSignalModelProperties):
+    """What the diameter-distributed models share: their rotational harmonics, with the fibre axis pinned to z."""
+
+    def rotational_harmonics_representation(
+            self, acquisition_scheme, **kwargs):
+        r""" The rotational harmonics of the model, such that Y_lm = Yl0.
+        Axis aligned with z-axis to be used as kernel for spherical
+        convolution. Returns an array with rotational harmonics for each shell.
+
+        Parameters
+        ----------
+        acquisition_scheme : PGSEAcquisitionScheme instance,
+            An acquisition scheme that has been instantiated using dMipy.
+        kwargs: keyword arguments to the model parameter values,
+            Is internally given as **parameter_dictionary.
+
+        Returns
+        -------
+        rh_array : array, shape(Nshells, N_rh_coef),
+            Rotational harmonics coefficients for each shell.
+        """
+        rh_scheme = acquisition_scheme.rotational_harmonics_scheme
+        # Isotropic distributed compartments (e.g. a Gamma-distributed sphere)
+        # have no orientation parameter, so mu_param is never set. Their signal
+        # is orientation-independent -> the RH kernel is the l=0 term and no mu
+        # needs fixing. Only pin the fibre axis when an orientation exists.
+        if getattr(self, 'mu_param', None) is not None:
+            kwargs.update({self.mu_param: [0., 0.]})
+        E_kernel_sf = self(rh_scheme, **kwargs)
+        E_reshaped = E_kernel_sf.reshape([-1, rh_scheme.Nsamples])
+        max_sh_order = max(rh_scheme.shell_sh_orders.values())
+        rh_array = np.zeros((len(E_reshaped), max_sh_order // 2 + 1))
+
+        for i, (shell_index, sh_order) in enumerate(
+                rh_scheme.shell_sh_orders.items()):
+            rh_array[i, :sh_order // 2 + 1] = (
+                np.dot(
+                    rh_scheme.inverse_rh_matrix[sh_order],
+                    E_reshaped[i])
+            )
+        return rh_array
+
+
+class DD1GammaDistributed(_GammaOrPoissonDistributed):
     """
     The DistributedModel instantiation for a Gamma-distributed model for
     cylinder or sphere models. Multiple models can be distributed at the same
@@ -1007,45 +1027,6 @@ class DD1GammaDistributed(DistributedModel, AnisotropicSignalModelProperties):
         for param in self.parameter_names:
             if param.endswith('mu'):
                 self.mu_param = param
-
-    def rotational_harmonics_representation(
-            self, acquisition_scheme, **kwargs):
-        r""" The rotational harmonics of the model, such that Y_lm = Yl0.
-        Axis aligned with z-axis to be used as kernel for spherical
-        convolution. Returns an array with rotational harmonics for each shell.
-
-        Parameters
-        ----------
-        acquisition_scheme : PGSEAcquisitionScheme instance,
-            An acquisition scheme that has been instantiated using dMipy.
-        kwargs: keyword arguments to the model parameter values,
-            Is internally given as **parameter_dictionary.
-
-        Returns
-        -------
-        rh_array : array, shape(Nshells, N_rh_coef),
-            Rotational harmonics coefficients for each shell.
-        """
-        rh_scheme = acquisition_scheme.rotational_harmonics_scheme
-        # Isotropic distributed compartments (e.g. a Gamma-distributed sphere)
-        # have no orientation parameter, so mu_param is never set. Their signal
-        # is orientation-independent -> the RH kernel is the l=0 term and no mu
-        # needs fixing. Only pin the fibre axis when an orientation exists.
-        if getattr(self, 'mu_param', None) is not None:
-            kwargs.update({self.mu_param: [0., 0.]})
-        E_kernel_sf = self(rh_scheme, **kwargs)
-        E_reshaped = E_kernel_sf.reshape([-1, rh_scheme.Nsamples])
-        max_sh_order = max(rh_scheme.shell_sh_orders.values())
-        rh_array = np.zeros((len(E_reshaped), max_sh_order // 2 + 1))
-
-        for i, (shell_index, sh_order) in enumerate(
-                rh_scheme.shell_sh_orders.items()):
-            rh_array[i, :sh_order // 2 + 1] = (
-                np.dot(
-                    rh_scheme.inverse_rh_matrix[sh_order],
-                    E_reshaped[i])
-            )
-        return rh_array
 
     def set_diameter_constrained_parameter_beta(
             self, diameter_min, diameter_max):
@@ -1095,7 +1076,7 @@ class ReturnConstrainedBeta:
         return beta
 
 
-class DD2PoissonDistributed(DistributedModel, AnisotropicSignalModelProperties):
+class DD2PoissonDistributed(_GammaOrPoissonDistributed):
     """
     The DistributedModel instantiation for a Poisson-parameterized diameter
     distribution for cylinder models. Uses :class:`DD2Poisson` (Gamma with
@@ -1143,46 +1124,6 @@ class DD2PoissonDistributed(DistributedModel, AnisotropicSignalModelProperties):
         for param in self.parameter_names:
             if param.endswith('mu'):
                 self.mu_param = param
-
-    def rotational_harmonics_representation(
-            self, acquisition_scheme, **kwargs):
-        r""" The rotational harmonics of the model, such that Y_lm = Yl0.
-        Axis aligned with z-axis to be used as kernel for spherical
-        convolution. Returns an array with rotational harmonics for each shell.
-
-        Parameters
-        ----------
-        acquisition_scheme : PGSEAcquisitionScheme instance,
-            An acquisition scheme that has been instantiated using dMipy.
-        kwargs: keyword arguments to the model parameter values,
-            Is internally given as **parameter_dictionary.
-
-        Returns
-        -------
-        rh_array : array, shape(Nshells, N_rh_coef),
-            Rotational harmonics coefficients for each shell.
-        """
-        rh_scheme = acquisition_scheme.rotational_harmonics_scheme
-        # Isotropic distributed compartments (e.g. a Gamma-distributed sphere)
-        # have no orientation parameter, so mu_param is never set. Their signal
-        # is orientation-independent -> the RH kernel is the l=0 term and no mu
-        # needs fixing. Only pin the fibre axis when an orientation exists.
-        if getattr(self, 'mu_param', None) is not None:
-            kwargs.update({self.mu_param: [0., 0.]})
-        E_kernel_sf = self(rh_scheme, **kwargs)
-        E_reshaped = E_kernel_sf.reshape([-1, rh_scheme.Nsamples])
-        max_sh_order = max(rh_scheme.shell_sh_orders.values())
-        rh_array = np.zeros((len(E_reshaped), max_sh_order // 2 + 1))
-
-        for i, (shell_index, sh_order) in enumerate(
-                rh_scheme.shell_sh_orders.items()):
-            rh_array[i, :sh_order // 2 + 1] = (
-                np.dot(
-                    rh_scheme.inverse_rh_matrix[sh_order],
-                    E_reshaped[i])
-            )
-        return rh_array
-
 
 class ReturnFixedValue:
     "Parameter fixing class for parameter links."

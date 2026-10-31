@@ -4,16 +4,7 @@ These tests do not verify exact literature values to 10 decimal places —
 they verify that the constants are in the right ballpark and have the
 right physical units, catching obvious copy-paste errors or unit mistakes.
 """
-import numpy as np
 from dmipy_fit.core.constants import CONSTANTS
-
-
-def test_gyromagnetic_ratio_units_and_magnitude():
-    # Proton gyromagnetic ratio: ~267.522e6 rad/(s·T)
-    # NIST value: 267.52218744e6
-    gamma = CONSTANTS['water_gyromagnetic_ratio']
-    assert 260e6 < gamma < 275e6, (
-        f"gyromagnetic ratio {gamma:.3e} outside expected range")
 
 
 def test_water_diffusion_constant_units_and_magnitude():

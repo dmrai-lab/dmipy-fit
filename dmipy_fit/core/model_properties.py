@@ -6,6 +6,7 @@ import numpy as np
 from dipy.utils.optpkg import optional_package
 
 from ..utils.utils import (
+    add_linked_parameters,
     T1_tortuosity,
     parameter_equality,
     fractional_parameter)
@@ -336,30 +337,7 @@ class MultiCompartmentModelProperties:
         """When making the MultiCompartmentModel function call, adds the linked
         parameter to the optimized parameters by evaluating the parameter link
         function."""
-        if len(self.parameter_links) == 0:
-            return parameters
-        parameters = parameters.copy()
-        for parameter in self.parameter_links[::-1]:
-            parameter_model, parameter_name, parameter_function, arguments = \
-                parameter
-            parameter_name = self._inverted_parameter_map[
-                (parameter_model, parameter_name)
-            ]
-
-            if len(arguments) > 0:
-                argument_values = []
-                for argument in arguments:
-                    argument_name = self._inverted_parameter_map[argument]
-                    argument_values.append(parameters.get(
-                        argument_name
-                    ))
-
-                parameters[parameter_name] = parameter_function(
-                    *argument_values
-                )
-            else:
-                parameters[parameter_name] = parameter_function()
-        return parameters
+        return add_linked_parameters(self.parameter_links, self._inverted_parameter_map, parameters)
 
     def _check_if_volume_fractions_are_fixed(self):
         "checks if volume fractions have been fixed."

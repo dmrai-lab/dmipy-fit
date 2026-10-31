@@ -35,9 +35,8 @@ from dmipy_fit.signal_models.cylinder_models import (
     _ogse_numerical_cylinder_signal,
 )
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
-from dmipy_fit.core.constants import CONSTANTS
 
-GAMMA = CONSTANTS['water_gyromagnetic_ratio']
+from dmipy_replay.constants import GAMMA
 
 # Physical parameters
 R = 5e-6        # 5 um cylinder radius

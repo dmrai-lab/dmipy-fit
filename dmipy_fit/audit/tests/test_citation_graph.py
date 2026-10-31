@@ -36,7 +36,7 @@ from dmipy_fit.jax.csd_jax import CsdOsqpOptimizer
 
 from dmipy_fit.audit.citations import walk_citation_graph
 from dmipy_fit.audit.methods_section import generate_methods_section, generate_bibtex
-from dmipy_fit.audit.biophysical_constants import BIOPHYSICAL_CONSTANTS
+from dmipy_sim.substrate.biophysical_constants import BIOPHYSICAL_CONSTANTS
 
 
 # ---- All model classes that MUST have _citations ----

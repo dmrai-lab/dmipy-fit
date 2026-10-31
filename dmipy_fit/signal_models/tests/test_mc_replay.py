@@ -14,7 +14,7 @@ import numpy.testing as npt
 import pytest
 
 from dmipy_sim.replay import write_rpk
-from ._replay_packs import build_public_pack
+from ._replay_packs import build_public_pack, stated_envelope
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
 from dmipy_fit.signal_models import cylinder_models, sphere_models
 from dmipy_fit.core.modeling_framework import MultiCompartmentModel
@@ -54,7 +54,7 @@ def test_engine_matches_pack_replay(dataset):
     fam = mc_replay.load_replay_family("sphere", D0, dataset_dir=dataset)
     pk = fam.packs[0]
     scheme = _scheme()
-    ref = np.abs(np.asarray(pk.replay(scheme.sequence, tissue=None, complex_signal=True)))
+    ref = np.abs(np.asarray(pk.replay(scheme.sequence, tissue=None, complex_signal=True, tol=None)))
     coeffs = fam._pk[0]
     assert coeffs.K == pk.K and coeffs.C.shape == (pk.n_walkers, pk.K + 2, 3)
     got = np.abs(coeffs.signal(coeffs.compile(scheme._G, float(scheme._dt))))
@@ -82,25 +82,25 @@ def test_a_windowed_pack_is_contracted_window_by_window():
     " each window's contraction (RPK.md 4.3), positions and contact alike."
     import dmipy_sim as d
     from dmipy_sim.replay.bank import build_replay_pack
-    walk = d.simulate_trajectories(800, D0, d.Sphere(radius=3e-6), 60e-3, seed=11, K=24, window_T=30e-3,
-                                   require_gpu=False)
+    walk = d.walk(d.spec.spec_of(d.Sphere(radius=3e-6)), 800, 60e-3, diffusivity=D0, seed=11, K=24, window_T=30e-3,
+                  require_gpu=False)
     pk = build_replay_pack(walk, id="test/sphere/windowed", license="CC0", citation="test", K=24, blt_temporal_K=16,
-                           window_T=30e-3)
+                           window_T=30e-3, envelope=stated_envelope())
     assert pk.n_windows == 2
     scheme = _scheme()                                             # Delta + delta = 40 ms: into window 1
     coeffs = mc_replay.PackCoefficients(pk)
     assert coeffs.C.shape[1] == 2 * (pk.K + 2) and coeffs.windows_reached(scheme._G.shape[1], float(scheme._dt)) == 2
     W = coeffs.compile(scheme._G, float(scheme._dt))
     assert W.shape[0] == 2 * (pk.K + 2) * 3
-    ref = np.asarray(pk.replay(scheme.sequence, tissue=None, complex_signal=True))
+    ref = np.asarray(pk.replay(scheme.sequence, tissue=None, complex_signal=True, tol=None))
     npt.assert_allclose(coeffs.signal(W), ref, atol=2e-6)
     gate, dt = np.ones(scheme._G.shape[1]), float(scheme._dt)
-    ref_rho = np.asarray(pk.replay(scheme.sequence, tissue=Tissue(rho2=2e-5), complex_signal=True))
+    ref_rho = np.asarray(pk.replay(scheme.sequence, tissue=Tissue(rho2=2e-5), complex_signal=True, tol=None))
     npt.assert_allclose(coeffs.signal(W, rho_over_D=2e-5 / D0, gate=gate, dt_gate=dt), ref_rho, atol=5e-6)
     short = AcquisitionScheme.from_pgse(np.array([0.0, 2e9]), np.array([[1., 0, 0]] * 2), 5e-3, 15e-3)   # 20 ms: window 0
     W0 = coeffs.compile(short._G, float(short._dt))
     assert W0.shape[0] == (pk.K + 2) * 3
-    npt.assert_allclose(coeffs.signal(W0), pk.replay(short.sequence, tissue=None, complex_signal=True), atol=2e-6)
+    npt.assert_allclose(coeffs.signal(W0), pk.replay(short.sequence, tissue=None, complex_signal=True, tol=None), atol=2e-6)
 
 
 def test_c6_s6_physical_and_monotonic(dataset):
@@ -132,7 +132,7 @@ def test_surface_relaxivity_uses_replay_knob(dataset):
     Er = s6(scheme, diameter=6e-6, surface_relaxivity=2e-5)      # rho = 20 um/s
     assert np.all(Er <= E0 + 1e-9) and Er[0] < 1.0               # surface relaxation lowers signal (incl b0)
     # engine cross-check on the same pack (exact rho path)
-    ref = np.abs(np.asarray(pk.replay(scheme.sequence, tissue=Tissue(rho2=2e-5), complex_signal=True)))
+    ref = np.abs(np.asarray(pk.replay(scheme.sequence, tissue=Tissue(rho2=2e-5), complex_signal=True, tol=None)))
     npt.assert_allclose(Er, ref, atol=5e-6)                       # the same exact kernel, the same gate to the echo
 
 

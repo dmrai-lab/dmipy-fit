@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Tests for exact analytical Watson SH coefficients in sh_analytical.py.
+Tests of the exact Watson and Bingham SH coefficients (dmipy-sim's ``math.sh_analytical``, which carries no tests
+of its own) and of dmipy-fit's Gaussian kernels in sh_analytical.py.
 
 Three invariants are verified:
   1. l=0 coefficient is exactly 1/(2*sqrt(pi)) for all kappa and mu.
@@ -15,11 +16,10 @@ import numpy as np
 import pytest
 from scipy.special import erfi
 
-from dmipy_fit.utils.sh_analytical import (
-    watson_zonal_ratios, watson_sh,
-    bingham_canonical_sh, bingham_sh,
-    gaussian_J_l, gaussian_kernel_rh,
-)
+from dmipy_sim.math.sh_analytical import (
+    watson_zonal_ratios, watson_sh, bingham_canonical_sh)
+from dmipy_fit.distributions.distributions import _bingham_sh as bingham_sh
+from dmipy_fit.utils.sh_analytical import gaussian_J_l, gaussian_kernel_rh
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -133,7 +133,7 @@ class TestWatsonSh:
     def test_matches_grid_at_low_kappa(self):
         """At low kappa the grid-based SD1Watson and analytical agree."""
         from dmipy_fit.distributions.distributions import SD1Watson, kappa2odi
-        from dmipy_fit.utils.utils import cart2sphere
+        from dmipy_sim.math.sh_analytical import cart2sphere
 
         kappa = 1.0
         mu_cart = np.r_[1., 0., 0.]
@@ -250,27 +250,22 @@ class TestGaussianKernelRh:
 # ── Bingham ODF analytical SH ────────────────────────────────────────────────
 
 class TestBinghamCanonicalSh:
-    """Tests for bingham_canonical_sh (GL quadrature, canonical x-peaked frame)."""
+    """Tests for dmipy-sim's bingham_canonical_sh: pose axis z, concentrations (k1, k2) about x and y."""
 
     def test_l0_exact(self):
-        """c_0^0 = 1/(2√π) for any kappa, beta."""
-        for kappa, beta in [(0.5, 0.0), (2.0, 1.0), (10.0, 5.0), (50.0, 20.0)]:
-            sh = bingham_canonical_sh(kappa, beta, l_max=L_MAX)
-            assert abs(sh[0] - L0_EXACT) < 1e-13, \
-                f"c_0^0 wrong at kappa={kappa}, beta={beta}"
+        """c_0^0 = 1/(2√π) for any concentrations."""
+        for k1, k2 in [(0.5, 0.0), (2.0, 1.0), (10.0, 5.0), (50.0, 20.0)]:
+            sh = bingham_canonical_sh(k1, k2, l_max=L_MAX)
+            assert abs(sh[0] - L0_EXACT) < 1e-13, f"c_0^0 wrong at k1={k1}, k2={k2}"
 
     def test_odd_m_zero(self):
         """All odd-m coefficients are identically zero."""
         sh = bingham_canonical_sh(3.0, 1.5, l_max=L_MAX)
-        # Odd-m indices for l=2: positions 2, 4 (m=-1, m=+1)
-        # General: m is at index counter + (m+l) for each l-block
         counter = 0
         for l in range(0, L_MAX + 1, 2):
             for m in range(-l, l + 1):
-                coef_idx = counter + (m + l)
                 if m % 2 != 0:
-                    assert abs(sh[coef_idx]) < 1e-15, \
-                        f"Odd-m coef nonzero at l={l}, m={m}: {sh[coef_idx]}"
+                    assert abs(sh[counter + (m + l)]) < 1e-15, f"Odd-m coef nonzero at l={l}, m={m}"
             counter += 2 * l + 1
 
     def test_negative_m_zero(self):
@@ -279,50 +274,37 @@ class TestBinghamCanonicalSh:
         counter = 0
         for l in range(0, L_MAX + 1, 2):
             for m in range(-l, 0):
-                coef_idx = counter + (m + l)
-                assert abs(sh[coef_idx]) < 1e-15, \
-                    f"Negative-m coef nonzero at l={l}, m={m}: {sh[coef_idx]}"
+                assert abs(sh[counter + (m + l)]) < 1e-15, f"Negative-m coef nonzero at l={l}, m={m}"
             counter += 2 * l + 1
 
-    def test_isotropic_kappa_zero(self):
-        """kappa=beta=0 → uniform ODF → only c_0^0 nonzero."""
+    def test_isotropic_zero_concentration(self):
+        """k1 = k2 = 0 → uniform ODF → only c_0^0 nonzero."""
         sh = bingham_canonical_sh(0.0, 0.0, l_max=L_MAX)
         assert abs(sh[0] - L0_EXACT) < 1e-13
         np.testing.assert_array_less(np.abs(sh[1:]), 1e-12)
 
-    def test_watson_limit_beta_zero(self):
-        """beta=0 canonical Bingham = Watson peaked at x-axis."""
+    def test_watson_limit_equal_concentrations(self):
+        """k1 = k2 = kappa is the Watson of concentration kappa about the pose axis z."""
         kappa = 2.0
-        mu_x = np.r_[1., 0., 0.]
-        sh_bing = bingham_canonical_sh(kappa, 0.0, l_max=4)
-        sh_wat = watson_sh(mu_x, kappa, l_max=4)
-        np.testing.assert_allclose(sh_bing, sh_wat, atol=1e-13,
-                                   err_msg="beta=0 Bingham != Watson at x-axis")
+        sh_bing = bingham_canonical_sh(kappa, kappa, l_max=4)
+        sh_wat = watson_sh(np.r_[0., 0., 1.], kappa, l_max=4)
+        np.testing.assert_allclose(sh_bing, sh_wat, atol=1e-13)
 
     def test_normalization_via_quad(self):
-        """Z matches direct numerical integration over the sphere."""
+        """The partition function matches direct numerical integration over the sphere."""
+        from dmipy_sim.math.sh_analytical import bingham_normalization
         from scipy.integrate import dblquad
-        kappa, beta = 1.5, 0.7
-        # Z_ref = ∫_0^pi ∫_0^{2pi} exp(kappa sin²θ cos²φ + beta sin²θ sin²φ) sinθ dφ dθ
+        k1, k2 = 1.5, 0.7
+
         def integrand(phi, theta):
-            s2 = np.sin(theta)**2
-            return np.exp(kappa*s2*np.cos(phi)**2 + beta*s2*np.sin(phi)**2) * np.sin(theta)
-        Z_ref, _ = dblquad(integrand, 0, np.pi, 0, 2*np.pi,
-                           epsabs=1e-8, epsrel=1e-8)
-        # GL-based Z = (2π * ∫_{-1}^1 exp(A) I_0(B) dt)
-        from numpy.polynomial.legendre import leggauss
-        from scipy.special import iv
-        nodes, weights = leggauss(32)
-        s2 = 1 - nodes**2
-        A = (kappa + beta) / 2 * s2
-        B = (kappa - beta) / 2 * s2
-        Z_gl = 2*np.pi * np.dot(weights, np.exp(A) * iv(0, B))
-        assert abs(Z_gl - Z_ref) / Z_ref < 1e-7, \
-            f"Z_gl={Z_gl:.8f} vs Z_ref={Z_ref:.8f}"
+            s2 = np.sin(theta) ** 2
+            return np.exp(-k1 * s2 * np.cos(phi) ** 2 - k2 * s2 * np.sin(phi) ** 2) * np.sin(theta)
+        Z_ref, _ = dblquad(integrand, 0, np.pi, 0, 2 * np.pi, epsabs=1e-8, epsrel=1e-8)
+        assert abs(bingham_normalization(k1, k2) - Z_ref) / Z_ref < 1e-7
 
 
 class TestBinghamSh:
-    """Tests for bingham_sh (full rotation to arbitrary mu, psi)."""
+    """Tests of dmipy-fit's (mu, psi, kappa, beta) Bingham coefficients, through dmipy-sim's frame form."""
 
     def test_l0_exact_after_rotation(self):
         """c_0^0 = 1/(2√π) for any orientation and concentration."""
@@ -445,3 +427,24 @@ class TestGaussianModelRhExtra:
             sm_analytical = rh_analytical[i, 0] / (2.0 * np.sqrt(np.pi))
             assert abs(sm_analytical - sm_ref) < 1e-10, \
                 f"Shell {i} spherical mean: {sm_analytical} vs {sm_ref}"
+
+
+class TestBinghamDensityIsTheCoefficients:
+    """The oracle for the shared forms: dmipy-fit's own Bingham density (``SD2Bingham.__call__``), projected onto
+    the real SH basis on a quadrature of the sphere, IS the coefficient vector ``_bingham_sh`` returns, and it
+    integrates to one. Compared as coefficients, so the SH truncation cancels."""
+
+    @pytest.mark.parametrize("kappa,beta_frac,psi", [(2.0, 0.5, 0.3), (8.0, 0.7, 1.1), (16.0, 0.25, 0.0)])
+    def test_density_projects_onto_the_coefficients(self, kappa, beta_frac, psi):
+        from dmipy_fit.distributions.distributions import SD2Bingham, kappa2odi
+        from dmipy_sim.replay import so3
+        mu_sph = np.r_[0.7, 0.4]
+        model = SD2Bingham(mu=mu_sph, psi=psi, odi=float(kappa2odi(kappa)), beta_fraction=beta_frac)
+        dirs, w = so3.sphere_quadrature(48, 96)
+        density = model(dirs)
+        np.testing.assert_allclose(float(np.sum(w * density)), 1.0, atol=1e-9)
+        Y = so3.real_sh(L_MAX, dirs)
+        c_model = (Y * (w * density)[:, None]).sum(axis=0)
+        from dmipy_fit.utils import utils
+        c = bingham_sh(utils.unitsphere2cart_1d(mu_sph), psi, kappa, beta_frac * kappa, l_max=L_MAX)
+        np.testing.assert_allclose(c, c_model, atol=1e-8)

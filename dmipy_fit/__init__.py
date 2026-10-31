@@ -19,12 +19,12 @@ try:
 except _PackageNotFoundError:
     __version__ = "unknown"
 
-# Apply the GPU memory cap (DMIPY_GPU_MEM_GB) before JAX initialises. JAX is
-# imported lazily by the fitting path, so this is effective as long as dmipy_fit
-# (or configure()) is imported before the first jax import.
-from ._gpu_config import apply_gpu_mem_cap as _apply_gpu_mem_cap, configure  # noqa: E402
-_apply_gpu_mem_cap()
+# The GPU memory cap (DMIPY_GPU_MEM_GB) and its Python spelling ``dmipy_sim.configure`` live in dmipy-sim, which
+# applies them when it is imported, before JAX initialises; ``dmipy_fit.jax`` imports it first.
+__all__ = ["__version__"]
 
-# Subpackages are imported explicitly (see the module docstring); the
-# intentional top-level names are __version__ and configure.
-__all__ = ["__version__", "configure"]
+
+def __getattr__(name):
+    if name == "configure":
+        raise AttributeError("dmipy_fit.configure is removed: the GPU memory cap is dmipy_sim.configure(max_gpu_gb=...)")
+    raise AttributeError(f"module 'dmipy_fit' has no attribute {name!r}")

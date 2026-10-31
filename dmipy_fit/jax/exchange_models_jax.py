@@ -117,33 +117,6 @@ def karger_isotropic_signal(bvalues, delta, Delta, D1, D2, f, kappa):
     return karger_from_Ri_Re(t_d, Ri, Re, f, kappa)
 
 
-def nexi_signal(bvalues, delta, Delta, gradient_directions,
-                mu_cart, Di, De_par, f, kappa):
-    """Signal attenuation for the NEXI model (tortuosity constraint).
-
-    Enforces De_perp = (1 - f) * De_par internally.
-
-    Parameters
-    ----------
-    bvalues : jnp.array, shape (N,), s/m^2
-    delta : jnp.array, shape (N,), pulse length in s
-    Delta : jnp.array, shape (N,), pulse separation in s
-    gradient_directions : jnp.array, shape (N, 3)
-    mu_cart : jnp.array, shape (3,), Cartesian unit vector
-    Di : scalar, intra-neurite parallel diffusivity in m^2/s
-    De_par : scalar, extra-neurite parallel diffusivity in m^2/s
-    f : scalar, intra-neurite volume fraction
-    kappa : scalar, exchange rate in s^-1
-
-    Returns
-    -------
-    jnp.array, shape (N,)
-    """
-    De_perp = (1.0 - f) * De_par
-    return karger_signal(bvalues, delta, Delta, gradient_directions,
-                         mu_cart, Di, De_par, De_perp, f, kappa)
-
-
 # ---------------------------------------------------------------------------
 # JAX matrix-exponential Kärger propagators (eq:karger_se_finite, eq:karger_ste_finite)
 # jax.scipy.linalg.expm is available in JAX >= 0.4.1.

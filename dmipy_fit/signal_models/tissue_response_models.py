@@ -105,6 +105,16 @@ def estimate_TR2_anisotropic_tissue_response_model(
     return S0_response, TR2
 
 
+def _spherical_mean_of_response(model, acquisition_scheme):
+    """The spherical mean of a tissue response in every shell: ``b = 0`` shells are 1, the others the response's
+    ``l = 0`` rotational harmonic over ``2 sqrt(pi)``."""
+    E_mean = np.ones(acquisition_scheme.N_shells)
+    rh_coef = model.rotational_harmonics_representation(acquisition_scheme)
+    E_mean[~acquisition_scheme.shell_b0_mask] = (
+        rh_coef[:, 0] / (2 * np.sqrt(np.pi)))
+    return E_mean
+
+
 class TR1IsotropicTissueResponseModel(
         ModelProperties, IsotropicSignalModelProperties):
     """
@@ -235,8 +245,7 @@ class TR1IsotropicTissueResponseModel(
 
     def spherical_mean(self, acquisition_scheme, **kwargs):
         """
-        Estimates spherical mean for every shell in acquisition scheme for
-        Zeppelin model.
+        Estimates spherical mean for every shell in acquisition scheme.
 
         Parameters
         ----------
@@ -248,13 +257,9 @@ class TR1IsotropicTissueResponseModel(
         Returns
         -------
         E_mean : float,
-            spherical mean of the Zeppelin model for every acquisition shell.
+            spherical mean of the tissue response for every acquisition shell.
         """
-        E_mean = np.ones(acquisition_scheme.N_shells)
-        rh_coef = self.rotational_harmonics_representation(acquisition_scheme)
-        E_mean[~acquisition_scheme.shell_b0_mask] = (
-            rh_coef[:, 0] / (2 * np.sqrt(np.pi)))
-        return E_mean
+        return _spherical_mean_of_response(self, acquisition_scheme)
 
 
 class TR2AnisotropicTissueResponseModel(
@@ -410,8 +415,7 @@ class TR2AnisotropicTissueResponseModel(
 
     def spherical_mean(self, acquisition_scheme, **kwargs):
         """
-        Estimates spherical mean for every shell in acquisition scheme for
-        Zeppelin model.
+        Estimates spherical mean for every shell in acquisition scheme.
 
         Parameters
         ----------
@@ -423,10 +427,6 @@ class TR2AnisotropicTissueResponseModel(
         Returns
         -------
         E_mean : float,
-            spherical mean of the Zeppelin model for every acquisition shell.
+            spherical mean of the tissue response for every acquisition shell.
         """
-        E_mean = np.ones(acquisition_scheme.N_shells)
-        rh_coef = self.rotational_harmonics_representation(acquisition_scheme)
-        E_mean[~acquisition_scheme.shell_b0_mask] = (
-            rh_coef[:, 0] / (2 * np.sqrt(np.pi)))
-        return E_mean
+        return _spherical_mean_of_response(self, acquisition_scheme)

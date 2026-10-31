@@ -1,9 +1,9 @@
 import numpy as np
 from scipy.optimize import differential_evolution, minimize, fmin_cobyla
+from .brute2fine import nested_to_normalized_fractions
 
 __all__ = [
     'MixOptimizer',
-    'nested_to_normalized_fractions',
     'cobyla_positivity_constraint',
     'cobyla_unity_constraint'
 ]
@@ -297,18 +297,6 @@ class MixOptimizer:
         E_diff = E_model - data
         objective = np.dot(E_diff, E_diff) / len(data)
         return objective * 1e5
-
-
-def nested_to_normalized_fractions(nested_fractions):
-    "Function to convert nested to normalized volume fractions."
-    N = len(nested_fractions)
-    normalized_fractions = np.zeros(N + 1)
-    remaining_fraction = 1.
-    for i in range(N):
-        normalized_fractions[i] = remaining_fraction * nested_fractions[i]
-        remaining_fraction -= normalized_fractions[i]
-    normalized_fractions[-1] = remaining_fraction
-    return normalized_fractions
 
 
 def cobyla_positivity_constraint(volume_fractions, *args):
