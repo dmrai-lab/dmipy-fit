@@ -11,11 +11,11 @@ on:
 
 env:
   # The 3.0 line is not on PyPI yet (dmipy-sim 3.0, dmipy-replay 0.2): CI installs each from the commit this
-  # revision was tested against. dmipy-replay is held before its scanner-class refusal (dmipy-sim#706): the engine's
-  # `simulate` builds a pack that states no class, which the refusal turns away. Move each ref forward when the
-  # releases land and `pip install` resolves them from PyPI instead.
-  DMIPY_SIM_REF: 4e30fc9eb1f355917b3fb45ad4d978ac2f01d98b
-  DMIPY_REPLAY_REF: 25a78f9f17578214aa289fe24a2be4f99c1b46be
+  # revision was tested against (dmipy-sim: the head of dmipy-sim#852, which makes `simulate`'s pack state its
+  # acquisition's scanner class). Move each ref forward when the releases land and `pip install` resolves them from
+  # PyPI instead.
+  DMIPY_SIM_REF: 3c007d418320ad16a217ed3a2b6c0c9b953eedbe
+  DMIPY_REPLAY_REF: 38110c577804e8d122b556ac556d2214b5401262
 
 jobs:
   test:
