@@ -10,7 +10,6 @@ import numpy as np
 import pytest
 
 pytest.importorskip("jax")
-pytest.importorskip("dmipy_sim")
 
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
 from dmipy_fit.signal_models import sphere_models

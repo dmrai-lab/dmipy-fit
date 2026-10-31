@@ -7,9 +7,9 @@ from dmipy_fit.phantom import ModelSubstrate, analytic_substrate
 from dmipy_fit.signal_models.cylinder_models import C1Stick
 from dmipy_fit.signal_models.gaussian_models import G1Ball
 
-sim_phantom = pytest.importorskip("dmipy_sim.phantom")
 from dmipy_replay import sequences                                     # noqa: E402
-from dmipy_sim.phantom import Grid, Peaks, Phantom, Watson          # noqa: E402
+from dmipy_replay.phantom import Grid                              # noqa: E402
+from dmipy_sim.phantom import Peaks, Phantom, Watson                # noqa: E402
 from dmipy_sim.replay import so3                                    # noqa: E402
 
 

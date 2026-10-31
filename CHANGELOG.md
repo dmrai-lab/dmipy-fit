@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased (3.0 line)
+
+Ports dmipy-fit to dmipy-sim 3 (`dmipy-sim>=3,<4`) and dmipy-replay 0.2 (`dmipy-replay>=0.2,<0.3`).
+
+### Removed (one spelling for one thing)
+- `dmipy_fit.core.gradient_conversions`, `CONSTANTS['water_gyromagnetic_ratio']`: use
+  `dmipy_replay.math.gradient_conversions` and `dmipy_replay.constants.GAMMA`.
+- `dmipy_fit.audit.biophysical_constants`: use `dmipy_sim.substrate.biophysical_constants`.
+- `dmipy_fit.configure` and `dmipy_fit/_gpu_config.py`: use `dmipy_sim.configure(max_gpu_gb=...)`
+  (`DMIPY_GPU_MEM_GB` is read when dmipy-sim is imported, which `dmipy_fit.jax` does first).
+- fit's copies of dmipy-sim's mathematics: `watson_*`, `bingham_*`, `_sh_rotation_matrix_blocks`
+  (`dmipy_sim.math.sh_analytical`, `dmipy_sim.replay.so3.wigner_blocks`), `utils.cart2sphere`
+  (`dmipy_sim.math.sh_analytical.cart2sphere`), `white_matter.surface.mean_inv_diameter_4`
+  (`dmipy_sim.substrate.substrate`).
+- Unreferenced code: `custom_optimizers.intra_voxel_incoherent_motion`, `single_shell_three_tissue_csd`,
+  `charmed_c4`, `axcaliber_c4`, `active_ax_c4`, `nexi_signal`, `nc_chi_nll`.
+
+### Changed
+- A replay compartment without a surface-relaxivity factor takes no surface term (`None`), not a silent 0.0;
+  a negative or non-finite relaxivity is refused. A pack's windows record without `n` is refused.
+- New `hub` extra (huggingface_hub, requests, safetensors) for the Hub-hosted replay families.
+
 ## 2.3.0
 
 **Relaxation–exchange on GPU, b-tensor encoding for restricted models, and a full-spectrum
