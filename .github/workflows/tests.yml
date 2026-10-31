@@ -5,6 +5,17 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ master, main ]
+  schedule:
+    - cron: "0 4 * * 1"     # weekly: the slow tests
+  workflow_dispatch:
+
+env:
+  # The 3.0 line is not on PyPI yet (dmipy-sim 3.0, dmipy-replay 0.2): CI installs each from the commit this
+  # revision was tested against. dmipy-replay is held before its scanner-class refusal (dmipy-sim#706): the engine's
+  # `simulate` builds a pack that states no class, which the refusal turns away. Move each ref forward when the
+  # releases land and `pip install` resolves them from PyPI instead.
+  DMIPY_SIM_REF: 4e30fc9eb1f355917b3fb45ad4d978ac2f01d98b
+  DMIPY_REPLAY_REF: 25a78f9f17578214aa289fe24a2be4f99c1b46be
 
 jobs:
   test:
@@ -28,17 +39,25 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-cov nbmake jupytext
-          # dmipy-sim is a hard dependency; until it is on PyPI, install it from the
-          # (public) GitHub repo so the versioned `dmipy-sim>=2.0` requirement resolves.
-          pip install "dmipy-sim @ git+https://github.com/dmrai-lab/dmipy-sim.git"
-          pip install -e ".[jax,all]"
+          pip install "dmipy-sim @ git+https://github.com/dmrai-lab/dmipy-sim@${DMIPY_SIM_REF}" \
+                      "dmipy-replay @ git+https://github.com/dmrai-lab/dmipy-replay@${DMIPY_REPLAY_REF}"
+          # dmipy-fit's own bounds (dmipy-sim>=3,<4, dmipy-replay>=0.2,<0.3) name the releases above, so the package is
+          # installed without resolving them and its extras are listed here.
+          pip install --no-deps -e .
+          pip install "jax[cpu]>=0.6.2" "jaxopt>=0.8" "numba>=0.57" "nibabel>=5.0" "matplotlib>=3.5" "cvxpy>=1.3" \
+                      "pathos>=0.3" "huggingface_hub>=0.20" "requests>=2.28" "safetensors>=0.4" \
+                      "dipy>=1.7" "scipy>=1.10" "packaging>=23.0" pytest pytest-cov nbmake jupytext
           # the torch CSD solver is checked against the JAX one (dmipy-fit#37): the CPU wheel
           pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Run tests
         run: |
-          pytest dmipy_fit/ -q --tb=short -m "not slow"
+          pytest dmipy_fit/ tests/ -q --tb=short -m "not slow"
+
+      - name: Run the slow tests
+        if: matrix.python-version == '3.12' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
+        run: |
+          pytest dmipy_fit/ tests/ -q --tb=short -m slow
 
       - name: Execute lightweight tutorial notebooks (honesty check)
         if: matrix.python-version == '3.12'

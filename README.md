@@ -105,11 +105,11 @@ import dmipy_sim as ds
 from dmipy_fit.white_matter.mwf import t2_spectrum_mwf
 
 geom = ds.MyelinatedCylinder(inner_radius=2.5e-6, outer_radius=3.57e-6, orientation=(0, 0, 1),
-    D_intra=1.7e-9, D_myelin_radial=0.1e-9, D_myelin_tangential=0.5e-9, D_extra=1.7e-9,
-    T2_intra=0.080, T2_myelin=0.015, T2_extra=0.080)
+    compartments=ds.Compartments(intra=ds.Pool(D=1.7e-9, T2=0.080), myelin=ds.Pool(D=0.3e-9, T2=0.015),
+                                 extra=ds.Pool(D=1.7e-9, T2=0.080)))
 
 TE, n_echoes = 8e-3, 32
-wf = ds.cpmg(n_echoes=n_echoes, TE=TE, G_magnitude=0.0, bvecs=[[1, 0, 0]], n_t_per_echo=60)
+wf = ds.cpmg(n_echoes, TE, n_t_per_echo=60)                           # a T2 train: no gradient
 S = np.asarray(ds.simulate_cpmg(40000, None, wf, geom)).ravel()      # (n_echoes,), one walk
 echo_times = np.arange(1, n_echoes + 1) * TE
 mwf, T2_grid, spectrum = t2_spectrum_mwf(S / S[0], echo_times)

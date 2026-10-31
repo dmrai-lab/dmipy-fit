@@ -1,5 +1,5 @@
 # Reflecting-sphere PGSE Monte-Carlo reference for _S3SphereCallaghan.
-# Regenerate: python tools/precompute_s3_sphere_mc.py  (needs a CUDA GPU).
+# Regenerate: python tools/precompute_s3_sphere_mc.py  (needs a GPU JAX backend).
 geometry: reflecting Sphere, radius 5e-6 m (impermeable)
 diffusion_constant_m2_s: 1.7e-09
 tau_s: 0.04          # Delta - delta/3

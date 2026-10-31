@@ -9,8 +9,8 @@ suite can overlay the numerical ground truth on the analytical white-matter mode
 
 Each was measured off a cached canonical white-matter master walk (g-ratio 0.70,
 packing fraction 0.55, Gamma(α=2) axon-diameter distribution) and reduced to the
-curves below. Regenerate with `tools/precompute_mc_reference.py` (needs a CUDA GPU
-and the `dmipy-sim` package + its warm master-walk cache).
+curves below. The generating script is not part of this repository: the arrays are the
+published reductions of those walks, kept as bundled data.
 
 | file | what it holds | paired analytic API |
 |------|---------------|---------------------|
