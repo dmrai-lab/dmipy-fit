@@ -1,35 +1,27 @@
 # Changelog
 
-## Unreleased (3.0 line)
+## Unreleased
 
-Ports dmipy-fit to dmipy-sim 3 (`dmipy-sim>=3,<4`) and dmipy-replay 0.2 (`dmipy-replay>=0.2,<0.3`).
+### 3.0.0
 
-### Removed (one spelling for one thing)
-- `dmipy_fit.core.gradient_conversions`, `CONSTANTS['water_gyromagnetic_ratio']`: use
-  `dmipy_replay.math.gradient_conversions` and `dmipy_replay.constants.GAMMA`.
-- `dmipy_fit.audit.biophysical_constants`: use `dmipy_sim.substrate.biophysical_constants`.
-- `dmipy_fit.configure` and `dmipy_fit/_gpu_config.py`: use `dmipy_sim.configure(max_gpu_gb=...)`
-  (`DMIPY_GPU_MEM_GB` is read when dmipy-sim is imported, which `dmipy_fit.jax` does first).
-- fit's copies of dmipy-sim's mathematics: `watson_*`, `bingham_*`, `_sh_rotation_matrix_blocks`
-  (`dmipy_sim.math.sh_analytical`, `dmipy_sim.replay.so3.wigner_blocks`), `utils.cart2sphere`
-  (`dmipy_sim.math.sh_analytical.cart2sphere`), `white_matter.surface.mean_inv_diameter_4`
-  (`dmipy_sim.substrate.substrate`).
-- Unreferenced code: `custom_optimizers.intra_voxel_incoherent_motion`, `single_shell_three_tissue_csd`,
-  `charmed_c4`, `axcaliber_c4`, `active_ax_c4`, `nexi_signal`, `nc_chi_nll`.
+dmipy-fit fits multi-compartment diffusion-MRI models to data, voxel by voxel, and returns interpretable
+microstructure maps.
 
-- dipy is no longer a dependency (dmipy-fit#48, #43): no shipped module imports it. The real SH basis is
-  `utils.sh_basis.real_sh_tournier` everywhere (Tournier/MRtrix, orthonormal; the one copy is dmipy-sim's
-  `replay.so3.real_sh`), the 724-point sphere is the stored `data/spheres/symmetric724_hemisphere.npz` and its
-  antipodes (`sh_basis.symmetric_sphere`), `optional_package` is `sh_basis.optional_module`, and the peak finder is
-  `sh_basis.peak_directions`. dipy remains in the `oracle` extra (the tests check each piece against it) and for the
-  optional `gtab_dipy2dmipy` / `gtab_dmipy2dipy` / `dti_gradient_table` interchange, which refuses by name without it.
-
-### Changed
-- `FittedMultiCompartmentModel.fod_sh(sh_order)` returns coefficients in the package basis (it took dipy's
-  `basis_type`, default `descoteaux07` legacy); `peaks_directions` takes the `(n, 3)` vertices, not a dipy `Sphere`.
-- A replay compartment without a surface-relaxivity factor takes no surface term (`None`), not a silent 0.0;
-  a negative or non-finite relaxivity is refused. A pack's windows record without `n` is refused.
-- New `hub` extra (huggingface_hub, requests, safetensors) for the Hub-hosted replay families.
+- **Models.** Sticks, cylinders, spheres, planes, Gaussian compartments and tissue responses, with Watson and Bingham
+  dispersion and gamma diameter distributions. Gaussian-phase and exact matrix-method restricted-diffusion
+  compartments (`P4`/`C4`/`S4`, `P5`/`C5`/`S5`) take arbitrary gradient waveforms.
+- **Relaxation.** T2, T1 (PGSTE mixing time) and surface relaxivity are occupancy-gated factors that attach to any
+  compartment.
+- **Replay compartments.** `C6`, `S6`, `P6` and `MonteCarloReplay(pack)` fit through a stored Monte-Carlo walk
+  (replay packs from SubstrateCommons), exact to the walk's floor for any waveform; a signal look-up form makes them
+  fast.
+- **Fitting on the device.** `solver="jax"` fits a whole slice on the GPU; batched DTI, Tournier 2007 CSD and
+  multi-shell multi-tissue CSD run on JAX or PyTorch. dipy is not a runtime dependency (the `oracle` extra only).
+- **Acquisition.** `AcquisitionScheme` reads a `ScannerSequence` (dmipy-replay's acquisition object, built by the
+  `pgse`, `pgste`, `ogse`, `cpmg`, `ste` and `pte` builders) or a `Protocol` of them.
+- **Pairs with** dmipy-sim `>=3,<4` and dmipy-replay `>=0.2,<0.3`. Python >= 3.10, NumPy >= 2.0, SciPy >= 1.10;
+  extras `jax`, `torch`, `hub`.
+- **Licence** AGPL-3.0-only or commercial.
 
 ## 2.3.0
 
