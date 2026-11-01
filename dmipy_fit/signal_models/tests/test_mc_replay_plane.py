@@ -41,7 +41,7 @@ def test_p6_matches_engine_replay(dataset):
     j = int(np.argmin(np.abs(fam.diameters - 7e-6)))            # the 7 um grid pack
     pk = fam.packs[j]
     scheme = _scheme([1., 0, 0])
-    ref = np.abs(np.asarray(pk.replay(scheme.sequence, tissue=None, complex_signal=True)))
+    ref = np.abs(np.asarray(pk.replay(scheme.sequence, tissue=None, complex_signal=True, tol=None)))
     got = P6MonteCarloReplayPlane(dataset_dir=dataset)(scheme, diameter=7e-6, mu=MU_X)
     npt.assert_allclose(got, ref, atol=2e-6)                   # the rotation is the identity here
 
@@ -80,7 +80,7 @@ def test_p6_surface_uses_replay_knob(dataset):
     E0 = p6(scheme, diameter=7e-6, mu=MU_X)
     Er = p6(scheme, diameter=7e-6, mu=MU_X, surface_relaxivity=2e-5)
     assert np.all(Er <= E0 + 1e-9) and Er[0] < 1.0
-    ref = np.abs(np.asarray(pk.replay(scheme.sequence, tissue=Tissue(rho2=2e-5), complex_signal=True)))
+    ref = np.abs(np.asarray(pk.replay(scheme.sequence, tissue=Tissue(rho2=2e-5), complex_signal=True, tol=None)))
     npt.assert_allclose(Er, ref, atol=5e-6)
 
 

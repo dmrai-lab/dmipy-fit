@@ -27,9 +27,7 @@ from dmipy_fit.signal_models.cylinder_models import (
     _cylinder_signal_from_gamma_lm,
 )
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
-from dmipy_fit.core.constants import CONSTANTS
 
-GAMMA = CONSTANTS['water_gyromagnetic_ratio']
 
 # Physical parameters matching the fast-eigenmode-valid regime
 R = 2e-6          # 2 um cylinder radius
@@ -414,23 +412,18 @@ def test_watson_mc_validation():  # noqa: N802 (legacy test 5→6 renumbering)
     - mu0 = [0, 0, 1] (z-axis)
     - Rotating waveform: gradient rotates x→y over sigma=40ms
     - 5 measurements, gradient amplitudes [0.1, 0.2, 0.3, 0.4, 0.5] T/m
-    - N_walkers = 200_000, N_orientations = 100, N_radii = 1, seed = 42
+    - N_walkers = 20_000 (one cylinder walk), replayed along the Watson cone of axes, seed = 42
 
     Tolerance: |S_core - S_mc| < 0.03 for each measurement.
 
     Physics ground truth:
-    - dmipy-sim uses genuine Monte Carlo on Watson-distributed cylinders
+    - dmipy-sim walks the cylinder once and its replay is averaged over the Watson cone of axes
     - dmipy-core uses SH inner product with Gamma_lm fast-eigenmode path
     - Agreement within 0.03 validates both the SH dispersion formula and
       the Gamma_lm factorisation under realistic dispersion conditions.
     """
-    try:
-        from dmipy_sim.mesoscopic.orchestrator import run_voxel_simulation
-        from dmipy_sim.mesoscopic.composition import VoxelComposition, IntraAxonalPopulation
-        from dmipy_sim import ScannerSequence
-        import jax.numpy as jnp
-    except ImportError as e:
-        pytest.skip(f"dmipy-sim not available: {e}")
+    from dmipy_replay.acquisition.scanner_sequence import ScannerSequence
+    from ._replay_packs import build_public_pack
 
     # --- Acquisition parameters ---
     R_val = 2e-6       # 2 um
@@ -475,29 +468,21 @@ def test_watson_mc_validation():  # noqa: N802 (legacy test 5→6 renumbering)
         c4.signal_lm(scheme, diameter=2.0 * R_val, lambda_par=D_val), odf_lm
     )
 
-    # --- dmipy-sim MC ---
-    pop = IntraAxonalPopulation(
-        volume_fraction=1.0,
-        diffusivity=D_val,
-        orientation_distribution='watson',
-        watson_mu=mu0,
-        watson_kappa=kappa,
-        radius_distribution='gamma',
-        radius_mean=R_val,
-        radius_std=R_val * 0.01,  # very narrow → essentially fixed R
-    )
-    composition = VoxelComposition(
-        intra_axonal=[pop],
-        n_walkers_total=200_000,
-        n_orientations=100,
-        n_radii=1,
-        seed=42,
-    )
-    waveform = ScannerSequence(
-        G=jnp.array(G_np, dtype=jnp.float32),
-        dt=float(dt)
-    )
-    S_mc = run_voxel_simulation(composition, waveform)
+    # --- dmipy-sim MC: one cylinder walk, replayed over the Watson cone of axes ---
+    pack = build_public_pack("cylinder", 2.0 * R_val, D_val, n_walkers=20_000, seed=42, K=48, T_max=sigma)
+    waveform = ScannerSequence(G=G_np, dt=float(dt), voxel_scale="substrate")   # the pore's own response
+    # the Watson average by quadrature over the cone (Gauss-Legendre in cos(theta), equispaced in phi), one exact
+    # replay per axis (pose covariance): the response is not axisymmetric, the rotating gradient has a handedness
+    x, wx = np.polynomial.legendre.leggauss(24)
+    phis = np.linspace(0.0, 2.0 * np.pi, 24, endpoint=False)
+    S_mc, norm = np.zeros(n_meas), 0.0
+    for xi, wi in zip(x, wx):
+        for phi in phis:
+            axis = (np.sqrt(1.0 - xi ** 2) * np.cos(phi), np.sqrt(1.0 - xi ** 2) * np.sin(phi), xi)
+            weight = wi * np.exp(kappa * xi ** 2)
+            S_mc += weight * np.abs(pack.replay(waveform, tissue=None, orientation=axis, tol=None))
+            norm += weight
+    S_mc /= norm
 
     print(f"\n  {'Meas':>5} {'G (T/m)':>10} {'bval (ms/um^2)':>16} {'S_core':>10} {'S_mc':>10} {'|diff|':>8}")
     print(f"  {'-'*65}")

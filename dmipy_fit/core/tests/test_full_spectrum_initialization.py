@@ -39,7 +39,7 @@ _dirs = _rng.randn(_N, 3)
 _dirs /= np.linalg.norm(_dirs, axis=1, keepdims=True)
 _delta, _Delta, _TE = 0.008, 0.025, 0.060
 # gradient strengths that yield the target b-values (narrow-pulse relation)
-from dmipy_fit.core.gradient_conversions import g_from_b
+from dmipy_replay.math.gradient_conversions import g_from_b
 _g = g_from_b(_bvals, _delta, _Delta)
 
 FULL_PGSE_PARAMS = {'bvalues', 'gradient_directions', 'qvalues',

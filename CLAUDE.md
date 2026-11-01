@@ -36,7 +36,7 @@ Correctness is defined by the **test suite** — analytical results, dipy/MISST 
 
 ## Common tasks (copy-paste)
 
-**Build an acquisition scheme** (shared with dmipy-sim; b-values in SI, s/m²):
+**Build an acquisition scheme** (shared with dmipy-sim and dmipy-replay; b-values in SI, s/m²):
 ```python
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
 scheme = AcquisitionScheme.from_pgse(bvalues, gradient_directions, delta=0.01, Delta=0.03)
@@ -82,7 +82,7 @@ model = build_white_matter_model(include_csf=False)
 | `core/modeling_framework.py` | `MultiCompartmentModel` + `.fit(scheme, data, solver=…, mask=…)` |
 | `core/spherical_mean_framework.py`, `core/spherical_harmonics_framework.py` | spherical-mean & SH (CSD/FOD) frameworks |
 | `core/fitted_modeling_framework.py` | fit result: `.fitted_parameters`, multi-tissue fractions |
-| `core/acquisition_scheme.py` | `AcquisitionScheme(sequence)` -- the analytical shell / SH / rotational-harmonics layer over dmipy-sim's acquisition object (a `ScannerSequence`, or a `Protocol` of them for a multi-TE scheme, interleaved as acquired); every per-measurement quantity a model reads is the object's `Encoding`, `_G`/`_dt` its effective gradient and grid (`waveform_of(m)` when the sequences differ), `.waveform` the object itself (what `dmipy_sim.simulate` reads), `tau_exc`/`tau_180`/`tau_90` the schedule's pulse durations (read-only; a finite-RF sequence is built to a `timing=` budget). `from_*` (PGSE/PGSTE/CPMG/OGSE/waveform/b-tensor) are dmipy-sim's builders plus the shell parameters; `concatenate` is a Protocol, nothing resampled. `PGSEAcquisitionScheme` is the legacy waveform-free analytical scheme |
+| `core/acquisition_scheme.py` | `AcquisitionScheme(sequence)` -- the analytical shell / SH / rotational-harmonics layer over dmipy-replay's acquisition object (a `ScannerSequence`, or a `Protocol` of them for a multi-TE scheme, interleaved as acquired); every per-measurement quantity a model reads is the object's `Encoding`, `_G`/`_dt` its effective gradient and grid (`waveform_of(m)` when the sequences differ), `.waveform` the object itself (what `dmipy_sim.simulate` reads), `tau_exc`/`tau_180`/`tau_90` the schedule's pulse durations (read-only; a finite-RF sequence is built to a `timing=` budget). `from_*` (PGSE/PGSTE/CPMG/OGSE/waveform/b-tensor) are dmipy-sim's builders plus the shell parameters; `concatenate` is a Protocol, nothing resampled. `PGSEAcquisitionScheme` is the legacy waveform-free analytical scheme |
 | `signal_models/` | `cylinder_models` (stick/cylinder/axcaliber), `gaussian_models` (ball/zeppelin), `sphere_models`, `plane_models`, `capped_cylinder_models`, `tissue_response_models`, `exchange_models`. Each restricted geometry has a **Gaussian-phase** model (`C4`/`S4`, low-b closed form) and an **exact matrix-method** model (`C5CylinderMatrixMethod`/`S5SphereMatrixMethod`/`P5PlaneMatrixMethod`) that calls the shared eigenmode solver `dmipy_sim.math.matrix_method` (exact for a piecewise-constant waveform, Strang split otherwise) for the *actual waveform* and stays correct at high b / OGSE; `_matrix_adapter.py` holds the model-side glue (the `n_modes` → sim's `(angular, radial)` pair, the scalar-timing/dominant-direction waveform reconstruction). |
 | `signal_models/attenuation.py` | `OccupancyGatedModel` + `TransverseRelaxation`, `IntraPoreSurfaceRelaxivity`, `ExteriorSurfaceRelaxivity` |
 | `distributions/` | Watson / Bingham dispersion, Gamma diameter distribution |
@@ -90,7 +90,7 @@ model = build_white_matter_model(include_csf=False)
 | `custom_optimizers/reference_models.py` | named literature models (NODDI, NEXI, SANDI, VERDICT, IMPULSED, …) |
 | `jax/` | GPU signal models, `vmap_fit`, DTI/CSD/fractions — the `solver="jax"` backend |
 | `white_matter/` | `build_white_matter_model()`, `mwf.t2_spectrum_mwf()` |
-| `tissue_response/`, `audit/` (`biophysical_constants`), `utils/`, `_gpu_config.py` | responses (`three_tissue_response_dhollander16(scheme, data, mask=...)`, the brain mask required; the tensors on `backend='torch'` (`torch/dti_torch.py`) or `'jax'`), cited constants, helpers, GPU mem cap |
+| `tissue_response/`, `audit/` (citation graph, methods section), `utils/` | responses (`three_tissue_response_dhollander16(scheme, data, mask=...)`, the brain mask required; the tensors on `backend='torch'` (`torch/dti_torch.py`) or `'jax'`), cited constants, helpers, GPU mem cap |
 
 ## Where to look for X
 

@@ -8,7 +8,8 @@ import pytest
 os.environ.setdefault("JAX_ENABLE_X64", "1")
 jax = pytest.importorskip("jax")
 jax.config.update("jax_enable_x64", True)
-from dmipy_sim.replay import replay_coefficients, replay_signal_jax, replay_batch_jax   # noqa: E402
+from dmipy_replay.replay.replay import replay_coefficients
+from dmipy_sim.replay import replay_signal_jax, replay_batch_jax   # noqa: E402
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme   # noqa: E402
 from dmipy_fit.data.mc_replay import PackCoefficients             # noqa: E402
 from ._replay_packs import build_public_pack                      # noqa: E402

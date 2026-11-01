@@ -26,12 +26,12 @@ def _scheme():
 def test_the_model_is_the_packs_replay_at_its_pose(pack):
     sch = _scheme()
     m = MonteCarloReplay(pack)
-    npt.assert_allclose(m(sch, mu=[0.0, 0.0]), pack.replay(sch.sequence, tissue=None), atol=2e-6)          # axis along z
+    npt.assert_allclose(m(sch, mu=[0.0, 0.0]), pack.replay(sch.sequence, tissue=None, tol=None), atol=2e-6)          # axis along z
     npt.assert_allclose(m(sch, mu=[np.pi / 2, 0.0]),
-                        pack.replay(sch.sequence, tissue=None, orientation=(1.0, 0.0, 0.0)), atol=2e-6)   # along x
+                        pack.replay(sch.sequence, tissue=None, orientation=(1.0, 0.0, 0.0), tol=None), atol=2e-6)   # along x
     assert not np.allclose(m(sch, mu=[0.0, 0.0]), m(sch, mu=[np.pi / 2, 0.0]))                            # a pose matters
     npt.assert_allclose(m(sch, mu=[0.0, 0.0], surface_relaxivity=2e-5),
-                        pack.replay(sch.sequence, tissue=Tissue(rho2=2e-5)), atol=5e-6)                      # the C2 knob
+                        pack.replay(sch.sequence, tissue=Tissue(rho2=2e-5), tol=None), atol=5e-6)                      # the C2 knob
     assert m(sch, mu=[0.0, 0.0], surface_relaxivity=2e-5)[0] < 1.0
     with pytest.raises(ValueError, match="mu"):
         m(sch)
@@ -52,7 +52,7 @@ def test_a_declared_frame_is_honoured(pack):
     x = ReplayPack(arrays, meta)
     sch = _scheme()
     for mu, axis in (([0.0, 0.0], (0.0, 0.0, 1.0)), ([np.pi / 2, np.pi / 2], (0.0, 1.0, 0.0))):
-        npt.assert_allclose(MonteCarloReplay(x)(sch, mu=mu), x.replay(sch.sequence, tissue=None, orientation=axis), atol=2e-6)
+        npt.assert_allclose(MonteCarloReplay(x)(sch, mu=mu), x.replay(sch.sequence, tissue=None, orientation=axis, tol=None), atol=2e-6)
         npt.assert_allclose(MonteCarloReplay(x)(sch, mu=mu), MonteCarloReplay(pack)(sch, mu=mu), atol=3 / np.sqrt(pack.n_walkers))
     # the pose as a rotation is exact: stored -> lab is R F^T, so the x-stored pack at R = I is the z-stored one
-    npt.assert_allclose(x.replay(sch.sequence, tissue=None, orientation=np.eye(3)), pack.replay(sch.sequence, tissue=None), rtol=1e-5)
+    npt.assert_allclose(x.replay(sch.sequence, tissue=None, orientation=np.eye(3), tol=None), pack.replay(sch.sequence, tissue=None, tol=None), rtol=1e-5)

@@ -17,12 +17,11 @@ import jax
 import jax.numpy as jnp
 
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
-from dmipy_fit.core.constants import CONSTANTS
 from dmipy_fit.signal_models.sphere_models import S4SphereGaussianPhaseApproximation
 from dmipy_fit.jax.signal_models_jax import s4sphere_ogse_signal_jax
 
 
-GAMMA = CONSTANTS['water_gyromagnetic_ratio']
+from dmipy_replay.constants import GAMMA
 
 
 def _make_bvecs(n_m):

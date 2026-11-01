@@ -31,7 +31,7 @@ class MonteCarloReplay(ModelProperties, AnisotropicSignalModelProperties):
 
     Parameters
     ----------
-    pack : ReplayPack or path        the walked substrate (``dmipy_sim.replay.read_rpk``).
+    pack : ReplayPack or path        the walked substrate (``dmipy_replay.replay.read_rpk``).
     mu : array, shape (2)            angles [theta, phi] of the pack's axis on the sphere.
     """
     _citations = {
@@ -57,11 +57,11 @@ class MonteCarloReplay(ModelProperties, AnisotropicSignalModelProperties):
     _model_type = 'CompartmentModel'
 
     def __init__(self, pack, *, mu=None):
-        from dmipy_sim.replay import ReplayPack, read_rpk
+        from dmipy_replay.replay.replay import ReplayPack, read_rpk
         if isinstance(pack, (str, os.PathLike)):
             pack = read_rpk(os.fspath(pack))
         if not isinstance(pack, ReplayPack):
-            raise TypeError(f"pack must be a dmipy_sim.replay.ReplayPack or a path to one, got {type(pack).__name__}")
+            raise TypeError(f"pack must be a dmipy_replay.replay.ReplayPack or a path to one, got {type(pack).__name__}")
         self.pack = pack
         self.mu = mu
         self._coeffs = None
@@ -83,7 +83,8 @@ class MonteCarloReplay(ModelProperties, AnisotropicSignalModelProperties):
         mu = kwargs.get('mu', self.mu)
         if mu is None:
             raise ValueError("MonteCarloReplay needs mu, the lab direction of the pack's axis")
-        rho = float(kwargs.get('surface_relaxivity', 0.0) or 0.0)
+        from ..data.mc_replay import surface_relaxivity_of
+        rho = surface_relaxivity_of(kwargs)
         chi = kwargs.get('coherence_gate', None)                    # the gate on the acquisition's own grid
         G = getattr(acquisition_scheme, '_G', None)
         if G is None:

@@ -10,21 +10,33 @@ Packs are large, so they are NOT bundled in the wheel: point ``dataset_dir`` at 
 
 A pack is its walk as coefficients on ONE basis (RPK.md 9.5): per storage window and axis the two exact endpoints
 and ``K`` sine bands of the bridge between them, accumulated while the walk ran; there is no save grid. Forward
-evaluation is sim's compiled replay (:mod:`dmipy_sim.replay.replay`): the acquisition waveform is projected onto
-each window's bands ONCE (:func:`dmipy_sim.replay.compile_scheme`), after which each replay is a single matmul --
-the same kernel as ``dmipy_sim.replay.ReplayPack.replay`` (:func:`dmipy_sim.replay.replay_coefficients`), fast
+evaluation is sim's compiled replay (:mod:`dmipy_replay.replay.replay`): the acquisition waveform is projected onto
+each window's bands ONCE (:func:`dmipy_replay.replay.replay.compile_scheme`), after which each replay is a single matmul --
+the same kernel as ``dmipy_replay.replay.ReplayPack.replay`` (:func:`dmipy_replay.replay.replay.replay_coefficients`), fast
 enough to fit. Every pack enters through sim's reader, which refuses by name a pack written on a save grid
-(``dmipy_sim.replay.replay.REFUSED_KEYS``); nothing is converted."""
+(``dmipy_replay.replay.replay.REFUSED_KEYS``); nothing is converted."""
 import os
 import glob
 import numpy as np
 
-from ..core.constants import CONSTANTS
-from dmipy_sim.replay import compile_scheme, replay_coefficients, surface_logweight
-from dmipy_sim.replay.compression import band_projection
+from dmipy_replay.replay.replay import compile_scheme, replay_coefficients, surface_logweight
+from dmipy_replay.replay.compression import band_projection
 
 _FAMILY_CACHE = {}
-_GAMMA = CONSTANTS["water_gyromagnetic_ratio"]
+from dmipy_replay.constants import GAMMA
+
+
+def surface_relaxivity_of(kwargs):
+    """The surface relaxivity (m/s) a surface-relaxivity factor supplies to a replay model at call time, or None when
+    no such factor is attached: the replay is then the pack's diffusion-only one, with no surface term. A negative or
+    non-finite relaxivity is refused."""
+    rho = kwargs.get('surface_relaxivity')
+    if rho is None:
+        return None
+    rho = float(rho)
+    if not (np.isfinite(rho) and rho >= 0.0):
+        raise ValueError(f"surface_relaxivity must be a finite, non-negative rate (m/s), got {rho!r}")
+    return rho
 
 
 def _data_root(dataset_dir=None):
@@ -36,7 +48,7 @@ class PackCoefficients:
     """A pack's stored coefficients as the fit contracts them, float64 host arrays.
 
     ``C`` is ``(n_walkers, n_windows (K + 2), n_axes)``: the windows' position coefficients (two endpoints then
-    ``K`` bands each, :func:`dmipy_sim.replay.compression.read_position_coeffs`) concatenated along the coefficient
+    ``K`` bands each, :func:`dmipy_replay.replay.compression.read_position_coeffs`) concatenated along the coefficient
     axis in window order, so that one matmul against :meth:`compile` is the sum over the windows the spec's 4.3
     prescribes. ``w`` are the walkers' weights; ``windows`` the per-window arrays and the time each window starts
     at on the walk's clock, which the contact channel (C2) is read from; ``surface`` is that channel's metadata
@@ -48,7 +60,7 @@ class PackCoefficients:
     """
 
     def __init__(self, pack, axes=None):
-        from dmipy_sim.replay.compression import read_position_coeffs
+        from dmipy_replay.replay.compression import read_position_coeffs
         self.K = int(pack.K)
         self.T_window = float(pack.T_window)
         self.n_windows = int(pack.n_windows)
@@ -74,12 +86,12 @@ class PackCoefficients:
     def compile(self, G, dt_wf):
         """The waveform ``G`` ``(n_meas, n_wf, n_axes)`` on its own grid ``dt_wf`` compiled against the windows it
         reaches: ``(n_reached (K + 2) n_axes, n_meas)``, a one-window pack through
-        :func:`dmipy_sim.replay.compile_scheme`, a windowed pack each window's bands from its own start
-        (:func:`dmipy_sim.replay.compression.band_projection`), rows in the order :attr:`C` flattens to. Nothing is
+        :func:`dmipy_replay.replay.replay.compile_scheme`, a windowed pack each window's bands from its own start
+        (:func:`dmipy_replay.replay.compression.band_projection`), rows in the order :attr:`C` flattens to. Nothing is
         resampled: an edge anywhere carries exactly its b. A gradient beyond the walk is refused by name."""
         G = np.asarray(G, np.float64)
         if self.n_windows == 1:
-            return compile_scheme(G, float(dt_wf), self.K, _GAMMA, T=self.T_window)
+            return compile_scheme(G, float(dt_wf), self.K, GAMMA, T=self.T_window)
         e = np.arange(G.shape[1]) * float(dt_wf)
         beyond = e > self.n_windows * self.T_window * (1.0 + 1e-9)
         if beyond.any() and np.any(G[:, beyond, :] != 0.0):
@@ -89,7 +101,7 @@ class PackCoefficients:
         parts = []
         for i in range(self.windows_reached(G.shape[1], dt_wf)):
             Wp = band_projection(G, float(dt_wf), self.T_window, self.K, t0=i * self.T_window)
-            parts.append((_GAMMA * Wp).reshape(Wp.shape[0], -1).T)
+            parts.append((GAMMA * Wp).reshape(Wp.shape[0], -1).T)
         return np.concatenate(parts, axis=0)
 
     def coefficients_for(self, W):
@@ -99,7 +111,7 @@ class PackCoefficients:
     def surface_logweight(self, rho_over_D, gate, dt_gate):
         """The per-walker surface log-weight ``(rho / D) int chi dB`` of the contact channel, the gate ``chi`` on its
         own grid ``dt_gate`` (its last sample the readout), summed over the windows it reaches
-        (:func:`dmipy_sim.replay.surface_logweight`). Refused when the pack carries no C2 channel."""
+        (:func:`dmipy_replay.replay.replay.surface_logweight`). Refused when the pack carries no C2 channel."""
         if self.surface is None:
             raise ValueError("surface relaxivity was asked of a pack that carries no boundary-local-time channel (C2)")
         gate = np.asarray(gate, np.float64).reshape(-1)
@@ -108,7 +120,7 @@ class PackCoefficients:
                    for a, t0 in self.windows[:n])
 
     def signal(self, W, *, rho_over_D=0.0, gate=None, dt_gate=None, complex_signal=True):
-        """The replay of the compiled scheme ``W`` (:meth:`compile`): :func:`dmipy_sim.replay.replay_coefficients`,
+        """The replay of the compiled scheme ``W`` (:meth:`compile`): :func:`dmipy_replay.replay.replay.replay_coefficients`,
         with the surface log-weight when ``rho_over_D`` is set (``gate`` on its grid ``dt_gate``)."""
         slw = self.surface_logweight(rho_over_D, gate, dt_gate) if rho_over_D else None
         return replay_coefficients(self.coefficients_for(W), self.w, W, surface_logw=slw, complex_signal=complex_signal)
@@ -154,11 +166,11 @@ class PackGrid:
     @classmethod
     def of_meta(cls, meta, where):
         """From a pack's header, through sim's refusal of a header this revision does not read."""
-        from dmipy_sim.replay.replay import _refuse_predating
+        from dmipy_replay.replay.replay import _refuse_predating
         _refuse_predating(meta, where)
         wp = meta["walk_params"]
         win = wp.get("windows") or {"n": 1, "T": wp["T_max"]}
-        return cls(meta["compression"]["K"], win["T"], win.get("n") or 1, wp["block"]["h"])
+        return cls(meta["compression"]["K"], win["T"], win["n"], wp["block"]["h"])
 
     @classmethod
     def of_pack(cls, pack):
@@ -174,7 +186,7 @@ class PackGrid:
                 raise ValueError(f"{where}: this manifest row carries `{key}`, which this revision does not read; "
                                  "re-walk the pack with a conformant producer. A pack is never converted.")
         win = row.get("windows") or {"n": 1, "T": row["T_max"]}
-        return cls(row["K"], win["T"], win.get("n") or 1, row["block"]["h"])
+        return cls(row["K"], win["T"], win["n"], row["block"]["h"])
 
 
 def _hf_manifest(repo_id, revision=None):
@@ -213,7 +225,7 @@ def _hf_family(shape, diffusivity, repo_id, revision=None, eps=None, axes=None):
                 raise ValueError(f"{path}: no measured prefix tier for eps={eps:g}; "
                                  f"available {sorted(tiers)}")
         def load():
-            from dmipy_sim.replay import read_rpk
+            from dmipy_replay.replay.replay import read_rpk
             if tier is None and axes is None:
                 return read_rpk(hf_hub_download(repo_id=repo_id, filename=path, repo_type="dataset",
                                                 revision=revision))
@@ -337,14 +349,14 @@ def fetch_pack_prefix(repo_id, filename, n_rows, *, axes=None, revision=None):
 
     ``axes`` selects position components by index; omit for all three (needed for rotating / b-tensor
     encodings, which depend on the joint trajectory). The header is read first and refused as sim's reader
-    refuses it (``dmipy_sim.replay.replay.REFUSED_KEYS``) before any tensor bytes move.
+    refuses it (``dmipy_replay.replay.replay.REFUSED_KEYS``) before any tensor bytes move.
     """
     import numpy as np
     from huggingface_hub import hf_hub_url, get_token
     import requests
-    from dmipy_sim.replay import ReplayPack
-    from dmipy_sim.replay.replay import _refuse_predating
-    from dmipy_sim.replay.compression import POSITION_AXES
+    from dmipy_replay.replay.replay import ReplayPack
+    from dmipy_replay.replay.replay import _refuse_predating
+    from dmipy_replay.replay.compression import POSITION_AXES
 
     url = hf_hub_url(repo_id=repo_id, filename=filename, repo_type="dataset", revision=revision)
     tok = get_token()
@@ -432,7 +444,7 @@ def load_replay_family(shape, diffusivity, *, dataset_dir=None, repo_id=None, re
 
     root = dataset_dir or os.environ.get("SUBSTRATE_COMMONS_DATA")
     if root:
-        from dmipy_sim.replay import read_rpk
+        from dmipy_replay.replay.replay import read_rpk
         subdir = os.path.join(root, "canonical", f"D0-{diffusivity*1e9:.2f}e-9", shape)
         paths = sorted(glob.glob(os.path.join(subdir, "*.rpk")))
         if not paths:

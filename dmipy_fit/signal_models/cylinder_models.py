@@ -1,6 +1,7 @@
 from __future__ import division
 
 import numpy as np
+from dmipy_replay.constants import GAMMA
 from scipy import special
 from scipy.special import erf
 
@@ -643,7 +644,7 @@ class C4CylinderGaussianPhaseApproximation(
         self.mu = mu
         self.lambda_par = lambda_par
         self.diffusion_perpendicular = diffusion_perpendicular
-        self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
+        self.gyromagnetic_ratio = GAMMA
         self.diameter = diameter
 
     def perpendicular_attenuation(
@@ -970,7 +971,7 @@ def _compute_C_geom(R, D, roots):
     C_geom : float
         Scalar geometry factor in SI units (s/m^2 per (T/m)^2 = s^3/(kg^2*m)).
     """
-    gamma = CONSTANTS['water_gyromagnetic_ratio']
+    gamma = GAMMA
     mu_n = roots
     B_k = 2.0 * (R / mu_n) ** 2 / (mu_n ** 2 - 1.0)
     alpha_k = (mu_n / R) ** 2 * D
@@ -1110,7 +1111,7 @@ def _ogse_cosine_cylinder_signal(G, omega, sigma, D, R, roots):
     -------
     E_perp : float, perpendicular signal attenuation ∈ (0, 1]
     """
-    gamma = CONSTANTS['water_gyromagnetic_ratio']
+    gamma = GAMMA
     mu_n = roots                        # shape (n_roots,)
     lam_n = (mu_n / R) ** 2            # eigenvalues (m⁻²)
     B_n = 2.0 * (R / mu_n) ** 2 / (mu_n ** 2 - 1.0)  # cylinder coefficients
@@ -1162,7 +1163,7 @@ def _ogse_numerical_cylinder_signal(G_t, dt, D, R, roots):
     -------
     E_perp : float
     """
-    gamma = CONSTANTS['water_gyromagnetic_ratio']
+    gamma = GAMMA
     n_t = len(G_t)
     G_f64 = G_t.astype(np.float64)
 
@@ -1305,7 +1306,7 @@ def watson_odf_lm(mu_cart, kappa, l_max=4):
         SH coefficients (Tournier real SH half-shell ordering).
         odf_lm[0] = 1/(2*sqrt(pi)) for any normalized Watson ODF.
     """
-    from ..utils.sh_analytical import watson_sh as _watson_sh
+    from dmipy_sim.math.sh_analytical import watson_sh as _watson_sh
     mu_cart = np.asarray(mu_cart, dtype=np.float64)
     return _watson_sh(mu_cart, float(kappa), l_max=l_max)
 
@@ -1515,10 +1516,10 @@ class C6MonteCarloReplayCylinder(ModelProperties, AnisotropicSignalModelProperti
         self.dataset_dir = dataset_dir
 
     def __call__(self, acquisition_scheme, **kwargs):
-        from ..data.mc_replay import (load_replay_family, orient_to_z)
+        from ..data.mc_replay import (load_replay_family, orient_to_z, surface_relaxivity_of)
         diameter = kwargs.get('diameter', self.diameter)
         mu = kwargs.get('mu', self.mu)
-        rho = float(kwargs.get('surface_relaxivity', 0.0) or 0.0)   # m/s; from a surface factor
+        rho = surface_relaxivity_of(kwargs)   # m/s; from a surface factor
         chi = kwargs.get('coherence_gate', None)                    # the transverse gate on the acquisition's own grid
         G = getattr(acquisition_scheme, '_G', None)
         if G is None:

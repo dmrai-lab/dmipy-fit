@@ -11,7 +11,8 @@ import os
 import numpy as np
 from dmipy_sim.substrate.biophysical_constants import canonical_white_matter
 from dmipy_fit.white_matter import composition as comp
-from dmipy_sim import pack_myelinated_cylinders, PackedMyelinatedCylinders, simulate, pgse, set_b
+from dmipy_sim import pack_myelinated_cylinders, PackedMyelinatedCylinders, Compartments, Pool, simulate
+from dmipy_replay.sequences import pgse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 C = canonical_white_matter(3.0); D = C['D_intra']; G = C['g_ratio']; RHO = C['rho2']
@@ -26,8 +27,8 @@ def geom(surf, seed=0):
         g_ratios=np.full(N_CYL, G), target_packing=FA, seed=seed)
     cell = float(np.sqrt(np.pi * np.sum((inner / gr) ** 2) / FA))
     return PackedMyelinatedCylinders(inner_radii=inner, g_ratios=gr, centers=cen, cell_size=cell,
-        N_max=len(inner) + 1, D_intra=D, D_extra=D, D_myelin=0.0,
-        T2_intra=T2I, T2_extra=T2E, T2_myelin=T2M,
+        N_max=len(inner) + 1,
+        compartments=Compartments(intra=Pool(D=D, T2=T2I), extra=Pool(D=D, T2=T2E), myelin=Pool(D=0.0, T2=T2M)),
         rho_inner=(RHO if surf else 0.0), rho_outer=(RHO if surf else 0.0),
         kappa_inner=0.0, kappa_outer=0.0)
 
@@ -38,13 +39,13 @@ bvecs = np.array([[1, 0, 0], [0, 0, 1], [0, 0, 1], [1, 0, 0], [1, 0, 0]], np.flo
 delta, DELTA = 0.015, 0.025
 step = (0.4e-6 * G / 2) / 3.0                                     # resolve smallest inner fibre
 n_t = int(np.ceil((delta + DELTA) / (step ** 2 / (6 * D))))
-wf = set_b(pgse(delta=delta, DELTA=DELTA, G_magnitude=0.05, bvecs=bvecs, n_t=n_t), bvals.astype(np.float32))
+wf = pgse(bvecs, delta, DELTA, bvalues=bvals, n_t=n_t, slew_rate=np.inf)
 TE = float(wf.dt * wf.G.shape[1])
 S_mc_diff = np.asarray(simulate(N_WALK, waveform=wf, geometry=geom(False), seed=1, require_gpu=False)).ravel()
 print("diffusion MC:", np.round(S_mc_diff / S_mc_diff[0], 4), f"(n_t={n_t}, TE={TE*1e3:.1f}ms)")
 
 # surface OFF/ON at b=0 (gradient-free)
-wf0 = pgse(delta=TE / 2 - 1e-4, DELTA=TE / 2, G_magnitude=0.0, bvecs=np.array([[0, 0, 1.]], np.float32), n_t=3000)
+wf0 = pgse(np.array([[0, 0, 1.]], np.float32), TE / 2 - 1e-4, TE / 2, gradient_strengths=0.0, n_t=3000)
 S_mc_surf = {}
 for surf in (False, True):
     g = geom(surf); g.surface_substep_frac = (2.0 if surf else 0.0)

@@ -228,7 +228,6 @@ def test_dispersed_stick_in_spherical_mean_and_sh():
 # refuse (raise, not NaN) the ones they don't (S4/C4 GaussianPhase reject
 # multidimensional b-tensor encoding; the temporal zeppelin needs real PGSE
 # delta/Delta so is not defined on OGSE).
-pytest.importorskip("dmipy_sim")   # from_pgse/pgste/ogse/btensor build waveforms
 
 _Ncat = 6
 _bcat = np.repeat([0., 1e9, 2e9], _Ncat // 3)

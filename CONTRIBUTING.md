@@ -22,7 +22,7 @@ acceptable when the difference from float64 is below the physical noise floor.
 
 - Match the surrounding code — naming, comment density, and idiom.
 - There is one source of truth for every physical constant (tissue constants in the sim
-  `Substrate`; scanner limits in `dmipy_sim.sequences.scanner_constants`). Read them via their
+  `Substrate`; scanner limits in `dmipy_replay.acquisition.scanner_constants`). Read them via their
   accessors; do not hard-code.
 - Add a test that fails without your change. For a new physical effect, add a validation
   example against an exact analytical result, not only a regression test.

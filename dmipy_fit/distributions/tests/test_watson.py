@@ -1,5 +1,6 @@
 from numpy.testing import assert_almost_equal, assert_equal
 import numpy as np
+from dmipy_sim.math.sh_analytical import cart2sphere
 from dmipy_fit.distributions import distributions
 from dmipy_fit.utils import utils
 from dipy.data import get_sphere
@@ -35,7 +36,7 @@ def test_watson_orienting():
     np.random.shuffle(indices)
     mu_index = indices[0]
     mu_cart = n[mu_index]
-    mu_sphere = utils.cart2sphere(mu_cart)[1:]
+    mu_sphere = cart2sphere(mu_cart)[1:]
     odi = np.random.rand()
     watson = distributions.SD1Watson(mu=mu_sphere, odi=odi)
     Wn_vector = watson(n=n)

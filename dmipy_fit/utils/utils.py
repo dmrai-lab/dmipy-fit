@@ -16,7 +16,6 @@ __all__ = [
     'T1_tortuosity',
     'parameter_equality',
     'define_shell_indices',
-    'cart2sphere',
     'cart2mu',
     'R2mu_psi',
     'sphere2cart',
@@ -304,41 +303,22 @@ def define_shell_indices(bvals, b_value_ranges):
     return shell_indices, mean_shell_bvals
 
 
-def cart2sphere(cartesian_coordinates):
-    """"Function to estimate spherical coordinates from cartesian coordinates
-    according to wikipedia. Conforms with the dipy notation.
-
-    Parameters
-    ----------
-    cartesian_coordinates : array of size (3) or (N x 3),
-        array of cartesian coordinate vectors [x, y, z].
-
-    Returns
-    -------
-    spherical_coordinates : array of size (3) or (N x 3),
-        array of spherical coordinate vectors [r, theta, phi].
-        range of theta [0, pi]. range of phi [-pi, pi].
-    """
-    if np.ndim(cartesian_coordinates) == 1:
-        x, y, z = cartesian_coordinates
-        r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
-        if r > 0:
-            theta = np.arccos(z / r)
+def add_linked_parameters(parameter_links, inverted_parameter_map, parameters):
+    """``parameters`` (a dict of the optimised parameters by full name) with the linked parameters added, each by
+    evaluating its link function on the values of its arguments. ``parameter_links`` is a model's list of
+    ``(model, parameter name, link function, arguments)``; ``inverted_parameter_map`` takes ``(model, name)`` to the
+    full parameter name."""
+    if len(parameter_links) == 0:
+        return parameters
+    parameters = parameters.copy()
+    for parameter_model, parameter_name, parameter_function, arguments in parameter_links[::-1]:
+        parameter_name = inverted_parameter_map[(parameter_model, parameter_name)]
+        if len(arguments) > 0:
+            argument_values = [parameters.get(inverted_parameter_map[argument]) for argument in arguments]
+            parameters[parameter_name] = parameter_function(*argument_values)
         else:
-            theta = 0
-        phi = np.arctan2(y, x)
-        spherical_coordinates = np.r_[r, theta, phi]
-    elif np.ndim(cartesian_coordinates) == 2:
-        x, y, z = cartesian_coordinates.T
-        r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
-        theta = np.arccos(z / r)
-        theta = np.where(r > 0, theta, 0.)
-        phi = np.arctan2(y, x)
-        spherical_coordinates = np.c_[r, theta, phi]
-    else:
-        msg = "coordinates must be array of size 3 or N x 3."
-        raise ValueError(msg)
-    return spherical_coordinates
+            parameters[parameter_name] = parameter_function()
+    return parameters
 
 
 def cart2mu(xyz):

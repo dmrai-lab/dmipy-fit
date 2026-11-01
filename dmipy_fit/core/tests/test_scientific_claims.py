@@ -11,10 +11,10 @@ import numpy as np
 import pytest
 
 from dmipy_fit.core.constants import CONSTANTS
-from dmipy_fit.core.gradient_conversions import b_from_g, g_from_b
+from dmipy_replay.math.gradient_conversions import b_from_g, g_from_b
 from dmipy_fit.utils.spherical_convolution import sh_convolution
 
-GAMMA = CONSTANTS['water_gyromagnetic_ratio']   # rad/s/T
+from dmipy_replay.constants import GAMMA
 
 
 # ---------------------------------------------------------------------------
@@ -128,9 +128,8 @@ class TestCalcBBridge:
 
     @pytest.fixture(autouse=True)
     def _import_sim(self):
-        pytest.importorskip("dmipy_sim",
-                            reason="dmipy-sim not installed")
-        from dmipy_sim import pgse, calc_b
+        from dmipy_replay.acquisition.waveforms import calc_b
+        from dmipy_replay.sequences import pgse
         self.pgse = pgse
         self.calc_b = calc_b
 

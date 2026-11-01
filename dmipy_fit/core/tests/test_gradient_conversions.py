@@ -1,4 +1,4 @@
-"""Tests for dmipy/core/gradient_conversions.py
+"""Tests for the gradient conversions (dmipy_replay.math.gradient_conversions) that dmipy-fit consumes
 
 All conversions use SI units:
   b-value  : s/m²  (typical dMRI: ~1e9)
@@ -11,14 +11,13 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-from dmipy_fit.core.gradient_conversions import (
+from dmipy_replay.math.gradient_conversions import (
     b_from_g, b_from_q,
     g_from_b, g_from_q,
     q_from_b, q_from_g,
 )
-from dmipy_fit.core.constants import CONSTANTS
+from dmipy_replay.constants import GAMMA
 
-GAMMA = CONSTANTS['water_gyromagnetic_ratio']  # 267.513e6 rad/(s·T)
 
 # Typical HCP-style pulse parameters
 DELTA = 0.0106   # s

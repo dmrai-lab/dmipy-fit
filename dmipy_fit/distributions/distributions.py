@@ -7,6 +7,7 @@ import os as _os
 from os.path import join
 
 import numpy as np
+from dmipy_sim.math.sh_analytical import cart2sphere
 from scipy import stats
 from scipy import special
 from dipy.reconst.shm import real_sh_tournier as real_sym_sh_mrtrix
@@ -27,7 +28,7 @@ DATA_PATH = _os.path.join(_os.path.dirname(__file__), '..', 'data')
 SPHERE_CARTESIAN = np.loadtxt(
     join(GRADIENT_TABLES_PATH, 'sphere_with_cap.txt')
 )
-SPHERE_SPHERICAL = utils.cart2sphere(SPHERE_CARTESIAN)
+SPHERE_SPHERICAL = cart2sphere(SPHERE_CARTESIAN)
 
 inverse_sh_matrix_kernel = {
     sh_order: np.linalg.pinv(real_sym_sh_mrtrix(
@@ -147,7 +148,7 @@ class SD1Watson(ModelProperties):
         watson_sh : array,
             spherical harmonics of Watson probability density.
         """
-        from ..utils.sh_analytical import watson_sh as _watson_sh
+        from dmipy_sim.math.sh_analytical import watson_sh as _watson_sh
         odi = kwargs.get('odi', self.odi)
         mu = kwargs.get('mu', self.mu)
         if sh_order is None:
@@ -252,10 +253,11 @@ class SD2Bingham(ModelProperties):
 
         R = utils.rotation_matrix_100_to_theta_phi_psi(mu[0], mu[1], psi)
         mu_beta = R.dot(np.r_[0., 1., 0.])
-        from ..utils.sh_analytical import bingham_normalization
+        from dmipy_sim.math.sh_analytical import bingham_normalization
+        # exp(kappa (n.mu)^2 + beta (n.mu_beta)^2) = exp(kappa) exp(-kappa (n.e1)^2 - (kappa - beta) (n.mu_beta)^2)
+        # for the frame (e1, mu_beta, mu): the second factor's partition function is dmipy-sim's
         numerator = _probability_bingham(kappa, beta, mu_cart, mu_beta, n)
-        Bn = numerator / bingham_normalization(kappa, beta)
-        return Bn
+        return numerator / (np.exp(kappa) * bingham_normalization(kappa, kappa - beta))
 
     def spherical_harmonics_representation(self, sh_order=None, **kwargs):
         r""" The Bingham spherical distribution model in spherical harmonics.
@@ -272,7 +274,6 @@ class SD2Bingham(ModelProperties):
         bingham_sh : array,
             spherical harmonics of Bingham probability density.
         """
-        from ..utils.sh_analytical import bingham_sh as _bingham_sh
         odi = kwargs.get('odi', self.odi)
         beta_fraction = kwargs.get('beta_fraction', self.beta_fraction)
         mu = kwargs.get('mu', self.mu)
@@ -341,7 +342,7 @@ class SD3SphericalHarmonics(ModelProperties):
             Probability density at orientations n, given sh coeffs.
         """
         # calculate SHT matrix
-        _, theta, phi = utils.cart2sphere(n).T
+        _, theta, phi = cart2sphere(n).T
         SHT = real_sym_sh_mrtrix(self.sh_order, theta, phi, legacy=False)[0]
         # transform coefficients to sphere values
         sh_coeff = kwargs.get('sh_coeff', self.sh_coeff)
@@ -667,6 +668,22 @@ class DD2Poisson(ModelProperties):
             np.trapezoid(x=radii, y=radii_pdf_area)
         )
         return radii, radii_pdf_normalized
+
+
+def _bingham_sh(mu_cart, psi, kappa, beta, l_max=8):
+    """The real spherical-harmonic coefficients of ``exp(kappa (n.mu)^2 + beta (n.mu_beta)^2) / Z`` in dmipy-fit's
+    parameterisation: the principal axis ``mu_cart``, the secondary axis ``mu_beta`` (the second column of
+    ``rotation_matrix_100_to_theta_phi_psi(theta_mu, phi_mu, psi)``), ``kappa >= beta >= 0``.
+    dmipy-sim states a Bingham as a frame (e1, e2, pose axis) and the concentrations about e1 and e2; with the pose
+    axis ``mu``, e2 = ``mu_beta`` and e1 their cross product, the density is ``exp(-kappa (n.e1)^2 - (kappa - beta)
+    (n.e2)^2)`` up to a constant, so the concentrations are ``(kappa, kappa - beta)``."""
+    from dmipy_sim.math.sh_analytical import bingham_sh
+    mu_cart = np.asarray(mu_cart, dtype=np.float64)
+    _, theta_mu, phi_mu = cart2sphere(mu_cart)
+    mu_beta = utils.rotation_matrix_100_to_theta_phi_psi(float(theta_mu), float(phi_mu), float(psi)).dot(
+        np.r_[0., 1., 0.])
+    frame = np.stack([np.cross(mu_beta, mu_cart), mu_beta, mu_cart], axis=1)
+    return bingham_sh(frame, (float(kappa), float(kappa - beta)), l_max=l_max)
 
 
 def _probability_bingham(kappa, beta, mu, mu_beta, n):

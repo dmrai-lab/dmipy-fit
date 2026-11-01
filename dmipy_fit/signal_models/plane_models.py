@@ -1,5 +1,6 @@
 
 import numpy as np
+from dmipy_replay.constants import GAMMA
 from ..core.modeling_framework import ModelProperties
 from ..core.constants import CONSTANTS
 from ._matrix_adapter import (
@@ -366,7 +367,7 @@ class P4PlaneGaussianPhaseApproximation(ModelProperties):
                  number_of_modes=100):
         self.diameter = diameter
         self.diffusion_constant = diffusion_constant
-        self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
+        self.gyromagnetic_ratio = GAMMA
         self._k_odd = np.arange(1, 2 * int(number_of_modes), 2)   # odd modes 1,3,5,...
 
     def plane_attenuation(self, gradient_strength, delta, Delta, diameter):
@@ -452,11 +453,11 @@ class P6MonteCarloReplayPlane(ModelProperties):
         self.dataset_dir = dataset_dir
 
     def __call__(self, acquisition_scheme, **kwargs):
-        from ..data.mc_replay import (load_replay_family, orient_to_x)
+        from ..data.mc_replay import (load_replay_family, orient_to_x, surface_relaxivity_of)
         from ..utils import utils
         diameter = kwargs.get('diameter', self.diameter)
         mu = kwargs.get('mu', self.mu)
-        rho = float(kwargs.get('surface_relaxivity', 0.0) or 0.0)
+        rho = surface_relaxivity_of(kwargs)
         chi = kwargs.get('coherence_gate', None)                    # the transverse gate on the acquisition's own grid
         G = getattr(acquisition_scheme, '_G', None)
         if G is None:

@@ -69,11 +69,11 @@ class ModelSubstrate:
 
     @property
     def tissue(self):
-        """The :class:`~dmipy_sim.spec.Tissue` this form replays at: its one pool's ``T2`` / ``T1`` when declared,
+        """The :class:`~dmipy_replay.spec.tissue.Tissue` this form replays at: its one pool's ``T2`` / ``T1`` when declared,
         else ``None`` (what a phantom reads from every substrate to refuse an inconsistent readout)."""
         if self.T2_s is None and self.T1_s is None:
             return None
-        from dmipy_sim.spec import Tissue
+        from dmipy_replay.spec.tissue import Tissue
         return Tissue(T2=self.T2_s, T1=self.T1_s)
 
     def _scheme(self, seq):
@@ -86,7 +86,7 @@ class ModelSubstrate:
     def response(self, seq, pose=None):
         """The model's signal at ``pose`` on ``seq``: complex ``(n_meas,)``. The model's axis is the third column
         of the pose (identity: along z); an isotropic model ignores it. Relaxation weights apply when declared."""
-        from .utils.utils import cart2sphere
+        from dmipy_sim.math.sh_analytical import cart2sphere
         scheme = self._scheme(seq)
         kw = dict(self.params)
         if self.oriented:

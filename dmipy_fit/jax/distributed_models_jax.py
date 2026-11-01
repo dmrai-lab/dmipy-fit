@@ -444,19 +444,12 @@ def build_bingham_sh_jax_fn(model_obj, acquisition_scheme):
 
 
 # ---------------------------------------------------------------------------
-# Numerical integration fallback (unchanged from original implementation)
+# Numerical integration fallback
 # ---------------------------------------------------------------------------
 
-def build_watson_distributed_jax_fn(model_obj, inner_jax_fns_dict):
-    """Numerical-integration Watson forward function (fallback).
-
-    Used when inner models lack JAX RH functions (e.g. C2/C3/C4 cylinders).
-    """
-    hemi_verts_jax = _get_hemi_verts()
-
-    watson_mu_key  = model_obj._inverted_parameter_map[(model_obj.distribution, 'mu')]
-    watson_odi_key = model_obj._inverted_parameter_map[(model_obj.distribution, 'odi')]
-
+def _signal_along_direction(model_obj, inner_jax_fns_dict):
+    """``signal_at(scheme_jax, n_meas, params_dist, n_k)``: the inner models' volume-fraction-weighted signal with
+    the fibre axis along the unit vector ``n_k`` -- the integrand of the numerical orientation integral."""
     inner_models     = model_obj.models
     inner_jax_fns    = [inner_jax_fns_dict[m] for m in inner_models]
     inner_param_maps = []
@@ -468,8 +461,46 @@ def build_watson_distributed_jax_fn(model_obj, inner_jax_fns_dict):
                 pm.append((lp, full))
         inner_param_maps.append(pm)
 
-    has_pv    = len(inner_models) > 1
-    pv_names  = list(model_obj.partial_volume_names) if has_pv else []
+    has_pv   = len(inner_models) > 1
+    pv_names = list(model_obj.partial_volume_names) if has_pv else []
+
+    def signal_at(scheme_jax, N_meas, params_dist, n_k):
+        theta_k = jnp.arccos(jnp.clip(n_k[2], -1.0, 1.0))
+        phi_k   = jnp.arctan2(n_k[1], n_k[0])
+        mu_k    = jnp.stack([theta_k, phi_k])
+
+        E = jnp.zeros(N_meas)
+        remaining_vf = jnp.array(1.0)
+        for i, (inner_model, inner_fn, pm) in enumerate(
+                zip(inner_models, inner_jax_fns, inner_param_maps)):
+            inner_p = {'mu': mu_k}
+            for (local_name, dist_name) in pm:
+                inner_p[local_name] = params_dist[dist_name]
+
+            if has_pv and i < len(inner_models) - 1:
+                pv           = params_dist[pv_names[i]]
+                vf           = remaining_vf * pv
+                remaining_vf = remaining_vf - vf
+            else:
+                vf = remaining_vf
+
+            E = E + vf * inner_fn(scheme_jax, inner_p)
+        return E
+
+    return signal_at
+
+
+def build_watson_distributed_jax_fn(model_obj, inner_jax_fns_dict):
+    """Numerical-integration Watson forward function (fallback).
+
+    Used when inner models lack JAX RH functions (e.g. C2/C3/C4 cylinders).
+    """
+    hemi_verts_jax = _get_hemi_verts()
+
+    watson_mu_key  = model_obj._inverted_parameter_map[(model_obj.distribution, 'mu')]
+    watson_odi_key = model_obj._inverted_parameter_map[(model_obj.distribution, 'odi')]
+
+    signal_at = _signal_along_direction(model_obj, inner_jax_fns_dict)
 
     def watson_distributed_fn(scheme_jax, params_dist):
         params_dist = model_obj.add_linked_parameters_to_parameters(params_dist)
@@ -484,30 +515,7 @@ def build_watson_distributed_jax_fn(model_obj, inner_jax_fns_dict):
 
         N_meas = scheme_jax['bvalues'].shape[0]
 
-        def eval_direction(n_k):
-            theta_k = jnp.arccos(jnp.clip(n_k[2], -1.0, 1.0))
-            phi_k   = jnp.arctan2(n_k[1], n_k[0])
-            mu_k    = jnp.stack([theta_k, phi_k])
-
-            E = jnp.zeros(N_meas)
-            remaining_vf = jnp.array(1.0)
-            for i, (inner_model, inner_fn, pm) in enumerate(
-                    zip(inner_models, inner_jax_fns, inner_param_maps)):
-                inner_p = {'mu': mu_k}
-                for (local_name, dist_name) in pm:
-                    inner_p[local_name] = params_dist[dist_name]
-
-                if has_pv and i < len(inner_models) - 1:
-                    pv      = params_dist[pv_names[i]]
-                    vf      = remaining_vf * pv
-                    remaining_vf = remaining_vf - vf
-                else:
-                    vf = remaining_vf
-
-                E = E + vf * inner_fn(scheme_jax, inner_p)
-            return E
-
-        all_signals = jax.vmap(eval_direction)(hemi_verts_jax)
+        all_signals = jax.vmap(lambda n_k: signal_at(scheme_jax, N_meas, params_dist, n_k))(hemi_verts_jax)
         return jnp.dot(weights, all_signals)
 
     return watson_distributed_fn
@@ -526,19 +534,7 @@ def build_bingham_distributed_jax_fn(model_obj, inner_jax_fns_dict):
     bingham_beta_fraction_key = model_obj._inverted_parameter_map[
         (model_obj.distribution, 'beta_fraction')]
 
-    inner_models     = model_obj.models
-    inner_jax_fns    = [inner_jax_fns_dict[m] for m in inner_models]
-    inner_param_maps = []
-    for inner_model in inner_models:
-        pm = []
-        for lp in inner_model.parameter_ranges:
-            if inner_model.parameter_types[lp] != 'orientation':
-                full = model_obj._inverted_parameter_map[(inner_model, lp)]
-                pm.append((lp, full))
-        inner_param_maps.append(pm)
-
-    has_pv   = len(inner_models) > 1
-    pv_names = list(model_obj.partial_volume_names) if has_pv else []
+    signal_at = _signal_along_direction(model_obj, inner_jax_fns_dict)
 
     def bingham_distributed_fn(scheme_jax, params_dist):
         params_dist = model_obj.add_linked_parameters_to_parameters(params_dist)
@@ -562,30 +558,7 @@ def build_bingham_distributed_jax_fn(model_obj, inner_jax_fns_dict):
 
         N_meas = scheme_jax['bvalues'].shape[0]
 
-        def eval_direction(n_k):
-            theta_k = jnp.arccos(jnp.clip(n_k[2], -1.0, 1.0))
-            phi_k   = jnp.arctan2(n_k[1], n_k[0])
-            mu_k    = jnp.stack([theta_k, phi_k])
-
-            E = jnp.zeros(N_meas)
-            remaining_vf = jnp.array(1.0)
-            for i, (inner_model, inner_fn, pm) in enumerate(
-                    zip(inner_models, inner_jax_fns, inner_param_maps)):
-                inner_p = {'mu': mu_k}
-                for (local_name, dist_name) in pm:
-                    inner_p[local_name] = params_dist[dist_name]
-
-                if has_pv and i < len(inner_models) - 1:
-                    pv           = params_dist[pv_names[i]]
-                    vf           = remaining_vf * pv
-                    remaining_vf = remaining_vf - vf
-                else:
-                    vf = remaining_vf
-
-                E = E + vf * inner_fn(scheme_jax, inner_p)
-            return E
-
-        all_signals = jax.vmap(eval_direction)(hemi_verts_jax)
+        all_signals = jax.vmap(lambda n_k: signal_at(scheme_jax, N_meas, params_dist, n_k))(hemi_verts_jax)
         return jnp.dot(weights, all_signals)
 
     return bingham_distributed_fn

@@ -10,7 +10,6 @@ from dmipy_fit.signal_models.plane_models import (
     P4PlaneGaussianPhaseApproximation, P5PlaneMatrixMethod)
 
 D = CONSTANTS['water_in_axons_diffusion_constant']
-GAMMA = CONSTANTS['water_gyromagnetic_ratio']
 DELTA, DELTAB = 10e-3, 40e-3
 
 

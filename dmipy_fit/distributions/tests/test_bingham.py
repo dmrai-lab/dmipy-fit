@@ -1,6 +1,7 @@
 from numpy.testing import assert_almost_equal, assert_equal
 from dmipy_fit.utils import utils
 import numpy as np
+from dmipy_sim.math.sh_analytical import cart2sphere
 from dmipy_fit.utils.utils import (
     rotation_matrix_100_to_theta_phi, rotation_matrix_around_100,
     rotation_matrix_100_to_theta_phi_psi
@@ -14,7 +15,7 @@ def test_rotation_100_to_theta_phi():
     phi_ = (np.random.rand() - .5) * np.pi
     R100_to_theta_pi = rotation_matrix_100_to_theta_phi(theta_, phi_)
     xyz = np.dot(R100_to_theta_pi, np.r_[1, 0, 0])
-    _, theta_rec, phi_rec = utils.cart2sphere(xyz)
+    _, theta_rec, phi_rec = cart2sphere(xyz)
     assert_almost_equal(theta_, theta_rec)
     assert_almost_equal(phi_, phi_rec)
 
@@ -35,7 +36,7 @@ def test_psi_insensitivity_when_doing_psi_theta_phi_rotation():
     psi_ = np.random.rand() * np.pi
     R_ = rotation_matrix_100_to_theta_phi_psi(theta_, phi_, psi_)
     xyz = np.dot(R_, np.r_[1, 0, 0])
-    _, theta_rec, phi_rec = utils.cart2sphere(xyz)
+    _, theta_rec, phi_rec = cart2sphere(xyz)
     assert_almost_equal(theta_, theta_rec)
     assert_almost_equal(phi_, phi_rec)
 
@@ -64,7 +65,7 @@ def test_rotation_on_bingham_tensor():
     B_ = R_.dot(Bdiag_).dot(R_.T)
     eigvals, eigvecs = np.linalg.eigh(B_)
     main_evec = eigvecs[:, np.argmax(eigvals)]
-    _, theta_rec0, phi_rec0 = utils.cart2sphere(main_evec)
+    _, theta_rec0, phi_rec0 = cart2sphere(main_evec)
 
     # checking if the angles are antipodal to each other
     if abs(theta_ - theta_rec0) > 1e-5:

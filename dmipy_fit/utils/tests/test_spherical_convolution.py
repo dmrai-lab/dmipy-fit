@@ -7,6 +7,7 @@ from dipy.reconst.shm import sf_to_sh, sh_to_sf
 from dipy.reconst.shm import real_sh_tournier as real_sym_sh_mrtrix
 from dipy.data import get_sphere
 import numpy as np
+from dmipy_sim.math.sh_analytical import cart2sphere
 from dmipy_fit.core.acquisition_scheme import (
     acquisition_scheme_from_bvalues)
 
@@ -24,7 +25,7 @@ def test_spherical_convolution_watson_sh(sh_order=4):
     np.random.shuffle(indices_sphere_orientations)
     mu_index = indices_sphere_orientations[0]
     mu_watson = sphere.vertices[mu_index]
-    mu_watson_sphere = utils.cart2sphere(mu_watson)[1:]
+    mu_watson_sphere = cart2sphere(mu_watson)[1:]
 
     watson = distributions.SD1Watson(mu=mu_watson_sphere, odi=.3)
     f_sf = watson(n=sphere.vertices)

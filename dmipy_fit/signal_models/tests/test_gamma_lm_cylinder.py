@@ -35,9 +35,8 @@ from dmipy_fit.signal_models.cylinder_models import (
     _ogse_numerical_cylinder_signal,
 )
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
-from dmipy_fit.core.constants import CONSTANTS
 
-GAMMA = CONSTANTS['water_gyromagnetic_ratio']
+from dmipy_replay.constants import GAMMA
 
 # Physical parameters
 R = 5e-6        # 5 um cylinder radius
@@ -267,18 +266,14 @@ def test_gamma_lm_vs_monte_carlo():
     - Cylinder R=2um along z axis, D=1.7e-9 m^2/s
     - Gradient rotates x->y over sigma=40ms, G0=0.3 T/m
     - Cylinder axis along z: gradient stays in xy-plane (purely perpendicular)
-    - N_walkers=200000, seed=42
+    - N_walkers=20000 (one cylinder walk, replayed), seed=42
 
     Also reports R=5um results (expected |E_gamma - E_mc| ~0.03) for reference.
     """
-    try:
-        from dmipy_sim import simulate, Cylinder
-        from dmipy_sim import ScannerSequence
-        import jax.numpy as jnp
-    except ImportError as e:
-        pytest.skip(f"dmipy-sim not available: {e}")
+    from dmipy_replay.acquisition.scanner_sequence import ScannerSequence
+    from ._replay_packs import build_public_pack
 
-    N_WALKERS = 200000
+    N_WALKERS = 20000
     SEED = 42
     G0_2um = 0.3  # T/m — larger gradient to get meaningful attenuation at R=2um
 
@@ -293,13 +288,9 @@ def test_gamma_lm_vs_monte_carlo():
         G_vec = np.stack([Gx, Gy, np.zeros(n_t)], axis=-1).astype(np.float32)
         G_arr = G_vec[None, :, :]
 
-        wf = ScannerSequence(G=jnp.array(G_arr), dt=float(dt))
-        E_mc_raw = simulate(
-            n_walkers=N_WALKERS, diffusivity=D, waveform=wf,
-            geometry=Cylinder(radius=R_use, orientation=[0.0, 0.0, 1.0]),
-            seed=SEED,
-        )
-        E_mc = float(E_mc_raw[0])
+        wf = ScannerSequence(G=G_arr.astype(np.float32), dt=float(dt), voxel_scale="substrate")
+        pack = build_public_pack("cylinder", 2.0 * R_use, D, n_walkers=N_WALKERS, seed=SEED, K=48, T_max=sigma)
+        E_mc = float(np.abs(pack.replay(wf, tissue=None, orientation=(0.0, 0.0, 1.0), tol=None))[0])
 
         G_perp_t = np.sqrt(Gx**2 + Gy**2)
         E_iir = float(_ogse_numerical_cylinder_signal(

@@ -10,7 +10,7 @@ converges monotonically onto the analytic series.
 
 This script bakes that seed-averaged MC curve into a small offline fixture so the
 test suite can assert the convergence without re-running any random walk.  It
-needs a CUDA GPU and the ``dmipy-sim`` package.
+needs a GPU JAX backend and the ``dmipy-sim`` package.
 
     python tools/precompute_s3_sphere_mc.py
 
@@ -26,8 +26,8 @@ import numpy as np
 os.environ.setdefault('XLA_PYTHON_CLIENT_PREALLOCATE', 'false')
 
 from dmipy_sim import simulate, Sphere
-from dmipy_sim.waveforms import pgse
-from dmipy_sim.constants import GAMMA
+from dmipy_replay.sequences import pgse
+from dmipy_replay.constants import GAMMA
 from dmipy_fit.signal_models.sphere_models import S3SphereCallaghanApproximation
 
 # --- physics (kept in sync with TestS3SphereCallaghan) -----------------------
@@ -55,8 +55,7 @@ def main():
     for i, delta in enumerate(DELTAS):
         DELTA = TAU + delta / 3.0                  # so tau = Delta - delta/3
         G = 2 * np.pi * Q_TARGETS / (GAMMA * delta)   # square pulses -> exact delta
-        wf = pgse(delta=delta, DELTA=DELTA, G_magnitude=G, bvecs=bvecs,
-                  n_t=N_T, slew_rate=np.inf)
+        wf = pgse(bvecs, delta, DELTA, gradient_strengths=G, n_t=N_T, slew_rate=np.inf)
         runs = [simulate(N_WALKERS, D, wf, Sphere(R), seed=s, require_gpu=True)
                 for s in SEEDS]
         E_mc[i] = np.mean(runs, axis=0)
@@ -70,7 +69,7 @@ def main():
     with open(os.path.join(OUT, 's3_sphere_callaghan_mc.yaml'), 'w') as f:
         f.write(
             "# Reflecting-sphere PGSE Monte-Carlo reference for _S3SphereCallaghan.\n"
-            "# Regenerate: python tools/precompute_s3_sphere_mc.py  (needs a CUDA GPU).\n"
+            "# Regenerate: python tools/precompute_s3_sphere_mc.py  (needs a GPU JAX backend).\n"
             "geometry: reflecting Sphere, radius 5e-6 m (impermeable)\n"
             f"diffusion_constant_m2_s: {D}\n"
             f"tau_s: {TAU}          # Delta - delta/3\n"

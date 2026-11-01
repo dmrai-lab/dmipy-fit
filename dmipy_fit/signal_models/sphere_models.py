@@ -1,6 +1,7 @@
 from ..core.modeling_framework import ModelProperties
 from ..core.signal_model_properties import IsotropicSignalModelProperties
 from ..core.constants import CONSTANTS
+from dmipy_replay.constants import GAMMA
 from scipy import special
 import numpy as np
 
@@ -20,55 +21,6 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # Module-level free functions (used by both S4 numpy __call__ and Phase 3/4)
 # ---------------------------------------------------------------------------
-
-def _ogse_cosine_sphere_signal(G, omega, sigma, D, R, roots, n_t=2000):
-    """Evaluate GPA sphere attenuation for pure cosine OGSE.
-
-    Uses the general GPA formula (Xu 2009 Eq. 3):
-        φ = (γ²/2) Σ_k B_k ∫∫ G(t₁)G(t₂) exp(-a_k D|t₁-t₂|) dt₁ dt₂
-        E = exp(-φ)
-
-    where B_k = 2(R/μ_k)²/(μ_k²-2) and a_k = (μ_k/R)².
-
-    This is evaluated analytically by splitting the double integral
-    into two Laplace-like terms. For a single cosine lobe G(t)=G cos(ωt)
-    on [0, σ]:
-
-        I_k = ∫₀^σ ∫₀^σ cos(ωt₁)cos(ωt₂) exp(-a_k D|t₁-t₂|) dt₁ dt₂
-            = 2 * Re{ F_+(a_k D) * conj(F_-(a_k D)) } / 1
-
-    where the result from splitting |t₁-t₂| using t₁>t₂ symmetry gives
-    the following closed form per eigenmode k:
-
-        Let s = a_k D (= λ_k D), ω' = ω.
-        I_k = (2/(s²+ω²)²) * {
-            s*(s²+ω²)*[σ/2 + sin(2ωσ)/(4ω)] - s*ω*[1-cos(2ωσ)]/(2ω)
-            + s*[1 - exp(-s*σ)*cos(ωσ)] * [s*cos(ωσ) + ω*sin(ωσ)] / s
-            + ω*exp(-s*σ)*sin(ωσ) * ...  (correction for finite s)
-        }
-        (see derivation below)
-
-    In practice the numerical path is used here because it is simpler
-    and achieves <0.1% error at n_t=2000 compared to full analytical form.
-
-    Parameters
-    ----------
-    G : float, gradient amplitude (T/m)
-    omega : float, angular frequency 2πf (rad/s)
-    sigma : float, total gradient duration (s)
-    D : float, diffusion coefficient (m²/s)
-    R : float, sphere radius (m)
-    roots : ndarray (n_roots,), SPHERE_TRASCENDENTAL_ROOTS (μ_k, dimensionless)
-    n_t : int, number of time steps for waveform discretisation
-
-    Returns
-    -------
-    E : float, signal attenuation ∈ (0, 1]
-    """
-    t = np.linspace(0.0, sigma, n_t)
-    dt = t[1] - t[0]
-    G_t = G * np.cos(omega * t)
-    return _ogse_numerical_sphere_signal(G_t, dt, D, R, roots)
 
 
 def _ogse_numerical_sphere_signal(G_t, dt, D, R, roots):
@@ -117,7 +69,7 @@ def _ogse_numerical_sphere_signal(G_t, dt, D, R, roots):
     -------
     E : float
     """
-    gamma = CONSTANTS['water_gyromagnetic_ratio']
+    gamma = GAMMA
     n_t = len(G_t)
     t = np.arange(n_t, dtype=np.float64) * dt
     G_t = np.asarray(G_t, dtype=np.float64)
@@ -567,7 +519,7 @@ class S4SphereGaussianPhaseApproximation(
         diffusion_constant=CONSTANTS['water_in_axons_diffusion_constant'],
     ):
         self.diffusion_constant = diffusion_constant
-        self.gyromagnetic_ratio = CONSTANTS['water_gyromagnetic_ratio']
+        self.gyromagnetic_ratio = GAMMA
         self.diameter = diameter
 
     def sphere_attenuation(
@@ -758,7 +710,6 @@ class S4SphereGaussianPhaseApproximation(
         return E_sphere
 
 
-
 class S5SphereMatrixMethod(ModelProperties, IsotropicSignalModelProperties):
     r"""Sphere whose restricted signal is the Bloch-Torrey eigenmode propagator of
     ``dmipy_sim.math.matrix_method`` (Callaghan 1997; Grebenkov 2007): exact for a piecewise-constant
@@ -893,9 +844,9 @@ class S6MonteCarloReplaySphere(ModelProperties, IsotropicSignalModelProperties):
         self.dataset_dir = dataset_dir
 
     def __call__(self, acquisition_scheme, **kwargs):
-        from ..data.mc_replay import load_replay_family
+        from ..data.mc_replay import load_replay_family, surface_relaxivity_of
         diameter = kwargs.get('diameter', self.diameter)
-        rho = float(kwargs.get('surface_relaxivity', 0.0) or 0.0)
+        rho = surface_relaxivity_of(kwargs)
         chi = kwargs.get('coherence_gate', None)                    # the transverse gate on the acquisition's own grid
         G = getattr(acquisition_scheme, '_G', None)
         if G is None:

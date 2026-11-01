@@ -46,10 +46,11 @@ is run on a GPU and cached here — regenerate with `python generate_mc_referenc
 
 ```python
 # (run in generate_mc_reference.py; shown for transparency)
-from dmipy_sim import pack_myelinated_cylinders, PackedMyelinatedCylinders, simulate, pgse, set_b
+from dmipy_sim import pack_myelinated_cylinders, PackedMyelinatedCylinders, Compartments, Pool, simulate
 inner, gr, cen = pack_myelinated_cylinders(inner_radii=g*d_out/2, g_ratios=..., target_packing=f_axon)
 geom = PackedMyelinatedCylinders(inner_radii=inner, g_ratios=gr, centers=cen, cell_size=cell,
-                                 D_intra=D, D_extra=D, T2_intra=..., rho_inner=rho, rho_outer=rho, ...)
+                                 compartments=Compartments(intra=Pool(D=D, ...), extra=Pool(D=D, ...), myelin=Pool(D=0.0, ...)),
+                                 rho_inner=rho, rho_outer=rho, ...)
 S_mc = simulate(N_walkers, waveform=wf, geometry=geom, seed=1)   # step-resolved
 ```
 

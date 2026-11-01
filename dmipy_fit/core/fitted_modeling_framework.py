@@ -16,7 +16,60 @@ __all__ = [
 ]
 
 
-class FittedMultiCompartmentModel:
+class _FittedModel:
+    """What the fitted-model classes share: the multi-tissue volume fractions and the mean squared error of a
+    model that predicts the signal itself."""
+
+    def _return_fitted_multi_tissue_fractions(self, normalized=False):
+        """
+        Returns the multi-tissue estimated volume fractions.
+
+        Parameters
+        ----------
+        normalized: boolean,
+            whether or not to normalize returned multi-tissue volume fractions.
+            NOTE: This does not mean the unity constraint was enforced during
+            the estimation of the fractions - it is just a normalization after
+            the fact.
+
+        Returns
+        -------
+        mt_partial_volumes: dict,
+            contains the multi-tissue volume fractions by name.
+            NOTE: if the MC-model only consisted of 1 model, then the name will
+            be 'partial_volume_0', but will not have a counterpart in
+            self.fitted_parameters.
+        """
+        mt_fract_vec = self.fitted_multi_tissue_fractions_vector.copy()
+        if normalized:
+            mt_fract_sum = np.sum(mt_fract_vec, axis=-1)
+            mt_fract_mask = mt_fract_sum > 0
+            mt_fract_vec[mt_fract_mask] = (
+                mt_fract_vec[mt_fract_mask] /
+                mt_fract_sum[mt_fract_mask][..., None])
+        if self.model.N_models > 1:
+            fract_names = self.model.partial_volume_names
+        else:
+            fract_names = ['partial_volume_0']
+        mt_partial_volumes = {}
+        for i, partial_volume_name in enumerate(fract_names):
+            mt_partial_volumes[partial_volume_name] = mt_fract_vec[..., i]
+        return mt_partial_volumes
+
+    def mean_squared_error(self, data):
+        "Calculates the mean squared error of the model fit."
+        if self.model.scheme.TE is None:
+            data_ = data / self.S0[..., None]
+        else:
+            data_ = data / self.S0
+
+        y_hat = self.predict(S0=1.)
+        mse = np.mean((data_ - y_hat) ** 2, axis=-1)
+        mse[~self.mask] = 0
+        return mse
+
+
+class FittedMultiCompartmentModel(_FittedModel):
     """
     The FittedMultiCompartmentModel instance contains information about the
     original MultiCompartmentModel, the estimated S0 values, the fitting mask
@@ -62,42 +115,6 @@ class FittedMultiCompartmentModel:
     def fitted_multi_tissue_fractions_normalized(self):
         "Returns the normalized fitted multi tissue fractions as a dictionary"
         return self._return_fitted_multi_tissue_fractions(normalized=True)
-
-    def _return_fitted_multi_tissue_fractions(self, normalized=False):
-        """
-        Returns the multi-tissue estimated volume fractions.
-
-        Parameters
-        ----------
-        normalized: boolean,
-            whether or not to normalize returned multi-tissue volume fractions.
-            NOTE: This does not mean the unity constraint was enforced during
-            the estimation of the fractions - it is just a normalization after
-            the fact.
-
-        Returns
-        -------
-        mt_partial_volumes: dict,
-            contains the multi-tissue volume fractions by name.
-            NOTE: if the MC-model only consisted of 1 model, then the name will
-            be 'partial_volume_0', but will not have a counterpart in
-            self.fitted_parameters.
-        """
-        mt_fract_vec = self.fitted_multi_tissue_fractions_vector.copy()
-        if normalized:
-            mt_fract_sum = np.sum(mt_fract_vec, axis=-1)
-            mt_fract_mask = mt_fract_sum > 0
-            mt_fract_vec[mt_fract_mask] = (
-                mt_fract_vec[mt_fract_mask] /
-                mt_fract_sum[mt_fract_mask][..., None])
-        if self.model.N_models > 1:
-            fract_names = self.model.partial_volume_names
-        else:
-            fract_names = ['partial_volume_0']
-        mt_partial_volumes = {}
-        for i, partial_volume_name in enumerate(fract_names):
-            mt_partial_volumes[partial_volume_name] = mt_fract_vec[..., i]
-        return mt_partial_volumes
 
     @property
     def fitted_and_linked_parameters(self):
@@ -260,20 +277,7 @@ class FittedMultiCompartmentModel:
         R2[~self.mask] = 0
         return R2
 
-    def mean_squared_error(self, data):
-        "Calculates the mean squared error of the model fit."
-        if self.model.scheme.TE is None:
-            data_ = data / self.S0[..., None]
-        else:
-            data_ = data / self.S0
-
-        y_hat = self.predict(S0=1.)
-        mse = np.mean((data_ - y_hat) ** 2, axis=-1)
-        mse[~self.mask] = 0
-        return mse
-
-
-class FittedMultiCompartmentSphericalMeanModel:
+class FittedMultiCompartmentSphericalMeanModel(_FittedModel):
     """
     The FittedMultiCompartmentModel instance contains information about the
     original MultiCompartmentModel, the estimated S0 values, the fitting mask
@@ -327,42 +331,6 @@ class FittedMultiCompartmentSphericalMeanModel:
     def fitted_multi_tissue_fractions_normalized(self):
         "Returns the normalized fitted multi tissue fractions as a dictionary"
         return self._return_fitted_multi_tissue_fractions(normalized=True)
-
-    def _return_fitted_multi_tissue_fractions(self, normalized=False):
-        """
-        Returns the multi-tissue estimated volume fractions.
-
-        Parameters
-        ----------
-        normalized: boolean,
-            whether or not to normalize returned multi-tissue volume fractions.
-            NOTE: This does not mean the unity constraint was enforced during
-            the estimation of the fractions - it is just a normalization after
-            the fact.
-
-        Returns
-        -------
-        mt_partial_volumes: dict,
-            contains the multi-tissue volume fractions by name.
-            NOTE: if the MC-model only consisted of 1 model, then the name will
-            be 'partial_volume_0', but will not have a counterpart in
-            self.fitted_parameters.
-        """
-        mt_fract_vec = self.fitted_multi_tissue_fractions_vector.copy()
-        if normalized:
-            mt_fract_sum = np.sum(mt_fract_vec, axis=-1)
-            mt_fract_mask = mt_fract_sum > 0
-            mt_fract_vec[mt_fract_mask] = (
-                mt_fract_vec[mt_fract_mask] /
-                mt_fract_sum[mt_fract_mask][..., None])
-        if self.model.N_models > 1:
-            fract_names = self.model.partial_volume_names
-        else:
-            fract_names = ['partial_volume_0']
-        mt_partial_volumes = {}
-        for i, partial_volume_name in enumerate(fract_names):
-            mt_partial_volumes[partial_volume_name] = mt_fract_vec[..., i]
-        return mt_partial_volumes
 
     def predict(self, acquisition_scheme=None, S0=None, mask=None):
         """
@@ -634,7 +602,7 @@ class FittedMultiCompartmentSphericalMeanModel:
         return sh_model
 
 
-class FittedMultiCompartmentSphericalHarmonicsModel:
+class FittedMultiCompartmentSphericalHarmonicsModel(_FittedModel):
     """
     The FittedMultiCompartmentModel instance contains information about the
     original MultiCompartmentModel, the estimated S0 values, the fitting mask
@@ -1029,15 +997,3 @@ class FittedMultiCompartmentSphericalHarmonicsModel:
         R2 = 1 - SSres / SStot
         R2[~self.mask] = 0
         return R2
-
-    def mean_squared_error(self, data):
-        "Calculates the mean squared error of the model fit."
-        if self.model.scheme.TE is None:
-            data_ = data / self.S0[..., None]
-        else:
-            data_ = data / self.S0
-
-        y_hat = self.predict(S0=1.)
-        mse = np.mean((data_ - y_hat) ** 2, axis=-1)
-        mse[~self.mask] = 0
-        return mse

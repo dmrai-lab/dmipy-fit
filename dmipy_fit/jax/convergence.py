@@ -166,11 +166,12 @@ class ThreeTissueSampler(SDMStratifiedSampler):
         if len(non_wm_sdm) > 10:
             try:
                 opt = optimal_threshold(non_wm_sdm)
-                mask_gm  = (~mask_wm) & (sdm <= opt)
-            except Exception:
-                mask_gm = ~mask_wm   # fallback: all non-WM → GM
+            except Exception as err:
+                raise ValueError("no threshold separates the grey-matter and CSF voxels of the non-white-matter "
+                                 f"signal-decay-mean values ({err})") from err
+            mask_gm  = (~mask_wm) & (sdm <= opt)
         else:
-            mask_gm = ~mask_wm
+            mask_gm = ~mask_wm      # too few non-WM voxels to threshold: all of them are GM
 
         chosen, chosen_labels = [], []
         for label, mask, frac in [

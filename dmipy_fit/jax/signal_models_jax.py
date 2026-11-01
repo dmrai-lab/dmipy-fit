@@ -8,7 +8,7 @@ coordinates (3-vector); callers must run unitsphere2cart_1d_jax first.
 import jax
 import jax.numpy as jnp
 
-from dmipy_sim.constants import GAMMA
+from dmipy_replay.constants import GAMMA
 
 
 # ---------------------------------------------------------------------------

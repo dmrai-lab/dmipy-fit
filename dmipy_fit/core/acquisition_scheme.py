@@ -1,7 +1,8 @@
 import numpy as np
-from .gradient_conversions import (
+from dmipy_sim.math.sh_analytical import cart2sphere
+from dmipy_replay.sequences._helpers import unify_length_reference_delta_Delta
+from dmipy_replay.math.gradient_conversions import (
     g_from_b, q_from_b, b_from_q, g_from_q, b_from_g, q_from_g)
-from .constants import CONSTANTS
 from ..utils import utils
 from ..utils.spherical_convolution import real_sym_rh_basis
 from dipy.reconst.shm import real_sh_tournier as real_sym_sh_mrtrix
@@ -74,7 +75,7 @@ class PGSEAcquisitionScheme:
         self.tau = None
         if self.delta is not None and self.Delta is not None:
             self.tau = Delta - delta / 3.
-        # The legacy analytical scheme (no waveform): a PGSE family by construction.
+        # The analytical scheme (no waveform): a PGSE family by construction.
         self.sequence_type = 'pgse'
         self._te_auto = False
         self._compute_shells()
@@ -204,7 +205,7 @@ class PGSEAcquisitionScheme:
         for shell_index in self.unique_dwi_indices:
             shell_mask = self.shell_indices == shell_index
             bvecs_shell = self.gradient_directions[shell_mask]
-            _, theta_, phi_ = utils.cart2sphere(bvecs_shell).T
+            _, theta_, phi_ = cart2sphere(bvecs_shell).T
             self.shell_sh_orders[shell_index] = get_sh_order_from_bval(
                 self.shell_bvalues[shell_index])
             self.shell_sh_matrices[shell_index] = real_sym_sh_mrtrix(
@@ -516,7 +517,7 @@ DmipyAcquisitionScheme = PGSEAcquisitionScheme
 
 def _as_protocol(sequence):
     """A ``ScannerSequence`` or a ``Protocol`` as a Protocol (one sequence: one entry, its rows ``0 .. n-1``)."""
-    from dmipy_sim.acquisition.scanner_sequence import Protocol, ScannerSequence
+    from dmipy_replay.acquisition.scanner_sequence import Protocol, ScannerSequence
     if isinstance(sequence, Protocol):
         return sequence
     if isinstance(sequence, ScannerSequence):
@@ -555,7 +556,7 @@ def _by_te(TE, n_m, build):
     """One sequence per distinct echo time, each holding the rows of that TE in acquisition order:
     ``build(rows, te)`` returns the ScannerSequence of ``rows`` (``te`` ``None`` = the smallest that fits). A
     single TE (or none) is one sequence; several are a Protocol that remembers the interleaving."""
-    from dmipy_sim.acquisition.scanner_sequence import Protocol
+    from dmipy_replay.acquisition.scanner_sequence import Protocol
     if TE is None or np.ndim(TE) == 0:
         return build(np.arange(n_m), None if TE is None else float(TE))
     TE = np.broadcast_to(np.asarray(TE, dtype=float), (n_m,))
@@ -576,9 +577,9 @@ def _rows_of(x, rows, n_m):
 class AcquisitionScheme(PGSEAcquisitionScheme):
     """The analytical acquisition scheme over dmipy-sim's acquisition object.
 
-    A scheme wraps one :class:`dmipy_sim.acquisition.scanner_sequence.ScannerSequence` -- what the scanner does
+    A scheme wraps one :class:`dmipy_replay.acquisition.scanner_sequence.ScannerSequence` -- what the scanner does
     from the excitation to the readout: the physical gradient, the RF schedule, the readout, a timing budget,
-    the per-measurement ``Encoding`` -- or a :class:`~dmipy_sim.acquisition.scanner_sequence.Protocol` of them
+    the per-measurement ``Encoding`` -- or a :class:`~dmipy_replay.acquisition.scanner_sequence.Protocol` of them
     (one per echo time; a scheme with several TEs is several sequences, interleaved as the acquisition was).
     Every per-measurement quantity a signal model reads (``bvalues``, ``gradient_directions``, ``delta``,
     ``Delta``, ``TE``, ``TM``, ``tau_perp``, the OGSE fields, ...) is that object's declared ``Encoding``, in
@@ -586,10 +587,10 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
     gradient is re-derived here: ``btensor()``, ``refocusing_residual``, the effective gradient ``_G`` the
     waveform-integrating models read, all come from the object.
 
-    Build one from a dmipy-sim sequence (``AcquisitionScheme(seq)``) or through the constructors, which are
-    dmipy-sim's builders with the shell parameters added:
+    Build one from a dmipy-replay sequence (``AcquisitionScheme(seq)``) or through the constructors, which are
+    dmipy-replay's builders with the shell parameters added:
     ``from_pgse``, ``from_pgste``, ``from_cpmg``, ``from_ogse``, ``from_btensor_ste``, ``from_btensor_pte``,
-    ``from_waveform``, ``from_btensor_waveform``. The legacy factories (``acquisition_scheme_from_bvalues`` ...)
+    ``from_waveform``, ``from_btensor_waveform``. The waveform-free factories (``acquisition_scheme_from_bvalues`` ...)
     return the waveform-free :class:`PGSEAcquisitionScheme`.
 
     Monte Carlo: ``dmipy_sim.simulate(n, D, scheme, geometry)`` reads ``scheme.waveform`` -- the object itself --
@@ -651,7 +652,7 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
 
     def _rf_duration(self, role):
         """The duration of the first pulse of ``role`` in the schedule (0 for a hard or absent pulse)."""
-        from dmipy_sim.acquisition.rf import _ROLE_OF_LABEL
+        from dmipy_replay.acquisition.rf import _ROLE_OF_LABEL
         for e in self.protocol[0].rf:
             if _ROLE_OF_LABEL.get(e.label) == role:
                 return float(e.duration_s)
@@ -753,14 +754,14 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
     @classmethod
     def from_pgse(cls, bvalues, gradient_directions, delta, Delta, TE=None, n_t=1000, slew_rate=np.inf,
                   timing=None, min_b_shell_distance=50e6, b0_threshold=10e6):
-        """PGSE through :func:`dmipy_sim.sequences.pgse`: two same-sign lobes ``Delta`` apart, the 180 midway.
+        """PGSE through :func:`dmipy_replay.sequences.pgse`: two same-sign lobes ``Delta`` apart, the 180 midway.
 
         ``bvalues`` (s/m²), ``gradient_directions`` (n_m, 3); ``delta`` / ``Delta`` (s) per measurement or
         scalar; ``TE`` (s) scalar, per measurement (one sequence per distinct TE, interleaved as given) or None
         (the smallest that fits); ``slew_rate`` (T/m/s, ``np.inf`` the idealised square lobes the analytical
-        models assume); ``timing`` a :class:`dmipy_sim.acquisition.timing.SequenceTiming` budget.
+        models assume); ``timing`` a :class:`dmipy_replay.acquisition.timing.SequenceTiming` budget.
         """
-        from dmipy_sim.sequences import pgse
+        from dmipy_replay.sequences import pgse
         bvalues = np.asarray(bvalues, dtype=float)
         dirs = np.asarray(gradient_directions, dtype=float)
         n_m = len(bvalues)
@@ -773,10 +774,10 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
     @classmethod
     def from_pgste(cls, bvalues, gradient_directions, delta, TM, TE=None, n_t=1000, slew_rate=np.inf,
                    timing=None, ste_flip_angles=(90.0, 90.0, 90.0), min_b_shell_distance=50e6, b0_threshold=10e6):
-        """PGSTE through :func:`dmipy_sim.sequences.pgste`: a dephasing lobe, longitudinal storage over ``TM``,
+        """PGSTE through :func:`dmipy_replay.sequences.pgste`: a dephasing lobe, longitudinal storage over ``TM``,
         the same lobe rephasing; ``Delta = delta + TM``, ``TM`` carried for the longitudinal factor and the
         transverse time ``tau_perp`` for the transverse ones."""
-        from dmipy_sim.sequences import pgste
+        from dmipy_replay.sequences import pgste
         bvalues = np.asarray(bvalues, dtype=float)
         dirs = np.asarray(gradient_directions, dtype=float)
         n_m = len(bvalues)
@@ -788,10 +789,10 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
     @classmethod
     def from_cpmg(cls, n_echoes, TE, bvalues=None, gradient_directions=None, beta_deg=180.0, n_t_per_echo=100,
                   polarity="constant", slew_rate=np.inf, timing=None, min_b_shell_distance=50e6, b0_threshold=10e6):
-        """CPMG through :func:`dmipy_sim.sequences.cpmg`: a 90 and ``n_echoes`` refocusing pulses of ``beta_deg``
+        """CPMG through :func:`dmipy_replay.sequences.cpmg`: a 90 and ``n_echoes`` refocusing pulses of ``beta_deg``
         at ``(k + 1/2) TE``, an echo read at every ``k TE``; the diffusion gradient at ``polarity`` constant or
         alternating per interval. The scheme's ``TE`` is the train's; the readout is every echo."""
-        from dmipy_sim.sequences import cpmg
+        from dmipy_replay.sequences import cpmg
         seq = cpmg(n_echoes, TE, gradient_directions=gradient_directions, bvalues=bvalues, polarity=polarity,
                    beta_deg=beta_deg, n_t_per_echo=n_t_per_echo, slew_rate=slew_rate, timing=timing)
         return cls(seq, min_b_shell_distance, b0_threshold)
@@ -799,9 +800,9 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
     @classmethod
     def from_waveform(cls, G, dt, gradient_directions, delta=None, Delta=None, TE=None, allow_unrefocused=False,
                       min_b_shell_distance=50e6, b0_threshold=10e6):
-        """An arbitrary played gradient through :func:`dmipy_sim.sequences.from_waveform`: b numerically from
+        """An arbitrary played gradient through :func:`dmipy_replay.sequences.from_waveform`: b numerically from
         ``G``; no pulses declared, so the gradient must refocus on its own."""
-        from dmipy_sim.sequences import from_waveform
+        from dmipy_replay.sequences import from_waveform
         seq = from_waveform(G, dt, gradient_directions, delta=delta, Delta=Delta, TE=TE,
                             allow_unrefocused=allow_unrefocused)
         return cls(seq, min_b_shell_distance, b0_threshold)
@@ -810,11 +811,11 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
     def from_ogse(cls, bvalues, gradient_directions, oscillation_frequency, gradient_duration, *, shape="cosine",
                   Delta=None, TE=None, n_t=1000, slew_rate=np.inf, timing=None,
                   min_b_shell_distance=50e6, b0_threshold=10e6):
-        """OGSE through :func:`dmipy_sim.sequences.ogse`: an oscillating block of ``gradient_duration`` on each side
+        """OGSE through :func:`dmipy_replay.sequences.ogse`: an oscillating block of ``gradient_duration`` on each side
         of the 180 -- ``shape='cosine'`` (the frequency-selective cosine over whole periods; the analytical OGSE
         models' idealised form, so the default here) or ``'trapezoid'`` (Drobnjak's train of lobes); ``Delta``
         the block separation when stated. The block must hold whole periods (refused, not snapped)."""
-        from dmipy_sim.sequences import ogse
+        from dmipy_replay.sequences import ogse
         bvalues = np.asarray(bvalues, dtype=float)
         dirs = np.asarray(gradient_directions, dtype=float)
         n_m = len(bvalues)
@@ -827,20 +828,20 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
     @classmethod
     def from_btensor_ste(cls, bvalues, gradient_duration, TE=None, n_t=1000, slew_rate=np.inf, timing=None,
                          min_b_shell_distance=50e6, b0_threshold=10e6):
-        """Spherical tensor encoding (``b_delta = 0``) through :func:`dmipy_sim.sequences.ste`: three sequential
+        """Spherical tensor encoding (``b_delta = 0``) through :func:`dmipy_replay.sequences.ste`: three sequential
         self-refocused pairs, one per axis, over ``gradient_duration``. ``gradient_directions`` is nominal
         ([0, 0, 1]); the encoding is isotropic -- read ``scheme.btensor()``."""
-        from dmipy_sim.sequences import ste
+        from dmipy_replay.sequences import ste
         seq = ste(gradient_duration, bvalues=bvalues, TE=TE, n_t=n_t, slew_rate=slew_rate, timing=timing)
         return cls(seq, min_b_shell_distance, b0_threshold)
 
     @classmethod
     def from_btensor_pte(cls, bvalues, plane_normal, gradient_duration, TE=None, n_t=1000, slew_rate=np.inf,
                          timing=None, min_b_shell_distance=50e6, b0_threshold=10e6):
-        """Planar tensor encoding (``b_delta = -0.5``) through :func:`dmipy_sim.sequences.pte`: two sequential
+        """Planar tensor encoding (``b_delta = -0.5``) through :func:`dmipy_replay.sequences.pte`: two sequential
         self-refocused pairs in the plane normal to ``plane_normal``; ``gradient_directions`` is the first
         in-plane axis (nominal) -- read ``scheme.btensor()``."""
-        from dmipy_sim.sequences import pte
+        from dmipy_replay.sequences import pte
         seq = pte(plane_normal, gradient_duration, bvalues=bvalues, TE=TE, n_t=n_t, slew_rate=slew_rate, timing=timing)
         return cls(seq, min_b_shell_distance, b0_threshold)
 
@@ -848,9 +849,9 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
     def from_btensor_waveform(cls, G, dt, *, echo_idx=None, TE=None, timing=None,
                               min_b_shell_distance=50e6, b0_threshold=10e6):
         """A precomputed b-tensor gradient (e.g. a dmipy-design output; the PHYSICAL gradient) as a spin echo
-        through :func:`dmipy_sim.sequences.from_btensor_waveform`: the 180 at ``echo_idx`` (TE/2 by default,
+        through :func:`dmipy_replay.sequences.from_btensor_waveform`: the 180 at ``echo_idx`` (TE/2 by default,
         the only position at which the static field refocuses at the echo), the budget it was built to."""
-        from dmipy_sim.sequences import from_btensor_waveform
+        from dmipy_replay.sequences import from_btensor_waveform
         seq = from_btensor_waveform(G, dt, echo_idx=echo_idx, TE=TE, timing=timing)
         return cls(seq, min_b_shell_distance, b0_threshold)
 
@@ -907,9 +908,9 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
 
     def to_gradient_array(self, n_t=1000):
         """``(G_eff, dt)`` of the square PGSE with this scheme's b, directions, delta and Delta on an ``n_t`` grid,
-        as the analytical layer integrates it (:func:`dmipy_sim.sequences.to_gradient_array`); one grid, so one
+        as the analytical layer integrates it (:func:`dmipy_replay.sequences.to_gradient_array`); one grid, so one
         sequence's delta / Delta must be uniform."""
-        from dmipy_sim.sequences import to_gradient_array
+        from dmipy_replay.sequences import to_gradient_array
         if len(self.protocol) != 1:
             raise ValueError("to_gradient_array() is one grid: take it per sequence of a multi-TE protocol")
         return to_gradient_array(self.protocol[0], n_t=n_t)
@@ -920,7 +921,7 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
         """The scheme of several schemes' measurements, one after the other: a Protocol of all their sequences
         (each keeps its own grid; ``_G`` holds them per step on the finest one), the rows
         offset so the acquisition order is the concatenation order."""
-        from dmipy_sim.acquisition.scanner_sequence import Protocol
+        from dmipy_replay.acquisition.scanner_sequence import Protocol
         if not schemes:
             raise ValueError("concatenate() requires at least one scheme.")
         seqs, rows, offset = [], [], 0
@@ -1088,6 +1089,17 @@ class SphericalMeanAcquisitionScheme:
         self.number_of_measurements = len(bvalues)
 
 
+def _pgse_scheme(reference, gradient_directions, delta, Delta, TE, min_b_shell_distance, b0_threshold,
+                 convert):
+    """The :class:`PGSEAcquisitionScheme` of a q-value or gradient-strength list (``reference``): delta, Delta
+    and TE broadcast to its length and checked; ``convert()`` returns ``(bvalues, qvalues, gradient_strengths)``."""
+    delta_, Delta_, TE_ = unify_length_reference_delta_Delta(reference, delta, Delta, TE)
+    check_acquisition_scheme(reference, gradient_directions, delta_, Delta_, TE_)
+    bvalues, qvalues, gradient_strengths = convert()
+    return PGSEAcquisitionScheme(bvalues, gradient_directions, qvalues, gradient_strengths, delta_, Delta_, TE_,
+                                 min_b_shell_distance, b0_threshold)
+
+
 def acquisition_scheme_from_bvalues(
         bvalues, gradient_directions, delta=None, Delta=None, TE=None,
         min_b_shell_distance=50e6, b0_threshold=10e6):
@@ -1179,15 +1191,9 @@ def acquisition_scheme_from_qvalues(
         contains all information of the acquisition scheme to be used in any
         microstructure model.
     """
-    delta_, Delta_, TE_ = unify_length_reference_delta_Delta(
-        qvalues, delta, Delta, TE)
-    check_acquisition_scheme(
-        qvalues, gradient_directions, delta_, Delta_, TE_)
-    bvalues = b_from_q(qvalues, delta, Delta)
-    gradient_strengths = g_from_q(qvalues, delta)
-    return PGSEAcquisitionScheme(bvalues, gradient_directions, qvalues,
-                                  gradient_strengths, delta_, Delta_, TE_,
-                                  min_b_shell_distance, b0_threshold)
+    return _pgse_scheme(
+        qvalues, gradient_directions, delta, Delta, TE, min_b_shell_distance, b0_threshold,
+        lambda: (b_from_q(qvalues, delta, Delta), qvalues, g_from_q(qvalues, delta)))
 
 
 def acquisition_scheme_from_gradient_strengths(
@@ -1223,15 +1229,10 @@ def acquisition_scheme_from_gradient_strengths(
         contains all information of the acquisition scheme to be used in any
         microstructure model.
     """
-    delta_, Delta_, TE_ = unify_length_reference_delta_Delta(
-        gradient_strengths, delta, Delta, TE)
-    check_acquisition_scheme(gradient_strengths, gradient_directions,
-                             delta_, Delta_, TE_)
-    bvalues = b_from_g(gradient_strengths, delta, Delta)
-    qvalues = q_from_g(gradient_strengths, delta)
-    return PGSEAcquisitionScheme(bvalues, gradient_directions, qvalues,
-                                  gradient_strengths, delta_, Delta_, TE_,
-                                  min_b_shell_distance, b0_threshold)
+    return _pgse_scheme(
+        gradient_strengths, gradient_directions, delta, Delta, TE, min_b_shell_distance, b0_threshold,
+        lambda: (b_from_g(gradient_strengths, delta, Delta), q_from_g(gradient_strengths, delta),
+                 gradient_strengths))
 
 
 def acquisition_scheme_from_schemefile(
@@ -1276,88 +1277,11 @@ def acquisition_scheme_from_schemefile(
         G, bvecs, delta, Delta, TE, min_b_shell_distance, b0_threshold)
 
 
-# Absolute tolerance (seconds) for echo-time floor comparisons.
-_TE_FLOOR_ATOL = 1e-9
 
 # Tight refocusing tolerance: real moment-nulled waveforms sit at <1e-4 relative
 # net moment; a non-refocused one is ~1.  from_waveform raises above this unless
 # allow_unrefocused=True.
 _REFOCUS_ATOL = 1e-3
-
-
-def _resolve_te(TE, t_total_min, n_m):
-    """Resolve the echo time against the minimum echo time of an encoding.
-
-    ``t_total_min`` is the time from excitation to the spin/stimulated echo set
-    by the gradient schedule (PGSE: ``Delta + delta``; PGSTE: ``2*delta + TM``;
-    b-tensor: ``delta + Delta``).  When ``TE`` is ``None`` the echo time defaults
-    to that minimum -- the natural choice, since a longer TE only adds leading and
-    trailing dead time and so signal loss.  A supplied TE below the minimum is
-    unphysical (the echo cannot form before the encoding completes) and raises;
-    a longer TE is accepted unchanged.
-
-    Returns
-    -------
-    TE : ndarray (n_m,)
-    was_auto : bool
-        True when TE defaulted to the minimum.
-    """
-    if TE is None:
-        return np.full(n_m, float(t_total_min)), True
-    TE_arr = np.broadcast_to(np.asarray(TE, dtype=np.float64), (n_m,)).copy()
-    if np.any(TE_arr < t_total_min - _TE_FLOOR_ATOL):
-        raise ValueError(
-            "Echo time TE = {:.3f} ms is below the minimum echo time "
-            "{:.3f} ms set by the gradient schedule; the echo cannot form "
-            "before the encoding completes.".format(
-                float(np.min(TE_arr)) * 1e3, float(t_total_min) * 1e3))
-    return TE_arr, False
-
-
-def unify_length_reference_delta_Delta(reference_array, delta, Delta, TE):
-    """
-    If either delta or Delta are given as float, makes them an array the same
-    size as the reference array.
-
-    Parameters
-    ----------
-    reference_array : array of size (Nsamples)
-        typically b-values, q-values or gradient strengths.
-    delta : float or array of size (Nsamples)
-        pulse duration in seconds.
-    Delta : float or array of size (Nsamples)
-        pulse separation in seconds.
-    TE : None, float or array of size (Nsamples)
-        Echo time of the acquisition in seconds.
-
-    Returns
-    -------
-    delta_ : array of size (Nsamples)
-        pulse duration copied to be same size as reference_array
-    Delta_ : array of size (Nsamples)
-        pulse separation copied to be same size as reference_array
-    TE_ : None or array of size (Nsamples)
-        Echo time copied to be same size as reference_array
-    """
-    if delta is None:
-        delta_ = delta
-    elif isinstance(delta, float) or isinstance(delta, int):
-        delta_ = np.tile(delta, len(reference_array))
-    else:
-        delta_ = delta.copy()
-    if Delta is None:
-        Delta_ = Delta
-    elif isinstance(Delta, float) or isinstance(Delta, int):
-        Delta_ = np.tile(Delta, len(reference_array))
-    else:
-        Delta_ = Delta.copy()
-    if TE is None:
-        TE_ = TE
-    elif isinstance(TE, float) or isinstance(TE, int):
-        TE_ = np.tile(TE, len(reference_array))
-    else:
-        TE_ = TE.copy()
-    return delta_, Delta_, TE_
 
 
 def calculate_shell_bvalues_and_indices(bvalues, max_distance=20e6):
