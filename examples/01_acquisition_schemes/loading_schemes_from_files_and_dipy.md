@@ -84,7 +84,8 @@ print("shells match the file-loaded scheme:",
                   np.unique(acq_scheme.shell_bvalues), atol=1e6))
 ```
 
-(The conversion requires both `big_delta` and `small_delta` on the DIPY table.)
+(The conversion requires both `big_delta` and `small_delta` on the DIPY table. dipy is optional:
+`pip install "dmipy-fit[oracle]"`; without it `gtab_dipy2dmipy` refuses by name.)
 
 ## From / to a Camino schemefile
 

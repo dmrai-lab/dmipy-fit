@@ -1,13 +1,11 @@
 import numpy as np
-from dmipy_sim.math.sh_analytical import cart2sphere
 from dmipy_replay.sequences._helpers import unify_length_reference_delta_Delta
 from dmipy_replay.math.gradient_conversions import (
     g_from_b, q_from_b, b_from_q, g_from_q, b_from_g, q_from_g)
 from ..utils import utils
 from ..utils.spherical_convolution import real_sym_rh_basis
-from dipy.reconst.shm import real_sh_tournier as real_sym_sh_mrtrix
+from ..utils.sh_basis import real_sh_tournier
 from scipy.cluster.hierarchy import fcluster, linkage
-from dipy.core.gradients import gradient_table, GradientTable
 from warnings import warn
 
 
@@ -205,11 +203,10 @@ class PGSEAcquisitionScheme:
         for shell_index in self.unique_dwi_indices:
             shell_mask = self.shell_indices == shell_index
             bvecs_shell = self.gradient_directions[shell_mask]
-            _, theta_, phi_ = cart2sphere(bvecs_shell).T
             self.shell_sh_orders[shell_index] = get_sh_order_from_bval(
                 self.shell_bvalues[shell_index])
-            self.shell_sh_matrices[shell_index] = real_sym_sh_mrtrix(
-                self.shell_sh_orders[shell_index], theta_, phi_, legacy=False)[0]
+            self.shell_sh_matrices[shell_index] = real_sh_tournier(
+                self.shell_sh_orders[shell_index], bvecs_shell)
         if sum(self.b0_mask) == 0:
             msg = "No b0 measurements were detected. Check if the b0_threshold"
             msg += " option is high enough, or if there is a mistake in the "
@@ -1021,8 +1018,8 @@ class RotationalHarmonicsAcquisitionScheme:
         for shell_index in scheme.unique_dwi_indices:
             self.shell_sh_orders[shell_index] = int(
                 scheme.shell_sh_orders[shell_index])
-            self.shell_sh_matrices[shell_index] = real_sym_sh_mrtrix(
-                self.shell_sh_orders[shell_index], thetas, phis, legacy=False)[0]
+            self.shell_sh_matrices[shell_index] = real_sh_tournier(
+                self.shell_sh_orders[shell_index], angles_cart)
 
         self.inverse_rh_matrix = {
             rh_order: np.linalg.pinv(real_sym_rh_basis(rh_order, thetas)) for rh_order in np.arange(0, 15, 2)
@@ -1417,6 +1414,18 @@ def check_acquisition_scheme(
             )
 
 
+def _dipy_gradients():
+    """``dipy.core.gradients``, the one place the package reads dipy: the gradient-table interchange below is the only
+    code that needs it, and nothing else in the package imports it."""
+    try:
+        from dipy.core import gradients
+    except ImportError as error:
+        raise ImportError(
+            "The dipy gradient-table interchange needs dipy, which dmipy-fit does not depend on: pip install dipy "
+            "(or the `oracle` extra)") from error
+    return gradients
+
+
 def gtab_dipy2dmipy(dipy_gradient_table, min_b_shell_distance=50e6,
                     b0_threshold=10e6):
     """Converts a dipy gradient_table to a dmipy acquisition_scheme.
@@ -1443,7 +1452,7 @@ def gtab_dipy2dmipy(dipy_gradient_table, min_b_shell_distance=50e6,
         microstructure model.
 
     """
-    if not isinstance(dipy_gradient_table, GradientTable):
+    if not isinstance(dipy_gradient_table, _dipy_gradients().GradientTable):
         msg = "Input must be a dipy GradientTable object. "
         raise ValueError(msg)
     bvals = dipy_gradient_table.bvals * 1e6
@@ -1476,7 +1485,7 @@ def dti_gradient_table(acquisition_scheme):
     gtab : dipy GradientTable
     pgse_mask : (N,) bool array, True for the measurements the table holds
     """
-    from dipy.core.gradients import gradient_table
+    gradient_table = _dipy_gradients().gradient_table
     is_ogse = getattr(acquisition_scheme, 'is_ogse',
                       np.zeros(acquisition_scheme.number_of_measurements, bool))
     pgse_mask = ~is_ogse
@@ -1507,6 +1516,7 @@ def gtab_dmipy2dipy(dmipy_gradient_table):
         object that contains bvals, bvecs, pulse separation and duration
         information.
     """
+    _dipy_gradients()
     if not isinstance(dmipy_gradient_table, PGSEAcquisitionScheme):
         msg = "Input must be a PGSEAcquisitionScheme object. "
         raise ValueError(msg)
@@ -1535,6 +1545,6 @@ def gtab_dmipy2dipy(dmipy_gradient_table):
     elif len(np.unique(Delta)) == 1:
         Delta = Delta[0]
 
-    dipy_gradient_table = gradient_table(
+    dipy_gradient_table = _dipy_gradients().gradient_table(
         bvals=bvals, bvecs=bvecs, small_delta=delta, big_delta=Delta)
     return dipy_gradient_table

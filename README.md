@@ -92,6 +92,7 @@ pip install dmipy-fit                    # core only
 pip install "dmipy-fit[jax]"             # + JAX GPU fitting
 pip install "dmipy-fit[jax,data,viz]"    # + bundled-data loaders + plotting
 pip install "dmipy-fit[all]"             # everything
+pip install "dmipy-fit[oracle]"          # + dipy, the test oracle and the gradient-table interchange
 ```
 
 ## Myelin water fraction from a Monte-Carlo CPMG decay

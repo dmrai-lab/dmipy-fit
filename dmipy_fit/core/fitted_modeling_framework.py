@@ -1,13 +1,10 @@
 import numpy as np
-from dipy.data import get_sphere
-from dipy.reconst.shm import sh_to_sf_matrix
-from dipy.reconst.shm import real_sh_tournier as real_sym_sh_mrtrix
 from ..utils.utils import (
     unitsphere2cart_Nd, T1_tortuosity, fractional_parameter, cart2mu)
 from ..utils.spherical_mean import (
     estimate_spherical_mean_multi_shell)
-from dipy.reconst.shm import sph_harm_ind_list
-from dipy.direction import peak_directions
+from ..utils.sh_basis import (
+    real_sh_tournier, sh_degrees, symmetric_sphere, sphere_edges, peak_directions)
 
 
 __all__ = [
@@ -161,19 +158,18 @@ class FittedMultiCompartmentModel(_FittedModel):
             fods[pos] = self.model(vertices, quantity='FOD', **parameters)
         return fods
 
-    def fod_sh(self, sh_order=8, basis_type=None):
+    def fod_sh(self, sh_order=8):
         """
         Returns the spherical harmonics coefficients of the Fiber Orientation
-        Distribution (FOD) if it is available. Uses are 724 spherical
-        tessellation to do the spherical harmonics transform.
+        Distribution (FOD) if it is available, in the package's real basis
+        (:func:`~dmipy_fit.utils.sh_basis.real_sh_tournier`: orthonormal,
+        Tournier/MRtrix order). The FOD is sampled on the 724-point symmetric
+        sphere and projected by the pseudo-inverse of the basis there.
 
         Parameters
         ----------
         sh_order : integer,
             the maximum spherical harmonics order of the coefficient expansion.
-        basis_type : string,
-            type of spherical harmonics basis to use for the expansion, see
-            sh_to_sf_matrix for more info.
 
         Returns
         -------
@@ -184,10 +180,8 @@ class FittedMultiCompartmentModel(_FittedModel):
         if not self.model.fod_available:
             msg = ('FODs not available for current model.')
             raise ValueError(msg)
-        sphere = get_sphere(name='repulsion724')
-        vertices = sphere.vertices
-        _, inv_sh_matrix = sh_to_sf_matrix(
-            sphere, sh_order, basis_type=basis_type, return_inv=True)
+        vertices = symmetric_sphere()
+        inv_sh_matrix = np.linalg.pinv(real_sh_tournier(sh_order, vertices))
         fods_sf = self.fod(vertices)
 
         dataset_shape = self.fitted_parameters_vector.shape[:-1]
@@ -195,7 +189,7 @@ class FittedMultiCompartmentModel(_FittedModel):
         fods_sh = np.zeros(np.r_[dataset_shape, number_coef_used])
         mask_pos = np.where(self.mask)
         for pos in zip(*mask_pos):
-            fods_sh[pos] = np.dot(inv_sh_matrix.T, fods_sf[pos])
+            fods_sh[pos] = np.dot(inv_sh_matrix, fods_sf[pos])
         return fods_sh
 
     def peaks_spherical(self):
@@ -666,8 +660,7 @@ class FittedMultiCompartmentSphericalHarmonicsModel(_FittedModel):
         fods : array of size (Ndata, Nvertices),
             the FODs of the fitted model, scaled by volume fraction.
         """
-        theta, phi = cart2mu(vertices).T
-        sh_matrix = real_sym_sh_mrtrix(self.model.sh_order, theta, phi, legacy=False)[0]
+        sh_matrix = real_sh_tournier(self.model.sh_order, vertices)
         dataset_shape = self.fitted_parameters_vector.shape[:-1]
         N_samples = len(vertices)
         fods = np.zeros(np.r_[dataset_shape, N_samples])
@@ -682,16 +675,7 @@ class FittedMultiCompartmentSphericalHarmonicsModel(_FittedModel):
     def fod_sh(self):
         """
         Returns the spherical harmonics coefficients of the Fiber Orientation
-        Distribution (FOD) if it is available. Uses are 724 spherical
-        tessellation to do the spherical harmonics transform.
-
-        Parameters
-        ----------
-        sh_order : integer,
-            the maximum spherical harmonics order of the coefficient expansion.
-        basis_type : string,
-            type of spherical harmonics basis to use for the expansion, see
-            sh_to_sf_matrix for more info.
+        Distribution (FOD): the fitted ``sh_coeff``, in the model's own basis.
 
         Returns
         -------
@@ -701,17 +685,19 @@ class FittedMultiCompartmentSphericalHarmonicsModel(_FittedModel):
         """
         return self.fitted_parameters['sh_coeff']
 
-    def peaks_directions(self, sphere, max_peaks=5,
+    def peaks_directions(self, vertices, max_peaks=5,
                          relative_peak_threshold=0.5,
                          min_separation_angle=25):
         """
-        Returns peak directions for estimated FODs. Uses dipy's peak_directions
-        function to get the local maximum on a sphere's tesselation.
+        Returns peak directions for estimated FODs: the local maxima on the
+        tessellation ``vertices`` (:func:`~dmipy_fit.utils.sh_basis.peak_directions`).
 
         Parameters
         ----------
-        sphere : Sphere
-            The Sphere providing discrete directions for evaluation.
+        vertices : array of size (Nvertices, 3)
+            Unit vectors covering the whole sphere (for example
+            :func:`~dmipy_fit.utils.sh_basis.symmetric_sphere`) at which the
+            FODs are evaluated.
         max_peaks : integer
             The maximum number of peaks that is returned per fod.
         relative_peak_threshold : float in [0., 1.]
@@ -735,12 +721,14 @@ class FittedMultiCompartmentSphericalHarmonicsModel(_FittedModel):
         values = np.zeros(peaks_shape[:-1])
         indices = np.zeros(peaks_shape[:-1])
 
-        fods = self.fod(sphere.vertices)
+        vertices = np.asarray(vertices, np.float64)
+        edges = sphere_edges(vertices)
+        fods = self.fod(vertices)
         mask_pos = np.where(self.mask)
         for pos in zip(*mask_pos):
             fod = fods[pos]
             peaks_, values_, indices_ = peak_directions(
-                fod, sphere,
+                fod, vertices, edges,
                 relative_peak_threshold=relative_peak_threshold,
                 min_separation_angle=min_separation_angle)
             # if less peaks than max_peaks are found, only take those.
@@ -785,7 +773,7 @@ class FittedMultiCompartmentSphericalHarmonicsModel(_FittedModel):
             Resonance in Medicine 58.3 (2007): 497-510.
         """
         sh_coef = self.fitted_parameters['sh_coeff']
-        sh_l = sph_harm_ind_list(self.model.sh_order)[1]
+        sh_l = sh_degrees(self.model.sh_order)
         lb_weights = sh_l ** 2 * (sh_l + 1) ** 2  # laplace-beltrami
         norm_laplacian = np.sum(sh_coef ** 2 * lb_weights, axis=-1)
         return norm_laplacian

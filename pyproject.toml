@@ -26,7 +26,6 @@ dependencies = [
     "dmipy-replay>=0.2,<0.3",  # the acquisition object, its builders, the gradient conversions, GAMMA, the pack reader
     "numpy>=2.0",
     "scipy>=1.10",
-    "dipy>=1.7",
     "packaging>=23.0",
 ]
 
@@ -65,7 +64,13 @@ legacy = [
     "cvxpy>=1.3",
     "pathos>=0.3",
 ]
+# dipy is the test oracle (the SH basis, the sphere, the peaks, the tensor fit are checked against it) and the optional
+# gradient-table interchange (gtab_dipy2dmipy, gtab_dmipy2dipy); no shipped code needs it
+oracle = [
+    "dipy>=1.7",
+]
 dev = [
+    "dmipy-fit[oracle]",
     "pytest>=7",
     "pytest-cov",
     "nbmake",       # the tutorial notebooks CI executes

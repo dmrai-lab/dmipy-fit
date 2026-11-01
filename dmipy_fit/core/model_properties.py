@@ -3,7 +3,7 @@ from collections import OrderedDict
 from uuid import uuid4
 
 import numpy as np
-from dipy.utils.optpkg import optional_package
+from ..utils.sh_basis import optional_module
 
 from ..utils.utils import (
     add_linked_parameters,
@@ -11,7 +11,7 @@ from ..utils.utils import (
     parameter_equality,
     fractional_parameter)
 
-graphviz, have_graphviz, _ = optional_package("graphviz")
+graphviz, have_graphviz = optional_module("graphviz")
 if have_graphviz:
     from graphviz import Digraph
 

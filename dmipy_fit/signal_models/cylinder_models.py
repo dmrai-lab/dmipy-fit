@@ -10,17 +10,16 @@ from ..core.constants import CONSTANTS
 from ..core.modeling_framework import ModelProperties
 from ..core.signal_model_properties import AnisotropicSignalModelProperties
 from ._matrix_adapter import matrix_signal, matrix_signal_batch, pgse_waveform
-from dipy.utils.optpkg import optional_package
-from dipy.reconst.shm import real_sh_tournier as _real_sh_tournier
+from ..utils.sh_basis import optional_module, real_sh_tournier, symmetric_sphere
 
-numba, have_numba, _ = optional_package("numba")
+numba, have_numba = optional_module("numba")
 
 from ..core.constants import DIFFUSIVITY_SCALING, DIAMETER_SCALING, A_SCALING
 
 # ---------------------------------------------------------------------------
 # Sphere quadrature grid for SH dispersion integrals.
 #
-# Uses the dipy 'symmetric724' grid (724 points on the full sphere) with
+# Uses the symmetric 724-point grid (sh_basis.symmetric_sphere, the 'symmetric724' sphere of dipy) with
 # uniform weights w_q = 1/724.  This grid integrates smooth functions to
 # better than 0.1% accuracy for the SH orders relevant to the cylinder GPA
 # (l <= 4).  The name LEBEDEV_50 is kept for API compatibility; the grid is
@@ -33,9 +32,7 @@ from ..core.constants import DIFFUSIVITY_SCALING, DIAMETER_SCALING, A_SCALING
 # ---------------------------------------------------------------------------
 def _build_sphere_quad():
     """Build the 724-point sphere quadrature grid used for SH dispersion."""
-    from dipy.data import get_sphere
-    sphere = get_sphere(name='symmetric724')
-    pts = sphere.vertices.astype(np.float64)          # (724, 3)
+    pts = symmetric_sphere()                          # (724, 3)
     N = pts.shape[0]
     w = np.ones(N, dtype=np.float64) / N              # uniform weights, sum=1
     theta = np.arccos(np.clip(pts[:, 2], -1.0, 1.0))
@@ -1213,7 +1210,7 @@ def E_lm_from_exponent_coeffs(c0, c2m, l_max=4):
 
     Notes
     -----
-    The quadrature uses the 724-point dipy sphere with uniform weights.
+    The quadrature uses the 724-point symmetric sphere with uniform weights.
     Accuracy for smooth cylinder GPA exponentials (l<=4 significant content)
     is better than 0.1% in spherical mean.
 
@@ -1224,8 +1221,7 @@ def E_lm_from_exponent_coeffs(c0, c2m, l_max=4):
     n_lm = (l_max + 1) * (l_max + 2) // 2
 
     # SH basis evaluated at quadrature points (724, n_lm)
-    Y_Q, _, _ = _real_sh_tournier(l_max, _SPHERE_QUAD_THETA, _SPHERE_QUAD_PHI,
-                                  legacy=False)  # (N_q, n_lm)
+    Y_Q = real_sh_tournier(l_max, _SPHERE_QUAD_PTS)  # (N_q, n_lm)
     N_q = Y_Q.shape[0]
 
     # l=2 SH basis at quadrature points: columns 1-5 in the Tournier ordering

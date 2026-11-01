@@ -3,7 +3,7 @@ import warnings
 from time import time
 
 import numpy as np
-from dipy.utils.optpkg import optional_package
+from ..utils.sh_basis import optional_module
 
 from .fitted_modeling_framework import (
     FittedMultiCompartmentModel,
@@ -19,7 +19,7 @@ from .model_properties import MultiCompartmentModelProperties, homogenize_x0_to_
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import cpu_count
 
-numba, have_numba, _ = optional_package("numba")
+numba, have_numba = optional_module("numba")
 
 __all__ = ['MultiCompartmentSphericalMeanModel', 'compute_sm_w_norms']
 

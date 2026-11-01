@@ -2,9 +2,9 @@ from scipy.optimize import brute, minimize
 import os as _os
 from ..utils.utils import cart2mu
 import numpy as np
-from dipy.utils.optpkg import optional_package
+from ..utils.sh_basis import optional_module
 
-numba, have_numba, _ = optional_package("numba")
+numba, have_numba = optional_module("numba")
 
 SPHERES_PATH = _os.path.join(_os.path.dirname(__file__), '..', 'data', 'spheres')
 

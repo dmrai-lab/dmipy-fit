@@ -350,7 +350,8 @@ class TestBinghamSh:
 
     def test_matches_grid_at_low_kappa(self):
         """At low kappa the new analytical result agrees with the old grid-based SH."""
-        from dmipy_fit.distributions.distributions import hemisphere, inverse_sh_matrix_kernel
+        from dmipy_fit.distributions.distributions import inverse_sh_matrix_kernel
+        from dmipy_fit.utils.sh_basis import positivity_hemisphere
         from dmipy_fit.utils import utils
 
         kappa, beta_frac = 1.0, 0.5
@@ -362,7 +363,7 @@ class TestBinghamSh:
         mu_cart = utils.unitsphere2cart_1d(mu_sph)
         R = utils.rotation_matrix_100_to_theta_phi_psi(mu_sph[0], mu_sph[1], psi)
         mu_beta = R.dot(np.r_[0., 1., 0.])
-        n = hemisphere.vertices
+        n = positivity_hemisphere()
         f_sphere = np.exp(kappa * (n @ mu_cart) ** 2
                           + beta * (n @ mu_beta) ** 2)
         sh_mat_inv = inverse_sh_matrix_kernel[sh_order]

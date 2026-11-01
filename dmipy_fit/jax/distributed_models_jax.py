@@ -43,11 +43,9 @@ from .jax_compat import unitsphere2cart_1d_jax
 # ---------------------------------------------------------------------------
 
 def _hemisphere_vertices_jax():
-    """Return dipy symmetric724 hemisphere vertices as a jnp array (362, 3)."""
-    from dipy.data import get_sphere, HemiSphere
-    sphere = get_sphere(name='symmetric724')
-    hemi = HemiSphere(phi=sphere.phi, theta=sphere.theta)
-    return jnp.array(hemi.vertices)
+    """The stored hemisphere of the symmetric 724-point sphere as a jnp array (362, 3)."""
+    from ..utils.sh_basis import positivity_hemisphere
+    return jnp.array(positivity_hemisphere())
 
 
 _HEMI_VERTS_JAX = None

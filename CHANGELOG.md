@@ -17,7 +17,16 @@ Ports dmipy-fit to dmipy-sim 3 (`dmipy-sim>=3,<4`) and dmipy-replay 0.2 (`dmipy-
 - Unreferenced code: `custom_optimizers.intra_voxel_incoherent_motion`, `single_shell_three_tissue_csd`,
   `charmed_c4`, `axcaliber_c4`, `active_ax_c4`, `nexi_signal`, `nc_chi_nll`.
 
+- dipy is no longer a dependency (dmipy-fit#48, #43): no shipped module imports it. The real SH basis is
+  `utils.sh_basis.real_sh_tournier` everywhere (Tournier/MRtrix, orthonormal; the one copy is dmipy-sim's
+  `replay.so3.real_sh`), the 724-point sphere is the stored `data/spheres/symmetric724_hemisphere.npz` and its
+  antipodes (`sh_basis.symmetric_sphere`), `optional_package` is `sh_basis.optional_module`, and the peak finder is
+  `sh_basis.peak_directions`. dipy remains in the `oracle` extra (the tests check each piece against it) and for the
+  optional `gtab_dipy2dmipy` / `gtab_dmipy2dipy` / `dti_gradient_table` interchange, which refuses by name without it.
+
 ### Changed
+- `FittedMultiCompartmentModel.fod_sh(sh_order)` returns coefficients in the package basis (it took dipy's
+  `basis_type`, default `descoteaux07` legacy); `peaks_directions` takes the `(n, 3)` vertices, not a dipy `Sphere`.
 - A replay compartment without a surface-relaxivity factor takes no surface term (`None`), not a silent 0.0;
   a negative or non-finite relaxivity is refused. A pack's windows record without `n` is refused.
 - New `hub` extra (huggingface_hub, requests, safetensors) for the Hub-hosted replay families.

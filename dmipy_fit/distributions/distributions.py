@@ -10,17 +10,13 @@ import numpy as np
 from dmipy_sim.math.sh_analytical import cart2sphere
 from scipy import stats
 from scipy import special
-from dipy.reconst.shm import real_sh_tournier as real_sym_sh_mrtrix
 
 from dmipy_fit.utils import utils
 from scipy import interpolate
 from dmipy_fit.core.modeling_framework import ModelProperties
-from dipy.utils.optpkg import optional_package
-from dipy.data import get_sphere, HemiSphere
-sphere = get_sphere(name='symmetric724')
-hemisphere = HemiSphere(phi=sphere.phi, theta=sphere.theta)
+from ..utils.sh_basis import optional_module, positivity_hemisphere, real_sh_tournier
 
-numba, have_numba, _ = optional_package("numba")
+numba, have_numba = optional_module("numba")
 
 GRADIENT_TABLES_PATH = _os.path.join(_os.path.dirname(__file__), '..', 'data', 'gradient_tables')
 SIGNAL_MODELS_PATH = _os.path.join(_os.path.dirname(__file__), '..', 'signal_models')
@@ -31,9 +27,8 @@ SPHERE_CARTESIAN = np.loadtxt(
 SPHERE_SPHERICAL = cart2sphere(SPHERE_CARTESIAN)
 
 inverse_sh_matrix_kernel = {
-    sh_order: np.linalg.pinv(real_sym_sh_mrtrix(
-        sh_order, hemisphere.theta, hemisphere.phi, legacy=False
-    )[0]) for sh_order in np.arange(0, 15, 2)
+    sh_order: np.linalg.pinv(real_sh_tournier(sh_order, positivity_hemisphere()))
+    for sh_order in np.arange(0, 15, 2)
 }
 from ..core.constants import BETA_SCALING
 
@@ -342,8 +337,7 @@ class SD3SphericalHarmonics(ModelProperties):
             Probability density at orientations n, given sh coeffs.
         """
         # calculate SHT matrix
-        _, theta, phi = cart2sphere(n).T
-        SHT = real_sym_sh_mrtrix(self.sh_order, theta, phi, legacy=False)[0]
+        SHT = real_sh_tournier(self.sh_order, n)
         # transform coefficients to sphere values
         sh_coeff = kwargs.get('sh_coeff', self.sh_coeff)
         SHn = SHT.dot(sh_coeff)
