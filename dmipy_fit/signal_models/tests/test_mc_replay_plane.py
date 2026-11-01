@@ -5,8 +5,8 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-from dmipy_sim.spec import Tissue
-from dmipy_sim.replay import write_rpk
+from dmipy_replay.spec.tissue import Tissue
+from dmipy_sim.replay.container import write_rpk
 from ._replay_packs import build_public_pack
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
 from dmipy_fit.data import mc_replay

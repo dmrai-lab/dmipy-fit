@@ -9,8 +9,8 @@ from dmipy_fit.signal_models.gaussian_models import G1Ball
 
 from dmipy_replay import sequences                                     # noqa: E402
 from dmipy_replay.phantom import Grid                              # noqa: E402
-from dmipy_sim.phantom import Peaks, Phantom, Watson                # noqa: E402
-from dmipy_sim.replay import so3                                    # noqa: E402
+from dmipy_replay.phantom import Peaks, Phantom, Watson  # noqa: E402
+from dmipy_replay.replay import so3  # noqa: E402
 
 
 def _seq():
@@ -52,7 +52,7 @@ def test_a_watson_field_on_a_stick_is_fits_own_watson_stick():
     the two spellings of one integral agree, which is why only one is offered."""
     from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
     from dmipy_fit.distributions.distribute_models import SD1WatsonDistributed
-    from dmipy_sim.math.sh_analytical import cart2sphere
+    from dmipy_replay.math.sh_analytical import cart2sphere
     from dmipy_fit.distributions.distributions import kappa2odi
     seq = _seq(); stick = ModelSubstrate(C1Stick(), m0=1.0, lambda_par=1.7e-9)
     mu = np.array([0.3, 0.2, 1.0]); mu /= np.linalg.norm(mu); kappa = 4.0
@@ -77,7 +77,7 @@ def test_round_trip_and_refusal_without_dmipy_fit(tmp_path):
     m = analytic_substrate(stick.to_meta()); assert m.params == stick.params and m.T2_s == 0.08
     import subprocess, sys, os
     code = ("import sys; sys.modules['dmipy_fit'] = None\n"
-            "from dmipy_sim.phantom import Phantom\n"
+            "from dmipy_replay.phantom import Phantom\n"
             "try:\n    Phantom.read(sys.argv[1]); print('READ')\nexcept ValueError as e:\n    print('REFUSED', str(e))\n")
     out = subprocess.run([sys.executable, "-c", code, str(tmp_path / "models.rph")], capture_output=True, text=True,
                          env={**os.environ, "JAX_PLATFORMS": "cpu"})

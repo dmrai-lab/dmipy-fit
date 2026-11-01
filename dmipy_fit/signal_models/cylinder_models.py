@@ -1302,7 +1302,7 @@ def watson_odf_lm(mu_cart, kappa, l_max=4):
         SH coefficients (Tournier real SH half-shell ordering).
         odf_lm[0] = 1/(2*sqrt(pi)) for any normalized Watson ODF.
     """
-    from dmipy_sim.math.sh_analytical import watson_sh as _watson_sh
+    from dmipy_replay.math.sh_analytical import watson_sh as _watson_sh
     mu_cart = np.asarray(mu_cart, dtype=np.float64)
     return _watson_sh(mu_cart, float(kappa), l_max=l_max)
 

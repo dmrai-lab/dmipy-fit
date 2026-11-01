@@ -9,11 +9,11 @@ Builds tiny CPU replay packs (a 2-diameter family per shape) as a fixture, then 
 """
 import copy
 import numpy as np
-from dmipy_sim.spec import Tissue
+from dmipy_replay.spec.tissue import Tissue
 import numpy.testing as npt
 import pytest
 
-from dmipy_sim.replay import write_rpk
+from dmipy_sim.replay.container import write_rpk
 from ._replay_packs import build_public_pack, stated_envelope
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
 from dmipy_fit.signal_models import cylinder_models, sphere_models
@@ -83,7 +83,7 @@ def test_a_windowed_pack_is_contracted_window_by_window():
     import dmipy_sim as d
     from dmipy_sim.replay.bank import build_replay_pack
     walk = d.walk(d.spec.spec_of(d.Sphere(radius=3e-6)), 800, 60e-3, diffusivity=D0, seed=11, K=24, window_T=30e-3,
-                  require_gpu=False)
+                  require_gpu=False, envelope=stated_envelope())
     pk = build_replay_pack(walk, id="test/sphere/windowed", license="CC0", citation="test", K=24, blt_temporal_K=16,
                            window_T=30e-3, envelope=stated_envelope())
     assert pk.n_windows == 2

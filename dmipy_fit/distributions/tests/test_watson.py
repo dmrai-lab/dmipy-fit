@@ -1,6 +1,6 @@
 from numpy.testing import assert_almost_equal, assert_equal
 import numpy as np
-from dmipy_sim.math.sh_analytical import cart2sphere
+from dmipy_replay.math.sh_analytical import cart2sphere
 from dmipy_fit.distributions import distributions
 from dmipy_fit.utils import utils
 from dipy.data import get_sphere
