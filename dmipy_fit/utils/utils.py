@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from dipy.data import get_sphere
-from dipy.utils.optpkg import optional_package
+from .sh_basis import optional_module
 
-SPHERE = get_sphere(name='symmetric362')
-numba, have_numba, _ = optional_package("numba")
+numba, have_numba = optional_module("numba")
 
 __all__ = [
     'perpendicular_vector',

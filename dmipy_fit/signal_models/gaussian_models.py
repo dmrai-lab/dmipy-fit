@@ -11,9 +11,9 @@ from ..utils import utils
 from ..core.modeling_framework import ModelProperties
 from ..core.signal_model_properties import (
     IsotropicSignalModelProperties, AnisotropicSignalModelProperties)
-from dipy.utils.optpkg import optional_package
+from ..utils.sh_basis import optional_module
 
-numba, have_numba, _ = optional_package("numba")
+numba, have_numba = optional_module("numba")
 
 from ..core.constants import DIFFUSIVITY_SCALING, A_SCALING
 

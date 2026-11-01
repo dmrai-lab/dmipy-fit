@@ -28,6 +28,13 @@ def positivity_hemisphere():
     return np.asarray(z["vertices"], np.float64)
 
 
+def symmetric_sphere():
+    """The 724 unit directions of the symmetric sphere (the stored hemisphere and its antipodes): ``(724, 3)``. The
+    equal-weight quadrature grid of the spherical-harmonic dispersion integrals."""
+    v = positivity_hemisphere()
+    return np.concatenate([v, -v])
+
+
 def positivity_basis(sh_order):
     """The basis on the positivity hemisphere: ``(362, n_coef)``."""
     return real_sh_tournier(sh_order, positivity_hemisphere())
@@ -49,6 +56,52 @@ def positivity_hemisphere_neighbours():
             nb[a].update(int(b) for b in f if b != a)
     k = max(len(s) for s in nb)
     return np.array([sorted(s) + [min(s)] * (k - len(s)) for s in nb], dtype=np.int64)
+
+
+def sphere_edges(vertices):
+    """The neighbour pairs ``(n_edges, 2)`` of unit ``vertices`` ``(n, 3)`` spread over the whole sphere: the edges of
+    the faces of their convex hull."""
+    from scipy.spatial import ConvexHull
+    faces = ConvexHull(np.asarray(vertices, np.float64)).simplices
+    pairs = np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]])
+    return np.unique(np.sort(pairs, axis=1), axis=0)
+
+
+def peak_directions(odf, vertices, edges, relative_peak_threshold=0.5, min_separation_angle=25.):
+    """The peaks of a function ``odf`` ``(n,)`` sampled at the unit ``vertices`` ``(n, 3)`` of the whole sphere, whose
+    neighbour pairs are ``edges`` (:func:`sphere_edges`): ``(directions (k, 3), values (k,), indices (k,))``,
+    descending.
+
+    A peak is a vertex greater than at least one neighbour and at least as large as all of them (the largest vertex
+    when there is none). It is kept when it exceeds ``lo + relative_peak_threshold * (max - lo)`` for
+    ``lo = max(0, odf.min())``, and dropped when it lies within ``min_separation_angle`` degrees (axially, v equals
+    -v) of a larger kept peak. This is dipy's ``peak_directions``.
+    """
+    odf = np.asarray(odf, np.float64)
+    vertices = np.asarray(vertices, np.float64)
+    a, b = edges[:, 0], edges[:, 1]
+    # a vertex fails when a neighbour is larger; it counts when some neighbour is smaller
+    larger_nb = np.zeros(len(odf), bool)
+    smaller_nb = np.zeros(len(odf), bool)
+    np.logical_or.at(larger_nb, a, odf[b] > odf[a])
+    np.logical_or.at(larger_nb, b, odf[a] > odf[b])
+    np.logical_or.at(smaller_nb, a, odf[b] < odf[a])
+    np.logical_or.at(smaller_nb, b, odf[a] < odf[b])
+    indices = np.flatnonzero(smaller_nb & ~larger_nb)
+    if len(indices) == 0:
+        indices = np.array([int(np.argmax(odf))])
+    indices = indices[np.argsort(-odf[indices], kind='stable')]
+    values = odf[indices]
+    if len(indices) > 1:
+        lo = max(0.0, float(odf.min()))
+        indices = indices[(values - lo) >= relative_peak_threshold * (values[0] - lo)]
+        cos_min = np.cos(np.deg2rad(min_separation_angle))
+        kept = []
+        for i in indices:
+            if all(abs(vertices[i] @ vertices[j]) < cos_min for j in kept):
+                kept.append(i)
+        indices = np.array(kept, dtype=np.int64)
+    return vertices[indices], odf[indices], indices
 
 
 def fod_peak_values(sh_coeff, sh_order, max_peaks=2, min_separation_angle=25.):

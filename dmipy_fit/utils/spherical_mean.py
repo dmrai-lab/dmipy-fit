@@ -1,6 +1,5 @@
 import numpy as np
-from dmipy_sim.math.sh_analytical import cart2sphere
-from dipy.reconst.shm import real_sh_tournier as real_sym_sh_mrtrix
+from .sh_basis import real_sh_tournier
 from . import utils
 
 __all__ = [
@@ -77,8 +76,7 @@ def estimate_spherical_mean_shell(
         spherical mean of the signal attenuation.
     """
     if sh_mat is None:
-        _, theta_, phi_ = cart2sphere(bvecs_shell).T
-        sh_mat = real_sym_sh_mrtrix(sh_order, theta_, phi_, legacy=False)[0]
+        sh_mat = real_sh_tournier(sh_order, bvecs_shell)
     sh_mat_inv = np.linalg.pinv(sh_mat)
     E_sh_coef = np.dot(sh_mat_inv, E_shell)
     # Integral of sphere is 1 / (4 * np.pi)
