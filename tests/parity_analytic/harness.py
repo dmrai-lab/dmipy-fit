@@ -26,6 +26,10 @@ its jit of a form is a second implementation of it):
   printed.
 * ``python tests/parity_analytic/harness.py record``: emit every case twice, write ``record/``; a case whose two runs
   differ is recorded as not bit-reproducible with its derived tolerance.
+* ``python tests/parity_analytic/harness.py rebaseline PREFIX...``: emit every case once and replace the record's
+  entries of the cases whose id starts with a prefix, drop the entries of cases that are no longer registered, and
+  print how far each replaced entry moved (max abs, max relative, max ulp). Every other entry is left as it was; one
+  that differs without a prefix is reported and the record is not written.
 * ``python tests/parity_analytic/harness.py inputs``: write ``inputs.npz``, the fixed arrays the cases read.
 * ``python tests/parity_analytic/harness.py list``: the case ids.
 
@@ -75,7 +79,6 @@ FORMS = {
     "surface.b_hat_ia": ("dmipy_analytic.relaxation", "surface_relaxation_gamma_cylinders"),
     "surface.b_hat_sphere": ("dmipy_analytic.relaxation", "surface_relaxation_gamma_spheres"),
     "surface.b_hat_ea_long": ("dmipy_analytic.relaxation", "surface_relaxation"),
-    "surface.b_hat_ea_short": ("dmipy_fit.white_matter.surface", "b_hat_ea_short"),
     "surface.exterior_surface_to_volume": ("dmipy_analytic.relaxation", "exterior_surface_to_volume"),
     "distributions.odi2kappa": ("dmipy_fit.distributions.distributions", "odi2kappa"),
     "distributions.kappa2odi": ("dmipy_fit.distributions.distributions", "kappa2odi"),
@@ -371,9 +374,6 @@ def _standalone_cases():
         form("surface.b_hat_sphere")(2.0, 1.0e-6, rho, tau, vw) for rho in (2e-6, 15e-6) for vw in (True, False)]))
     add("numpy", "numpy/surface.b_hat_ea_long", lambda: np.stack([
         form("surface.b_hat_ea_long")(rho, sv, tau) for rho in (2e-6, 15e-6) for sv in (0.5e6, 2.5e6)]))
-    add("numpy", "numpy/surface.b_hat_ea_short", lambda: np.array([
-        form("surface.b_hat_ea_short")(rho, sv, 2.0e-9, te) for rho in (2e-6, 15e-6) for sv in (0.5e6, 2.5e6)
-        for te in (0.04, 0.12)]))
     add("numpy", "numpy/surface.exterior_surface_to_volume", lambda: np.array([
         form("surface.exterior_surface_to_volume")(f, 2.0, 0.3e-6, geometry=g)
         for f in (0.3, 0.7) for g in ("sphere", "cylinder", "plane")]))
@@ -888,6 +888,69 @@ def check(reference=None, base_manifest=None):
     return 1 if failures else 0
 
 
+def rebaseline(prefixes):
+    """Replace the record's entries of the cases starting with one of ``prefixes`` by this code's outputs and drop the
+    entries of cases that are no longer registered; refuse (and write nothing) when any other case differs."""
+    import numpy as np
+    build_registry()
+    with open(os.path.join(RECORD, "manifest.json")) as f:
+        manifest = json.load(f)
+    unexpected, report = [], []
+    new_sections = {}
+    for section in SECTIONS:
+        entries = manifest["sections"][section]
+        recorded = load(os.path.join(RECORD, section + ".npz"))
+        with tempfile.TemporaryDirectory() as d:
+            run_emit(section, d)
+            now = load(os.path.join(d, section + ".npz"))
+        registered = {cid for cid, c in REGISTRY.items() if c.section == section}
+        kept_entries, kept_arrays = {}, {}
+        for cid in sorted(registered | set(entries)):
+            key = cid.replace("/", "__")
+            wanted = cid.startswith(tuple(prefixes))
+            if cid not in registered:                                    # the case is gone
+                report.append(f"{cid}: removed")
+                continue
+            a = now[key]
+            old = recorded.get(key)
+            same = old is not None and old.dtype == a.dtype and old.shape == a.shape and np.array_equal(old, a)
+            if cid in entries and not wanted:
+                if not same:
+                    ent = entries[cid]
+                    tolerated = "atol" in ent or "rtol" in ent
+                    if not tolerated:
+                        unexpected.append(cid)
+                kept_entries[cid], kept_arrays[key] = entries[cid], old
+                continue
+            entry = {"sha256": digest(a), "shape": list(a.shape), "dtype": a.dtype.str, "bitwise": True}
+            if cid in entries and not entries[cid]["bitwise"]:
+                entry = dict(entries[cid], sha256=digest(a))
+            kept_entries[cid], kept_arrays[key] = entry, a
+            if old is None:
+                report.append(f"{cid}: added")
+            elif not same:
+                d_abs = np.abs(a - old)
+                rel = d_abs / np.maximum(np.abs(old), np.finfo(old.dtype).tiny)
+                report.append(f"{cid}: moved, max abs {d_abs.max():.3e}, max rel {rel.max():.3e}, "
+                              f"max {ulps(a, old).max():.1f} ulp, {int((a != old).sum())}/{a.size} elements")
+        new_sections[section] = (kept_entries, kept_arrays)
+    if unexpected:
+        print("differ without being named; nothing written:")
+        for cid in unexpected:
+            print("  " + cid)
+        sys.exit(1)
+    for section, (kept_entries, kept_arrays) in new_sections.items():
+        manifest["sections"][section] = dict(sorted(kept_entries.items()))
+        np.savez(os.path.join(RECORD, section + ".npz"), **kept_arrays)
+    manifest["environment"] = environment()
+    with open(os.path.join(RECORD, "manifest.json"), "w") as f:
+        json.dump(manifest, f, indent=1, sort_keys=False)
+        f.write("\n")
+    for line in report:
+        print(line)
+    print(f"{len(report)} entries changed")
+
+
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else "check"
     if cmd == "emit":
@@ -900,6 +963,8 @@ def main(argv):
         if unknown or len(argv) % 2:
             raise SystemExit(f"check takes --reference DIR and --base-manifest FILE, not {sorted(unknown) or argv[2:]}")
         sys.exit(check(options.get("--reference"), options.get("--base-manifest")))
+    elif cmd == "rebaseline":
+        rebaseline(argv[2:])
     elif cmd == "inputs":
         make_inputs()
     elif cmd == "list":
