@@ -117,8 +117,7 @@ class CC2CappedCylinderStejskalTannerApproximation(
             np.dot(mu_perpendicular_plane, n.T),
             axis=0
         )
-        q_parallel = q * np.dot(n, mu)
-        q_parallel = np.where(q_parallel > 0, q_parallel, 0.0)   # only q>0 attenuate along the axis
+        q_parallel = q * np.dot(n, mu)                           # signed: the signal is even in it
         q_perp = q * magnitude_perpendicular
         return cylinder.capped_sgp_long_time(q_perp, q_parallel, diameter, length)
 
@@ -250,8 +249,7 @@ class CC3CappedCylinderCallaghanApproximation(
             np.dot(mu_perpendicular_plane, n.T),
             axis=0
         )
-        q_parallel = q * np.dot(n, mu)
-        q_parallel = np.where(q_parallel > 0, q_parallel, 0.0)   # only q>0 attenuate along the axis
+        q_parallel = q * np.dot(n, mu)                           # signed: the signal is even in it
         q_perp = q * magnitude_perpendicular
         return cylinder.capped_sgp(
             q_perp, q_parallel, tau, diameter, length, self.diffusion_intra,
