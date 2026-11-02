@@ -11,11 +11,11 @@ env:
   # The 3.0 line is not on PyPI yet (dmipy-sim 3.0, dmipy-replay 0.2, dmipy-analytic 3.0): CI installs each from the
   # commit this revision was tested against (dmipy-sim: the head of dmipy-sim#884; dmipy-replay: the head of
   # dmipy-replay#26, the siblings that import the moved forms from dmipy-analytic; dmipy-analytic: the head of
-  # dmipy-analytic#4, which holds the forms of dmipy-fit; a merge commit keeps each reachable on main). Drop all three
-  # when the releases land and `pip install` resolves them from PyPI instead.
+  # dmipy-analytic#6, on top of the merged forms of dmipy-fit; a merge commit keeps each reachable on main). Drop all
+  # three when the releases land and `pip install` resolves them from PyPI instead.
   DMIPY_SIM_REF: bdca10812227a1cb16da8c37ae8fc19e826a4131
   DMIPY_REPLAY_REF: 6bf71fcdf693e9033935f9f459e125e97ef8cb17
-  DMIPY_ANALYTIC_REF: d2283d5eb392820c303ab78b2cd06d4a945b0d1a
+  DMIPY_ANALYTIC_REF: 9f9c8ca810e8e94c3076021269b3a4bbf5eafbba
 
 jobs:
   parity:

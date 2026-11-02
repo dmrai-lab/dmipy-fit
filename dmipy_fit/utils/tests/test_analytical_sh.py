@@ -436,6 +436,7 @@ class TestBinghamDensityIsTheCoefficients:
 
     @pytest.mark.parametrize("kappa,beta_frac,psi", [(2.0, 0.5, 0.3), (8.0, 0.7, 1.1), (16.0, 0.25, 0.0)])
     def test_density_projects_onto_the_coefficients(self, kappa, beta_frac, psi):
+        from dmipy_analytic.harmonics import real_sh
         from dmipy_fit.distributions.distributions import SD2Bingham, kappa2odi
         from dmipy_replay.replay import so3
         mu_sph = np.r_[0.7, 0.4]
@@ -443,7 +444,7 @@ class TestBinghamDensityIsTheCoefficients:
         dirs, w = so3.sphere_quadrature(48, 96)
         density = model(dirs)
         np.testing.assert_allclose(float(np.sum(w * density)), 1.0, atol=1e-9)
-        Y = so3.real_sh(L_MAX, dirs)
+        Y = real_sh(L_MAX, dirs)
         c_model = (Y * (w * density)[:, None]).sum(axis=0)
         from dmipy_fit.utils import utils
         c = bingham_sh(utils.unitsphere2cart_1d(mu_sph), psi, kappa, beta_frac * kappa, l_max=L_MAX)
