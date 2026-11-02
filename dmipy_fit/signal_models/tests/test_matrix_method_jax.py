@@ -1,5 +1,5 @@
 """JAX path for the exact matrix-method compartments: parity with the NumPy path (both routed through
-``dmipy_sim.math.matrix_method``). Skipped if JAX is unavailable."""
+``dmipy_analytic.restricted.matrix_method``). Skipped if JAX is unavailable."""
 import numpy as np
 import numpy.testing as npt
 import pytest

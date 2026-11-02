@@ -29,7 +29,7 @@ from ..signal_models.sphere_models import S1Dot
 from ..signal_models.attenuation import (
     OccupancyGatedModel, TransverseRelaxation, LongitudinalRelaxation,
     IntraPoreSurfaceRelaxivity, ExteriorSurfaceRelaxivity)
-from .surface import exterior_surface_to_volume
+from dmipy_analytic.relaxation import exterior_surface_to_volume
 
 # fibre axis +z in dmipy (theta, phi) spherical convention
 _MU_Z = [0.0, 0.0]
@@ -109,7 +109,7 @@ def white_matter_compartments(include_csf: bool = False, *,
     ``gamma_scale_outer_diameter``) drives BOTH surface factors: the intra-pore ⟨4/d⟩
     average (the intra factor relaxes against the inner wall, ``d_inner = g·d_outer``,
     internally) and — when ``S_ext_over_V`` is None — the exterior surface/volume ratio
-    (:func:`dmipy_fit.white_matter.surface.exterior_surface_to_volume`, the same closed form
+    (:func:`dmipy_analytic.relaxation.exterior_surface_to_volume`, the same closed form
     the Monte-Carlo substrate uses). Pass ``S_ext_over_V`` explicitly to override.
     """
     if S_ext_over_V is None:

@@ -81,6 +81,13 @@ def _c4(R_um):
         diameter=2.0 * R_um * 1e-6,
     )
 
+def _gaussian_phase(c4, G, delta, DELTA, diameter):
+    """The Van Gelderen Gaussian phase of the model's perpendicular diffusivity and gyromagnetic ratio."""
+    from dmipy_analytic.restricted import cylinder
+    return cylinder.gaussian_phase(G, delta, DELTA, diameter, c4.diffusion_perpendicular,
+                                   gamma=c4.gyromagnetic_ratio)
+
+
 
 # ---------------------------------------------------------------------------
 # 1. GPD exact regime: b < 1000 s/mm² — all 7 radii
@@ -104,8 +111,8 @@ def test_c4_gpd_exact_regime(R_um):
         b_smm2 = p["b_sm2"] * 1e-6
         if b_smm2 >= 1000.0:
             continue
-        E_anal = c4.perpendicular_attenuation(
-            p["G_Tm"], p["delta_s"], p["DELTA_s"], diam
+        E_anal = _gaussian_phase(
+            c4, p["G_Tm"], p["delta_s"], p["DELTA_s"], diam
         )
         diff = abs(signals[i] - E_anal)
         if diff > tol:
@@ -152,8 +159,8 @@ def test_c4_gpd_moderate_regime(R_um, tol, b_max):
         b_smm2 = p["b_sm2"] * 1e-6
         if not (1000.0 <= b_smm2 <= b_max):
             continue
-        E_anal = c4.perpendicular_attenuation(
-            p["G_Tm"], p["delta_s"], p["DELTA_s"], diam
+        E_anal = _gaussian_phase(
+            c4, p["G_Tm"], p["delta_s"], p["DELTA_s"], diam
         )
         diff = abs(signals[i] - E_anal)
         if diff > tol:
@@ -191,7 +198,7 @@ def test_diffraction_dip_r5um():
     )
     p      = params[idx]
     E_mc   = signals[idx]
-    E_anal = c4.perpendicular_attenuation(p["G_Tm"], p["delta_s"], p["DELTA_s"], diam)
+    E_anal = _gaussian_phase(c4, p["G_Tm"], p["delta_s"], p["DELTA_s"], diam)
 
     # MC is near the diffraction dip (signal collapsed to ~0)
     assert E_mc < 0.04, (

@@ -1,7 +1,7 @@
 from numpy.testing import assert_almost_equal, assert_equal
 from dmipy_fit.utils import utils
 import numpy as np
-from dmipy_replay.math.sh_analytical import cart2sphere
+from dmipy_analytic.harmonics import cart2sphere
 from dmipy_fit.utils.utils import (
     rotation_matrix_100_to_theta_phi, rotation_matrix_around_100,
     rotation_matrix_100_to_theta_phi_psi

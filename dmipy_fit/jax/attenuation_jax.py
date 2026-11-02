@@ -15,6 +15,7 @@ Requires ``scheme_jax`` to carry ``tau_perp`` -- added by
 :func:`dmipy_fit.jax.jax_compat.scheme_to_jax`.
 """
 import jax.numpy as jnp
+from dmipy_analytic.jax import relaxation as jrelaxation
 
 from ..signal_models.attenuation import (
     TransverseRelaxation, LongitudinalRelaxation,
@@ -30,7 +31,7 @@ def _build_transverse_relaxation(factor):
         tau_perp = scheme_jax.get('tau_perp')
         if T2 is None or tau_perp is None:
             return 1.0
-        return jnp.where(jnp.isfinite(T2), jnp.exp(-tau_perp / T2), 1.0)
+        return jnp.where(jnp.isfinite(T2), jrelaxation.transverse_decay(tau_perp, T2), 1.0)
     return fn
 
 
@@ -40,7 +41,7 @@ def _build_longitudinal_relaxation(factor):
         tau_par = scheme_jax.get('tau_par')
         if T1 is None or tau_par is None:
             return 1.0
-        return jnp.where(jnp.isfinite(T1), jnp.exp(-tau_par / T1), 1.0)
+        return jnp.where(jnp.isfinite(T1), jrelaxation.longitudinal_decay(tau_par, T1), 1.0)
     return fn
 
 
@@ -53,17 +54,15 @@ def _build_exterior_surface_relaxivity(factor):
         if rho is None or tau_perp is None:
             return 1.0
         return jnp.where(jnp.isfinite(rho),
-                         jnp.exp(-rho * S_over_V * tau_perp), 1.0)
+                         jrelaxation.surface_relaxation(rho, S_over_V, tau_perp), 1.0)
     return fn
 
 
 def _build_surface_relaxivity(factor):
-    from ..signal_models.attenuation import SURFACE_TO_VOLUME_OVER_DIAMETER
     sv_fixed = factor.surface_to_volume
     # Geometry bound at OccupancyGatedModel build time (sphere 6/d, cylinder
     # 4/d, plane 2/d); defaults to cylinder when unknown, matching NumPy.
-    coeff = SURFACE_TO_VOLUME_OVER_DIAMETER.get(
-        getattr(factor, 'geometry', None), 4.0)
+    geometry = getattr(factor, 'geometry', None) or 'cylinder'
 
     def fn(scheme_jax, mu_cart, params):
         rho = params.get('surface_relaxivity')
@@ -76,32 +75,16 @@ def _build_surface_relaxivity(factor):
             d = params.get('diameter')
             if d is None:
                 return 1.0
-            sv = coeff / d
-        return jnp.where(jnp.isfinite(rho), jnp.exp(-rho * sv * tau_perp), 1.0)
+            sv = jrelaxation.surface_to_volume(d, geometry)
+        return jnp.where(jnp.isfinite(rho), jrelaxation.surface_relaxation(rho, sv, tau_perp), 1.0)
     return fn
 
 
-def _build_intrapore_surface_relaxivity(factor, n_nodes=64):
-    r"""Gamma-averaged intra-pore surface attenuation B = E_d[exp(-4 rho tau/d)]
-    for a lumen diameter d ~ Gamma(shape a, rate beta).
-
-    The numpy form (white_matter.surface.b_hat_ia) is the Bessel-K closed form
-    2 (beta c)^{a/2}/Gamma(a) K_a(2 sqrt(beta c)), c = 4 rho tau. JAX has no
-    Bessel-K, so we evaluate the equivalent integral by generalized
-    Gauss-Laguerre quadrature (weight x^{a-1} e^{-x}, sum w_k = Gamma(a)):
-
-        B = (1/Gamma(a)) sum_k w_k exp(-c beta / x_k).
-
-    The shape ``a`` is an instance constant, so the nodes/weights are
-    precomputed in numpy once and baked into the JAX closure; only ``c`` (via
-    the fitted surface_relaxivity) and ``beta`` (via g_ratio) are traced.
-    """
-    from scipy.special import roots_genlaguerre, gamma as _gamma
-    a_eff = factor.gamma_shape + (2.0 if factor.volume_weighted else 0.0)
-    _x, _w = roots_genlaguerre(n_nodes, a_eff - 1.0)
-    x = jnp.asarray(_x)                  # (n_nodes,)
-    w = jnp.asarray(_w)
-    inv_gamma_a = 1.0 / float(_gamma(a_eff))
+def _build_intrapore_surface_relaxivity(factor):
+    r"""Gamma-averaged intra-pore surface attenuation B = E_d[exp(-4 rho tau/d)] for a lumen diameter d with a Gamma
+    distribution (:func:`dmipy_analytic.jax.relaxation.surface_relaxation_gamma_cylinders`, evaluated by Gauss-Laguerre
+    quadrature). The shape is an instance constant; only ``rho`` (the fitted surface relaxivity) and the scale
+    ``g_ratio * gamma_scale_outer_diameter`` (the lumen is ``g`` times the outer diameter) are traced."""
     outer_scale = factor.gamma_scale_outer_diameter
 
     def fn(scheme_jax, mu_cart, params):
@@ -111,48 +94,23 @@ def _build_intrapore_surface_relaxivity(factor, n_nodes=64):
             return 1.0
         g = params.get('g_ratio')
         g = 1.0 if g is None else g                 # inner = g * outer
-        beta = 1.0 / (g * outer_scale)              # rate (1/m)
-        c = jnp.asarray(4.0 * rho * tau_perp)        # scalar or (N,), m
-        # quadrature over the node axis (leading), broadcasting against c
-        xr = x.reshape((-1,) + (1,) * c.ndim)        # (n_nodes, 1...)
-        wr = w.reshape((-1,) + (1,) * c.ndim)
-        arg = -(c[None, ...] * beta) / xr            # (n_nodes, *c.shape)
-        B = (wr * jnp.exp(arg)).sum(0) * inv_gamma_a
-        B = jnp.where(c <= 0, 1.0, B)
+        B = jrelaxation.surface_relaxation_gamma_cylinders(
+            factor.gamma_shape, g * outer_scale, rho, tau_perp, factor.volume_weighted)
         return jnp.where(jnp.isfinite(rho), B, 1.0)
     return fn
 
 
-def _build_intrasphere_surface_relaxivity(factor, n_nodes=64):
-    r"""Gamma-averaged intra-sphere surface attenuation B = E_d[exp(-6 rho tau/d)]
-    for a sphere diameter d ~ Gamma(shape a, rate beta) -- the sphere analog of
-    :func:`_build_intrapore_surface_relaxivity`.
-
-    The numpy form (white_matter.surface.b_hat_sphere) is the Bessel-K closed
-    form with S/V coefficient 6 and volume-weight shift +3. JAX has no Bessel-K,
-    so we use the same generalized Gauss-Laguerre quadrature:
-
-        B = (1/Gamma(a)) sum_k w_k exp(-c beta / x_k),   c = 6 rho tau.
-    """
-    from scipy.special import roots_genlaguerre, gamma as _gamma
-    a_eff = factor.gamma_shape + (3.0 if factor.volume_weighted else 0.0)
-    _x, _w = roots_genlaguerre(n_nodes, a_eff - 1.0)
-    x = jnp.asarray(_x)
-    w = jnp.asarray(_w)
-    inv_gamma_a = 1.0 / float(_gamma(a_eff))
-    beta = 1.0 / factor.gamma_scale_diameter            # rate (1/m), constant
-
+def _build_intrasphere_surface_relaxivity(factor):
+    r"""Gamma-averaged intra-sphere surface attenuation B = E_d[exp(-6 rho tau/d)] for a sphere diameter d with a Gamma
+    distribution (:func:`dmipy_analytic.jax.relaxation.surface_relaxation_gamma_spheres`), the sphere analogue of
+    :func:`_build_intrapore_surface_relaxivity`."""
     def fn(scheme_jax, mu_cart, params):
         rho = params.get('surface_relaxivity')
         tau_perp = scheme_jax.get('tau_perp')
         if rho is None or tau_perp is None:
             return 1.0
-        c = jnp.asarray(6.0 * rho * tau_perp)            # scalar or (N,), m
-        xr = x.reshape((-1,) + (1,) * c.ndim)
-        wr = w.reshape((-1,) + (1,) * c.ndim)
-        arg = -(c[None, ...] * beta) / xr
-        B = (wr * jnp.exp(arg)).sum(0) * inv_gamma_a
-        B = jnp.where(c <= 0, 1.0, B)
+        B = jrelaxation.surface_relaxation_gamma_spheres(
+            factor.gamma_shape, factor.gamma_scale_diameter, rho, tau_perp, factor.volume_weighted)
         return jnp.where(jnp.isfinite(rho), B, 1.0)
     return fn
 

@@ -8,12 +8,14 @@ on:
   workflow_dispatch:
 
 env:
-  # The 3.0 line is not on PyPI yet (dmipy-sim 3.0, dmipy-replay 0.2): CI installs each from the commit this
-  # revision was tested against (dmipy-sim: the head of dmipy-sim#883; dmipy-replay: the head of dmipy-replay#25, with
-  # `PoolSpec` and a sequence's b spelled `seq.b()`; a merge commit keeps each reachable on main). Drop both when the
-  # releases land and `pip install` resolves them from PyPI instead.
+  # The 3.0 line is not on PyPI yet (dmipy-sim 3.0, dmipy-replay 0.2, dmipy-analytic 3.0): CI installs each from the
+  # commit this revision was tested against (dmipy-sim: the head of dmipy-sim#883; dmipy-replay: the head of
+  # dmipy-replay#25, with `PoolSpec` and a sequence's b spelled `seq.b()`; dmipy-analytic: the head of
+  # dmipy-analytic#4, which holds the forms of dmipy-fit; a merge commit keeps each reachable on main). Drop all three
+  # when the releases land and `pip install` resolves them from PyPI instead.
   DMIPY_SIM_REF: 21753a2375780b2e53c651198be607f7c852c257
   DMIPY_REPLAY_REF: 9594afe66251f29db707b63a0d826a375b0a250f
+  DMIPY_ANALYTIC_REF: d2283d5eb392820c303ab78b2cd06d4a945b0d1a
 
 jobs:
   parity:
@@ -35,6 +37,7 @@ jobs:
           pip install -c tests/parity_analytic/constraints.txt \
                       "dmipy-sim @ git+https://github.com/dmrai-lab/dmipy-sim@${DMIPY_SIM_REF}" \
                       "dmipy-replay @ git+https://github.com/dmrai-lab/dmipy-replay@${DMIPY_REPLAY_REF}" \
+                      "dmipy-analytic[special,jax] @ git+https://github.com/dmrai-lab/dmipy-analytic@${DMIPY_ANALYTIC_REF}" \
                       "jax[cpu]" jaxopt scipy packaging
           pip install --no-deps -e .
 
@@ -63,9 +66,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install "dmipy-sim @ git+https://github.com/dmrai-lab/dmipy-sim@${DMIPY_SIM_REF}" \
-                      "dmipy-replay @ git+https://github.com/dmrai-lab/dmipy-replay@${DMIPY_REPLAY_REF}"
-          # dmipy-fit's own bounds (dmipy-sim>=3,<4, dmipy-replay>=0.2,<0.3) name the releases above, so the package is
-          # installed without resolving them and its extras are listed here.
+                      "dmipy-replay @ git+https://github.com/dmrai-lab/dmipy-replay@${DMIPY_REPLAY_REF}" \
+                      "dmipy-analytic[special,jax] @ git+https://github.com/dmrai-lab/dmipy-analytic@${DMIPY_ANALYTIC_REF}"
+          # dmipy-fit's own bounds (dmipy-sim>=3,<4, dmipy-replay>=0.2,<0.3, dmipy-analytic>=3,<4) name the releases
+          # above, so the package is installed without resolving them and its extras are listed here.
           # dipy is the test oracle only (the `oracle` extra); the package never imports it
           pip install --no-deps -e .
           pip install "jax[cpu]>=0.6.2" "jaxopt>=0.8" "numba>=0.57" "nibabel>=5.0" "matplotlib>=3.5" "cvxpy>=1.3" \

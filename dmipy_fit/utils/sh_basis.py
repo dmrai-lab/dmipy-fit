@@ -1,6 +1,6 @@
 """The real spherical-harmonic basis and the positivity grid the spherical-deconvolution optimisers use:
-dmipy-replay's orthonormal real basis (``dmipy_replay.replay.so3.real_sh``, the ``tournier07`` convention with
-``legacy=False``, RPH.md 4.1) and a stored hemisphere, so no shipped code reads dipy at runtime."""
+the orthonormal real basis of :func:`dmipy_analytic.harmonics.real_sh` (the ``tournier07`` convention with
+``legacy=False``) and a stored hemisphere, so no shipped code reads dipy at runtime."""
 import functools
 import importlib
 import os
@@ -17,8 +17,8 @@ def sh_degrees(sh_order):
 
 def real_sh_tournier(sh_order, dirs):
     """The basis sampled at unit ``dirs`` ``(n, 3)``: ``(n, n_coef)``, orthonormal, ``tournier07`` order."""
-    from dmipy_replay.replay import so3
-    return np.asarray(so3.real_sh(int(sh_order), np.asarray(dirs, np.float64)), np.float64)
+    from dmipy_analytic.harmonics import real_sh
+    return np.asarray(real_sh(int(sh_order), np.asarray(dirs, np.float64)), np.float64)
 
 
 def positivity_hemisphere():

@@ -112,7 +112,7 @@ def test_b_hat_sphere_matches_numerical_integral():
     """Closed form E_d[exp(-6 rho tau/d)] over the volume-weighted (alpha+3)
     Gamma distribution matches direct numerical integration."""
     from scipy.stats import gamma as gamma_dist
-    from dmipy_fit.white_matter.surface import b_hat_sphere
+    from dmipy_analytic.relaxation import surface_relaxation_gamma_spheres as b_hat_sphere
     trap = _trap()
     alpha, scale, rho, tau = 2.5, 1.2e-6, 18e-6, 0.045
     d = np.linspace(1e-9, 60e-6, 500000)
@@ -125,7 +125,8 @@ def test_b_hat_sphere_matches_numerical_integral():
 
 def test_b_hat_sphere_differs_from_cylinder():
     """Sphere (6/d, +3) and cylinder (4/d, +2) forms are genuinely different."""
-    from dmipy_fit.white_matter.surface import b_hat_sphere, b_hat_ia
+    from dmipy_analytic.relaxation import (
+        surface_relaxation_gamma_spheres as b_hat_sphere, surface_relaxation_gamma_cylinders as b_hat_ia)
     args = (2.5, 1.2e-6, 18e-6, 0.045)
     assert not np.isclose(b_hat_sphere(*args), b_hat_ia(*args), rtol=1e-3)
 
@@ -142,7 +143,7 @@ def test_intrasphere_factor_applies_and_varies_with_relaxivity():
     assert np.all(E1[1:] < E0[1:])          # gamma-averaged relaxivity attenuates
 
     # matches the closed form directly (tau_perp falls back to TE)
-    from dmipy_fit.white_matter.surface import b_hat_sphere
+    from dmipy_analytic.relaxation import surface_relaxation_gamma_spheres as b_hat_sphere
     b = float(b_hat_sphere(2.5, 1.2e-6, 25e-6, TE))
     np.testing.assert_allclose(E1 / E0, b, rtol=1e-9)
 
@@ -167,7 +168,7 @@ def test_intrasphere_numpy_jax_parity():
 # ---------------------------------------------------------------------------
 
 def test_exterior_surface_to_volume_requires_geometry():
-    from dmipy_fit.white_matter.surface import exterior_surface_to_volume
+    from dmipy_analytic.relaxation import exterior_surface_to_volume
     with pytest.raises(TypeError):
         exterior_surface_to_volume(0.6, 3.0, 1.2e-6)          # missing geometry
     with pytest.raises(ValueError):
@@ -176,7 +177,7 @@ def test_exterior_surface_to_volume_requires_geometry():
 
 def test_exterior_surface_to_volume_geometry_values():
     """Closed form matches (coeff, alpha+m-1) per geometry; sphere != cylinder."""
-    from dmipy_fit.white_matter.surface import exterior_surface_to_volume
+    from dmipy_analytic.relaxation import exterior_surface_to_volume
     f, alpha, s = 0.6, 3.0, 1.2e-6
     cyl = exterior_surface_to_volume(f, alpha, s, geometry='cylinder')
     sph = exterior_surface_to_volume(f, alpha, s, geometry='sphere')

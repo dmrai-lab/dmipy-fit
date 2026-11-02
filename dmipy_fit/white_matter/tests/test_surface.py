@@ -6,8 +6,10 @@ long/short forms.
 """
 import numpy as np
 
-from dmipy_fit.white_matter.surface import (
-    b_hat_ia, b_hat_ea_long, b_hat_ea_short)
+from dmipy_analytic.relaxation import (
+    surface_relaxation as b_hat_ea_long,
+    surface_relaxation_gamma_cylinders as b_hat_ia)
+from dmipy_fit.white_matter.surface import b_hat_ea_short
 from dmipy_sim.substrate.substrate import mean_inv_diameter_4
 
 
@@ -41,7 +43,7 @@ def test_b_hat_ia_monotone_and_bounded():
 
 
 def test_b_hat_ea_long_is_exponential():
-    B = b_hat_ea_long(rho_ext=1.16e-6, S_ext_over_V_EA=4e6, tau_perp=0.04)
+    B = b_hat_ea_long(1.16e-6, 4e6, 0.04)
     assert np.isclose(B, np.exp(-1.16e-6 * 4e6 * 0.04))
 
 

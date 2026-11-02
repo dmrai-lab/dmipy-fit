@@ -7,7 +7,7 @@ from dipy.reconst.shm import sf_to_sh, sh_to_sf
 from dipy.reconst.shm import real_sh_tournier as real_sym_sh_mrtrix
 from dipy.data import get_sphere
 import numpy as np
-from dmipy_replay.math.sh_analytical import cart2sphere
+from dmipy_analytic.harmonics import cart2sphere
 from dmipy_fit.core.acquisition_scheme import (
     acquisition_scheme_from_bvalues)
 

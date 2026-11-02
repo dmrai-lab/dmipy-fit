@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 from scipy.special import erfi
 
-from dmipy_replay.math.sh_analytical import watson_zonal_ratios, watson_sh, bingham_canonical_sh
+from dmipy_analytic.orientation import watson_zonal_ratios, watson_sh, bingham_canonical_sh
 from dmipy_fit.distributions.distributions import _bingham_sh as bingham_sh
 from dmipy_fit.utils.sh_analytical import gaussian_J_l, gaussian_kernel_rh
 
@@ -132,7 +132,7 @@ class TestWatsonSh:
     def test_matches_grid_at_low_kappa(self):
         """At low kappa the grid-based SD1Watson and analytical agree."""
         from dmipy_fit.distributions.distributions import SD1Watson, kappa2odi
-        from dmipy_replay.math.sh_analytical import cart2sphere
+        from dmipy_analytic.harmonics import cart2sphere
 
         kappa = 1.0
         mu_cart = np.r_[1., 0., 0.]
@@ -291,7 +291,7 @@ class TestBinghamCanonicalSh:
 
     def test_normalization_via_quad(self):
         """The partition function matches direct numerical integration over the sphere."""
-        from dmipy_replay.math.sh_analytical import bingham_normalization
+        from dmipy_analytic.orientation import bingham_normalization
         from scipy.integrate import dblquad
         k1, k2 = 1.5, 0.7
 

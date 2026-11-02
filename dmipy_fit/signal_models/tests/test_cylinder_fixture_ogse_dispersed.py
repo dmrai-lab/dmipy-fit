@@ -6,14 +6,14 @@ full parity with PGSE for OGSE waveforms:
 Test 1 — analytical, no fixture:
     Build a cosine OGSE waveform via from_waveform(), compute signal_lm(), and
     reconstruct E(θ) at multiple polar angles via SH evaluation.  Compare
-    against _ogse_cosine_cylinder_signal() (the exact closed-form GPA formula).
+    against dmipy_analytic's gaussian_phase_cosine() (the exact closed-form GPA formula).
     Tolerance: 1e-3 (fast-eigenmode + waveform discretization).
 
 Test 2 — analytical, no fixture:
     Build a *rotating* cosine OGSE waveform (gradient direction rotates 90°
     over the echo time while oscillating at 50 Hz) via from_waveform(), compute
     signal_lm(), and reconstruct E(θ) at GL angles.  Compare against the IIR
-    numerical GPA path (_ogse_numerical_cylinder_signal) at each angle.
+    numerical GPA path (gaussian_phase_waveform) at each angle.
     This waveform has no closed-form reference other than the gamma_lm path.
     Tolerance: 2e-3 (numerical IIR vs analytical γ_lm + SH reconstruction).
 
@@ -38,15 +38,14 @@ import pytest
 from numpy.polynomial.legendre import leggauss
 
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
+from dmipy_analytic.orientation import watson_sh as watson_odf_lm
+from dmipy_analytic.restricted import cylinder
 from dmipy_fit.signal_models.cylinder_models import (
     C4CylinderGaussianPhaseApproximation,
-    _ogse_cosine_cylinder_signal,
-    _ogse_numerical_cylinder_signal,
     dispersed_signal_from_E_lm,
-    watson_odf_lm,
 )
 
-from dmipy_replay.constants import GAMMA
+from dmipy_analytic.constants import GAMMA
 D_PERP      = 1.7e-9    # m²/s
 LAMBDA_PAR  = 1.7e-9    # m²/s
 FREQ_HZ     = 50
@@ -64,7 +63,6 @@ FIXTURE_DIR = Path(os.environ.get(
     "DMIPY_FIXTURE_DIR", str(Path(__file__).parent / "mc_fixtures")))
 FIXTURE_NPZ = FIXTURE_DIR / "fixtures_ogse_dispersed.npz"
 
-_ROOTS = C4CylinderGaussianPhaseApproximation._CYLINDER_TRASCENDENTAL_ROOTS
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +147,7 @@ def _sh_at_polar_angles(E_lm_row, thetas):
 # ---------------------------------------------------------------------------
 
 def test_ogse_cosine_signal_lm_vs_analytical():
-    """signal_lm fiber-angle reconstruction matches _ogse_cosine_cylinder_signal.
+    """signal_lm fiber-angle reconstruction matches the closed-form cosine Gaussian phase.
 
     Builds a cosine OGSE along ê_z as a free waveform, computes E_lm via
     signal_lm() (SH over fiber orientations), and reconstructs E at 9 polar
@@ -171,8 +169,8 @@ def test_ogse_cosine_signal_lm_vs_analytical():
     for i, theta in enumerate(thetas):
         G_perp = G_AMP * np.sin(theta)
         # Perpendicular: closed-form Stepisnik GPA
-        E_perp = _ogse_cosine_cylinder_signal(
-            G_perp, OMEGA, T_TOTAL, D_PERP, R, _ROOTS)
+        E_perp = cylinder.gaussian_phase_cosine(
+            G_perp, OMEGA, T_TOTAL, DIAM_M, D_PERP)
         # Parallel: Gaussian b_par = b_total * cos²θ
         b_total = float(np.trace(scheme.btensor()[0]))
         b_par   = b_total * np.cos(theta) ** 2
@@ -194,7 +192,7 @@ def test_ogse_rotating_signal_lm_vs_iir():
 
     The gradient oscillates at 50 Hz while its direction rotates 90° in xy.
     No closed-form GPA formula exists for this waveform.  Comparison reference
-    is the IIR numerical GPA path (_ogse_numerical_cylinder_signal) applied to
+    is the IIR numerical GPA path (gaussian_phase_waveform) applied to
     the actual G(t) perpendicular component at each fiber angle.
     """
     scheme = _build_ogse_rotating_scheme(G_amp=G_AMP)
@@ -242,7 +240,7 @@ def test_ogse_rotating_signal_lm_vs_iir():
         # for the numerical IIR we need the signed projection.  Use x-component
         # of the rotated perpendicular (IIR integrates G(t)G(t') — sign cancels).
         G_perp_1d = G_rot[:, 0]   # x component of rotated waveform (perp to z-fiber)
-        E_perp_iir = _ogse_numerical_cylinder_signal(G_perp_1d, DT_WF, D_PERP, R, _ROOTS)
+        E_perp_iir = cylinder.gaussian_phase_waveform(G_perp_1d, DT_WF, DIAM_M, D_PERP)
 
         # Parallel component: z-component of rotated waveform
         G_par_1d = G_rot[:, 2]    # (n_t,)

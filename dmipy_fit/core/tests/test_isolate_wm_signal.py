@@ -27,7 +27,7 @@ from dmipy_fit.data.saved_acquisition_schemes import (
     wu_minn_hcp_acquisition_scheme)
 from dmipy_fit.utils.construct_observation_matrix import (
     construct_model_based_A_matrix)
-from dmipy_replay.math.sh_analytical import cart2sphere
+from dmipy_analytic.harmonics import cart2sphere
 
 scheme = wu_minn_hcp_acquisition_scheme()
 LMAX = 8

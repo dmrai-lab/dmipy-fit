@@ -62,11 +62,11 @@ PINNED_ENV = {
 # adapter lambda where its arguments changed); the record does not change.
 # ---------------------------------------------------------------------------------------------------------------------
 FORMS = {
-    "surface.b_hat_ia": ("dmipy_fit.white_matter.surface", "b_hat_ia"),
-    "surface.b_hat_sphere": ("dmipy_fit.white_matter.surface", "b_hat_sphere"),
-    "surface.b_hat_ea_long": ("dmipy_fit.white_matter.surface", "b_hat_ea_long"),
+    "surface.b_hat_ia": ("dmipy_analytic.relaxation", "surface_relaxation_gamma_cylinders"),
+    "surface.b_hat_sphere": ("dmipy_analytic.relaxation", "surface_relaxation_gamma_spheres"),
+    "surface.b_hat_ea_long": ("dmipy_analytic.relaxation", "surface_relaxation"),
     "surface.b_hat_ea_short": ("dmipy_fit.white_matter.surface", "b_hat_ea_short"),
-    "surface.exterior_surface_to_volume": ("dmipy_fit.white_matter.surface", "exterior_surface_to_volume"),
+    "surface.exterior_surface_to_volume": ("dmipy_analytic.relaxation", "exterior_surface_to_volume"),
     "distributions.odi2kappa": ("dmipy_fit.distributions.distributions", "odi2kappa"),
     "distributions.kappa2odi": ("dmipy_fit.distributions.distributions", "kappa2odi"),
     "sh_analytical.gaussian_signal_sh": ("dmipy_fit.utils.sh_analytical", "gaussian_signal_sh"),
@@ -77,7 +77,7 @@ FORMS = {
     "convolution.sh_convolution": ("dmipy_fit.utils.spherical_convolution", "sh_convolution"),
     "cylinder.E_lm_from_exponent_coeffs": ("dmipy_fit.signal_models.cylinder_models", "E_lm_from_exponent_coeffs"),
     "cylinder.dispersed_signal_from_E_lm": ("dmipy_fit.signal_models.cylinder_models", "dispersed_signal_from_E_lm"),
-    "cylinder.watson_odf_lm": ("dmipy_fit.signal_models.cylinder_models", "watson_odf_lm"),
+    "cylinder.watson_odf_lm": ("dmipy_analytic.orientation", "watson_sh"),
 }
 
 
@@ -671,7 +671,7 @@ def environment():
     import numpy
     from importlib import metadata
     info = {"python": platform.python_version(), "machine": platform.machine(), "numpy": numpy.__version__}
-    for dist in ("scipy", "jax", "jaxlib", "dmipy-sim", "dmipy-replay"):
+    for dist in ("scipy", "jax", "jaxlib", "dmipy-sim", "dmipy-replay", "dmipy-analytic"):
         try:
             info[dist] = metadata.version(dist)
             direct = metadata.distribution(dist).read_text("direct_url.json")

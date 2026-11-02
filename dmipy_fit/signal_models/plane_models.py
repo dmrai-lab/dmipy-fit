@@ -1,6 +1,7 @@
 
 import numpy as np
-from dmipy_replay.constants import GAMMA
+from dmipy_analytic.constants import GAMMA
+from dmipy_analytic.restricted import plane
 from ..core.modeling_framework import ModelProperties
 from ..core.constants import CONSTANTS
 from ._matrix_adapter import (
@@ -62,11 +63,6 @@ class P2PlaneStejskalTannerApproximation(ModelProperties):
     def __init__(self, diameter=None):
         self.diameter = diameter
 
-    def plane_attenuation(self, q, diameter):
-        "Equation 6 in Balinov et al. (1993)."
-        q_argument = 2 * np.pi * q * diameter
-        return 2 * (1 - np.cos(q_argument)) / q_argument ** 2
-
     def __call__(self, acquisition_scheme, **kwargs):
         r'''
         Calculates the signal attenuation.
@@ -85,13 +81,7 @@ class P2PlaneStejskalTannerApproximation(ModelProperties):
         '''
         q = acquisition_scheme.qvalues
         diameter = kwargs.get('diameter', self.diameter)
-
-        E_plane = np.ones_like(q)
-        q_nonzero = q > 0
-        E_plane[q_nonzero] = self.plane_attenuation(
-            q[q_nonzero], diameter
-        )
-        return E_plane
+        return plane.sgp_long_time(q, diameter)
 
 
 class P3PlaneCallaghanApproximation(ModelProperties):
@@ -154,51 +144,7 @@ class P3PlaneCallaghanApproximation(ModelProperties):
 
         self.diameter = diameter
         self.Dintra = diffusion_constant
-        self.xi = np.arange(number_of_roots) * np.pi
-        self.zeta = np.arange(number_of_roots) * np.pi + np.pi / 2.0
-
-    def plane_attenuation(self, q, tau, diameter):
-        """Implements the finite time Callaghan model for planes."""
-        radius = diameter / 2.0
-        q_argument = 2 * np.pi * q * radius
-        q_argument_2 = q_argument ** 2
-        res = np.zeros_like(q)
-        for n in range(len(self.xi)):
-            xi_n = self.xi[n]
-            xi_n2 = self.xi[n] ** 2
-
-            if xi_n == 0.:
-                div = 1.
-            else:
-                div = np.sin(2 * xi_n) / 2 * xi_n
-
-            update = (
-                2 * np.exp(-xi_n2 * self.Dintra * tau / radius ** 2) /
-                (1 + div) *
-                (q_argument * np.sin(q_argument) * np.cos(xi_n) - xi_n *
-                 np.cos(q_argument) * np.sin(xi_n)) ** 2 /
-                (q_argument_2 - xi_n2) ** 2
-            )
-
-            update[~np.isfinite(update)] = 0.
-
-            res += update
-
-        for m in range(len(self.zeta)):
-            zeta_m = self.zeta[m]
-            zeta_m2 = self.zeta[m] ** 2
-
-            update = (
-                2 * np.exp(-zeta_m2 * self.Dintra * tau / radius ** 2) /
-                (1 - np.sin(2 * zeta_m) / (2 * zeta_m)) *
-                (q_argument * np.cos(q_argument) * np.sin(zeta_m) - zeta_m *
-                 np.sin(q_argument) * np.cos(zeta_m)) ** 2 /
-                (q_argument_2 - zeta_m2) ** 2
-            )
-
-            update[~np.isfinite(update)] = 0.
-            res += update
-        return res
+        self.number_of_roots = number_of_roots
 
     def __call__(self, acquisition_scheme, **kwargs):
         r'''
@@ -220,17 +166,12 @@ class P3PlaneCallaghanApproximation(ModelProperties):
         tau = acquisition_scheme.tau
         diameter = kwargs.get('diameter', self.diameter)
 
-        E_plane = np.ones_like(q)
-        q_nonzero = q > 0
-        E_plane[q_nonzero] = self.plane_attenuation(
-            q[q_nonzero], tau[q_nonzero], diameter
-        )
-        return E_plane
+        return plane.sgp(q, tau, diameter, self.Dintra, self.number_of_roots)
 
 
 class P5PlaneMatrixMethod(ModelProperties):
     r"""Slab (two parallel planes) whose restricted signal is the Bloch-Torrey eigenmode propagator of
-    ``dmipy_sim.math.matrix_method`` (Callaghan 1997; Grebenkov 2007) for an arbitrary gradient
+    ``dmipy_analytic.restricted.matrix_method`` (Callaghan 1997; Grebenkov 2007) for an arbitrary gradient
     waveform: exact for a piecewise-constant waveform (one matrix exponential per run of constant
     amplitude), a Strang split of diffusion and precession otherwise. The Stejskal-Tanner (P2) and
     Callaghan (P3) plane models are its short-pulse limits. Like P2/P3 this is a 1-D building block: the
@@ -244,7 +185,7 @@ class P5PlaneMatrixMethod(ModelProperties):
     n_modes : int, optional
         Laplacian eigenmodes kept (accuracy knob; default 24). Increase for very high q or short
         gradient pulses (the plane needs more modes than the cylinder/sphere at matched q). Mapped onto
-        ``dmipy_sim.math.matrix_method``'s ``(angular, radial)`` pair as
+        ``dmipy_analytic.restricted.matrix_method``'s ``(angular, radial)`` pair as
         ``(n_modes, max(4, n_modes // 2 + 2))``.
 
     See ``examples/02_signal_models/exact_matrix_method.md`` for a worked comparison against the
@@ -368,21 +309,7 @@ class P4PlaneGaussianPhaseApproximation(ModelProperties):
         self.diameter = diameter
         self.diffusion_constant = diffusion_constant
         self.gyromagnetic_ratio = GAMMA
-        self._k_odd = np.arange(1, 2 * int(number_of_modes), 2)   # odd modes 1,3,5,...
-
-    def plane_attenuation(self, gradient_strength, delta, Delta, diameter):
-        "Plane Gaussian-phase signal attenuation (gradient along the plate normal)."
-        D = self.diffusion_constant
-        L = diameter
-        k = self._k_odd
-        lam_D = D * (k * np.pi / L) ** 2                          # eigenmode decay rates (1/s)
-        bracket = (2 * lam_D * delta - 2 + 2 * np.exp(-lam_D * delta)
-                   + 2 * np.exp(-lam_D * Delta)
-                   - np.exp(-lam_D * (Delta - delta))
-                   - np.exp(-lam_D * (Delta + delta))) / lam_D ** 2
-        weight = 8.0 * L ** 2 / (k * np.pi) ** 4                  # |<k|x|0>|^2, odd modes
-        phi2 = (self.gyromagnetic_ratio * gradient_strength) ** 2 * np.sum(weight * bracket)
-        return np.exp(-phi2)
+        self.number_of_modes = int(number_of_modes)
 
     def __call__(self, acquisition_scheme, **kwargs):
         r"""Signal attenuation for the acquisition scheme (gradient taken along the plate normal)."""
@@ -393,7 +320,9 @@ class P4PlaneGaussianPhaseApproximation(ModelProperties):
         E = np.ones_like(np.asarray(g, float))
         nz = np.asarray(g, float) > 0
         idx = np.where(nz)[0]
-        E[idx] = [self.plane_attenuation(g[i], delta[i], Delta[i], diameter) for i in idx]
+        E[idx] = plane.gaussian_phase(
+            np.asarray(g, float)[idx], np.asarray(delta, float)[idx], np.asarray(Delta, float)[idx], diameter,
+            self.diffusion_constant, self.number_of_modes, self.gyromagnetic_ratio)
         return E
 
 
