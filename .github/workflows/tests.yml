@@ -20,16 +20,38 @@ env:
 jobs:
   parity:
     # The signal forms bit for bit: every model's output on fixed acquisition grids (NumPy, and JAX in float32 and float64
-    # on the CPU) against tests/parity_analytic/record, in one pinned environment (tests/parity_analytic/constraints.txt,
-    # one BLAS thread, no numba). A change of a form's arithmetic fails here; a deliberate one regenerates the record.
+    # on the CPU), in one pinned environment (tests/parity_analytic/constraints.txt, one BLAS thread, no numba). The base
+    # revision of the change is recorded on this runner first, in the environment that revision pins, and the revision
+    # under test is compared with that: a change of a form's arithmetic fails here unless it re-baselines the case in
+    # tests/parity_analytic/record. (The committed record is bit for bit on the machine that made it; a runner of another
+    # CPU differs from it in the last bits of the libm and XLA routines the forms call.)
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check out the base revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.before }}
+          path: base
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: The machine
+        run: |
+          grep -m 1 "model name" /proc/cpuinfo
+          grep -m 1 "^flags" /proc/cpuinfo | tr ' ' '\n' | grep -E "^(avx|fma|bmi|f16c|sse4)" | sort | tr '\n' ' '
+          echo
+          ldd --version | head -n 1
+
+      - name: Record the base revision on this machine
+        run: |
+          cp base/tests/parity_analytic/record/manifest.json "$RUNNER_TEMP/base_manifest.json"
+          tests/parity_analytic/record_base.sh base "$RUNNER_TEMP/venv-base"
 
       - name: Install dependencies
         run: |
@@ -41,8 +63,13 @@ jobs:
                       "jax[cpu]" jaxopt scipy packaging
           pip install --no-deps -e .
 
-      - name: Compare with the parity record
-        run: python tests/parity_analytic/harness.py check
+      - name: The CPU features numpy dispatches on
+        run: python -c "import numpy; numpy.show_config()" | sed -n '/SIMD/,$p'
+
+      - name: Compare with the base revision
+        run: |
+          python tests/parity_analytic/harness.py check --reference base/tests/parity_analytic/record \
+                 --base-manifest "$RUNNER_TEMP/base_manifest.json"
 
   test:
     runs-on: ubuntu-latest

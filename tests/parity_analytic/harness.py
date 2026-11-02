@@ -13,7 +13,17 @@ Commands (the interpreter needs dmipy-fit, dmipy-sim, dmipy-replay, numpy, scipy
 its jit of a form is a second implementation of it):
 
 * ``python tests/parity_analytic/harness.py check``: emit every case in a fresh process under the pinned environment
-  (:data:`PINNED_ENV`) and compare with ``record/``; exit status 1 if any case differs.
+  (:data:`PINNED_ENV`) and compare with ``record/``; exit status 1 if any case differs. The record is bit for bit on
+  the machine that made it; another x86-64 machine can differ in the last bits of the libm and XLA routines the
+  forms call (a GitHub runner differs from the maker's laptop in about a third of the cases, by one ulp in a few
+  elements), so CI compares against a reference recorded on the runner itself, as follows.
+* ``python tests/parity_analytic/harness.py check --reference DIR [--base-manifest FILE]``: compare with the outputs
+  that ``record`` wrote to ``DIR`` on this machine (CI records the base revision of the pull request, in the
+  environment that revision pins, with ``record`` and then checks the revision under test). Every case must be bit
+  for bit equal, a ``host_dependent`` case within its derived ``atol``, except the cases whose entry in
+  ``record/manifest.json`` differs from the one in ``FILE`` (the base revision's committed manifest) or exists in
+  only one of them: those are the deliberate changes of the pull request, and their measured differences are
+  printed.
 * ``python tests/parity_analytic/harness.py record``: emit every case twice, write ``record/``; a case whose two runs
   differ is recorded as not bit-reproducible with its derived tolerance.
 * ``python tests/parity_analytic/harness.py inputs``: write ``inputs.npz``, the fixed arrays the cases read.
@@ -788,27 +798,53 @@ def record():
         f.write("\n")
 
 
-def check():
+def rebaselined(base_manifest_path):
+    """The case ids whose entry in ``record/manifest.json`` differs from the one in ``base_manifest_path`` or exists
+    in only one of them: the outputs a change deliberately re-baselines."""
+    with open(base_manifest_path) as f:
+        base = json.load(f)["sections"]
+    with open(os.path.join(RECORD, "manifest.json")) as f:
+        head = json.load(f)["sections"]
+    changed = set()
+    for section in SECTIONS:
+        a, b = base.get(section, {}), head.get(section, {})
+        for cid in set(a) | set(b):
+            if cid not in a or cid not in b or a[cid]["sha256"] != b[cid]["sha256"]:
+                changed.add(cid)
+    return changed
+
+
+def check(reference=None, base_manifest=None):
+    """Compare this code's outputs with ``record/``, or with the outputs ``record`` wrote to ``reference`` on this
+    machine (the cases of ``rebaselined(base_manifest)`` excepted: their differences are printed, not failed)."""
     import numpy as np
     build_registry()
-    with open(os.path.join(RECORD, "manifest.json")) as f:
+    record_dir = reference or RECORD
+    with open(os.path.join(record_dir, "manifest.json")) as f:
         manifest = json.load(f)
-    failures, total = [], 0
+    allowed = rebaselined(base_manifest) if base_manifest else set()
+    failures, notes, total = [], [], 0
     now_env = environment()
     for key, value in manifest["environment"].items():
         if key != "pinned_env" and now_env.get(key) != value:
             print(f"note: {key} is {now_env.get(key)}, the record was made with {value}")
     for section in SECTIONS:
         entries = manifest["sections"][section]
-        recorded = load(os.path.join(RECORD, section + ".npz"))
+        recorded = load(os.path.join(record_dir, section + ".npz"))
         with tempfile.TemporaryDirectory() as d:
             run_emit(section, d)
             now = load(os.path.join(d, section + ".npz"))
         want = {cid for cid, c in REGISTRY.items() if c.section == section}
-        if want != set(entries):
-            failures.append(f"{section}: cases differ from the record: missing {sorted(want - set(entries))}, "
-                            f"extra {sorted(set(entries) - want)}")
+        missing, extra = sorted(want - set(entries) - allowed), sorted(set(entries) - want - allowed)
+        if missing or extra:
+            failures.append(f"{section}: cases differ from the record: missing {missing}, extra {extra}")
+        for cid in sorted(allowed & want - set(entries)):
+            notes.append(f"{cid}: added")
+        for cid in sorted(allowed & set(entries) - want):
+            notes.append(f"{cid}: removed")
         for cid, entry in entries.items():
+            if cid not in want:
+                continue
             total += 1
             key = cid.replace("/", "__")
             if key not in now:
@@ -818,7 +854,13 @@ def check():
             if digest(r) != entry["sha256"]:
                 failures.append(f"{cid}: the stored array does not match its sha256")
             if a.dtype != r.dtype or a.shape != r.shape:
-                failures.append(f"{cid}: dtype/shape {a.dtype}{a.shape} != {r.dtype}{r.shape}")
+                (notes if cid in allowed else failures).append(f"{cid}: dtype/shape {a.dtype}{a.shape} != {r.dtype}{r.shape}")
+            elif cid in allowed:
+                if not np.array_equal(a, r):
+                    d = np.abs(a - r)
+                    rel = d / np.maximum(np.abs(r), np.finfo(r.dtype).tiny)
+                    notes.append(f"{cid}: re-baselined, max abs {d.max():.3e}, max rel {rel.max():.3e}, "
+                                 f"max {ulps(a, r).max():.1f} ulp, {int((a != r).sum())}/{a.size} elements")
             elif entry["bitwise"]:
                 if not np.array_equal(a, r) or digest(a) != entry["sha256"]:
                     d = np.abs(a - r)
@@ -829,6 +871,9 @@ def check():
                 if not (err <= entry["atol"]).all():
                     failures.append(f"{cid}: host dependent, beyond its derived atol {entry['atol']:.2e}: "
                                     f"max abs {err.max():.3e}")
+                elif err.max() > 0:
+                    notes.append(f"{cid}: host dependent, max abs {err.max():.3e} within its derived atol "
+                                 f"{entry['atol']:.2e}")
             else:
                 tol = entry["rtol"]
                 err = np.abs(a - r) / np.maximum(np.abs(r), np.finfo(r.dtype).tiny)
@@ -836,6 +881,8 @@ def check():
                     failures.append(f"{cid}: not bit-reproducible, beyond its derived rtol {tol:.2e}: "
                                     f"max rel {err.max():.3e}")
     print(f"{total} cases compared, {len(failures)} differ")
+    for line in notes:
+        print("  note: " + line)
     for line in failures:
         print("  " + line)
     return 1 if failures else 0
@@ -848,7 +895,11 @@ def main(argv):
     elif cmd == "record":
         record()
     elif cmd == "check":
-        sys.exit(check())
+        options = dict(zip(argv[2::2], argv[3::2]))
+        unknown = set(options) - {"--reference", "--base-manifest"}
+        if unknown or len(argv) % 2:
+            raise SystemExit(f"check takes --reference DIR and --base-manifest FILE, not {sorted(unknown) or argv[2:]}")
+        sys.exit(check(options.get("--reference"), options.get("--base-manifest")))
     elif cmd == "inputs":
         make_inputs()
     elif cmd == "list":
