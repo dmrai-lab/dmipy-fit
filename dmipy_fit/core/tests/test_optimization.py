@@ -1,18 +1,66 @@
 from dmipy_fit.signal_models import (
     cylinder_models, gaussian_models, sphere_models)
 from dmipy_fit.core import modeling_framework
+from dmipy_fit.utils import utils
 from numpy.testing import (
     assert_equal, assert_array_almost_equal, assert_array_equal)
 import numpy as np
+import pytest
 from dmipy_fit.data.saved_acquisition_schemes import wu_minn_hcp_acquisition_scheme
 
 scheme = wu_minn_hcp_acquisition_scheme()
 
+# The fits recover noiseless data from a random start. The optimizer (L-BFGS-B) stops on a relative decrease of its
+# objective, which does not bound the error that is left, so the tolerances are the convergence the fits show: over 100
+# seeds the largest errors are 6e-4 rad for the axis, 8e-3 relative for a diffusivity and 1.3e-3 for a fraction; the
+# tolerances keep a margin of 6 to 11 on them.
+AXIS_TOLERANCE = 5e-3  # rad
+DIFFUSIVITY_RTOL = 5e-2
+FRACTION_ATOL = 1.5e-2
 
-def test_simple_stick_optimization():
+
+def _axis(mu):
+    "The unit vector of the orientation (theta, phi)."
+    return utils.sphere2cart(np.r_[1., np.ravel(mu)])
+
+
+def assert_same_axis(mu, mu_true, tolerance=AXIS_TOLERANCE):
+    """The orientations (theta, phi) are the same axis: the angle between the unit vector of one and that of the other
+    or its reverse is below ``tolerance``. A stick or a zeppelin is the same for an axis and its reverse, (theta, phi)
+    and (pi - theta, phi + pi) are one axis, and phi is undefined at the poles, so the parameters themselves are not
+    compared."""
+    a, b = _axis(mu), _axis(mu_true)
+    angle = np.arctan2(np.linalg.norm(np.cross(a, b)), abs(np.dot(a, b)))
+    assert angle <= tolerance, "the axes differ by {:.3e} rad (tolerance {:.1e})".format(angle, tolerance)
+
+
+def assert_close(value, value_true, rtol=DIFFUSIVITY_RTOL):
+    value = float(np.squeeze(value))
+    assert abs(value - value_true) <= rtol * abs(value_true), (
+        "{:.6e} differs from {:.6e} by more than {:.0e} relative".format(value, value_true, rtol))
+
+
+def test_axes_are_compared_up_to_sign_and_at_the_poles():
+    mu = np.r_[0.7, 0.4]
+    assert_same_axis(mu, mu)
+    assert_same_axis(np.r_[np.pi - 0.7, 0.4 - np.pi], mu)  # the reverse axis
+    assert_same_axis(np.r_[0.7, 0.4 + 1e-4], mu)
+    with pytest.raises(AssertionError):
+        assert_same_axis(np.r_[0.7, 0.4 + 0.1], mu)
+    # phi is undefined at the pole: theta = 1e-3 moves the axis by 1e-3 rad whatever phi is
+    assert_same_axis(np.r_[1e-3, 2.5], np.r_[1e-3, -1.0], tolerance=3e-3)
+    with pytest.raises(AssertionError):
+        assert_same_axis(np.r_[0.1, 2.5], np.r_[0.1, -1.0])
+
+
+# seeds 34, 53, 126 and 150 draw an axis within 0.011 rad of the pole, where phi is undefined: a fit that recovers the
+# axis returns another phi, and a comparison of the parameters (theta, phi) fails on them
+@pytest.mark.parametrize("seed", [0, 1, 2, 3, 34, 53, 126, 150])
+def test_simple_stick_optimization(seed):
+    rng = np.random.default_rng(seed)
     stick = cylinder_models.C1Stick()
-    gt_mu = np.random.rand(2)
-    gt_lambda_par = (np.random.rand() + 1.) * 1e-9
+    gt_mu = rng.random(2)
+    gt_lambda_par = (rng.random() + 1.) * 1e-9
 
     stick_model = modeling_framework.MultiCompartmentModel(
         models=[stick])
@@ -23,13 +71,16 @@ def test_simple_stick_optimization():
     E = stick_model.simulate_signal(scheme, gt_parameter_vector)
 
     stick_model.set_initial_guess_parameter('C1Stick_1_lambda_par',
-                                            (np.random.rand() + 1.) * 1e-9)
-    stick_model.set_initial_guess_parameter('C1Stick_1_mu', np.random.rand(2))
-    res = stick_model.fit(scheme, E).fitted_parameters_vector
-    assert_array_almost_equal(gt_parameter_vector, res.squeeze(), 2)
+                                            (rng.random() + 1.) * 1e-9)
+    stick_model.set_initial_guess_parameter('C1Stick_1_mu', rng.random(2))
+    fitted = stick_model.fit(scheme, E).fitted_parameters
+    assert_same_axis(fitted['C1Stick_1_mu'], gt_mu)
+    assert_close(fitted['C1Stick_1_lambda_par'], gt_lambda_par)
 
 
-def test_simple_ball_and_stick_optimization():
+@pytest.mark.parametrize("seed", range(4))
+def test_simple_ball_and_stick_optimization(seed):
+    rng = np.random.default_rng(seed)
     stick = cylinder_models.C1Stick()
     ball = gaussian_models.G1Ball()
 
@@ -37,8 +88,8 @@ def test_simple_ball_and_stick_optimization():
         modeling_framework.MultiCompartmentModel(
             models=[ball, stick])
     )
-    gt_mu = np.clip(np.random.rand(2), .3, np.inf)
-    gt_lambda_par = (np.random.rand() + 1.) * 1e-9
+    gt_mu = np.clip(rng.random(2), .3, np.inf)
+    gt_lambda_par = (rng.random() + 1.) * 1e-9
     gt_lambda_iso = gt_lambda_par / 2.
     gt_partial_volume = 0.3
 
@@ -53,21 +104,25 @@ def test_simple_ball_and_stick_optimization():
     E = ball_and_stick.simulate_signal(
         scheme, gt_parameter_vector)
 
-    vf_rand = np.random.rand()
+    vf_rand = rng.random()
     ball_and_stick.set_initial_guess_parameter(
-        'C1Stick_1_lambda_par', (np.random.rand() + 1.) * 1e-9)
+        'C1Stick_1_lambda_par', (rng.random() + 1.) * 1e-9)
     ball_and_stick.set_initial_guess_parameter(
         'G1Ball_1_lambda_iso', gt_lambda_par / 2.)
     ball_and_stick.set_initial_guess_parameter(
-        'C1Stick_1_mu', np.random.rand(2))
+        'C1Stick_1_mu', rng.random(2))
     ball_and_stick.set_initial_guess_parameter('partial_volume_0', vf_rand)
     ball_and_stick.set_initial_guess_parameter('partial_volume_1', 1 - vf_rand)
 
-    res = ball_and_stick.fit(scheme, E).fitted_parameters_vector
-    assert_array_almost_equal(gt_parameter_vector, res.squeeze(), 2)
+    fitted = ball_and_stick.fit(scheme, E).fitted_parameters
+    assert_same_axis(fitted['C1Stick_1_mu'], gt_mu)
+    assert_close(fitted['C1Stick_1_lambda_par'], gt_lambda_par)
+    assert_close(fitted['G1Ball_1_lambda_iso'], gt_lambda_iso)
+    assert abs(float(np.squeeze(fitted['partial_volume_0'])) - gt_partial_volume) <= FRACTION_ATOL
 
 
 def test_simple_ball_and_stick_optimization_vf_fixed():
+    rng = np.random.default_rng(0)
     stick = cylinder_models.C1Stick()
     ball = gaussian_models.G1Ball()
 
@@ -75,8 +130,8 @@ def test_simple_ball_and_stick_optimization_vf_fixed():
         modeling_framework.MultiCompartmentModel(
             models=[ball, stick])
     )
-    gt_mu = np.clip(np.random.rand(2), .3, np.inf)
-    gt_lambda_par = (np.random.rand() + 1.) * 1e-9
+    gt_mu = np.clip(rng.random(2), .3, np.inf)
+    gt_lambda_par = (rng.random() + 1.) * 1e-9
     gt_lambda_iso = gt_lambda_par / 2.
     gt_partial_volume = 0.3
 
@@ -93,17 +148,17 @@ def test_simple_ball_and_stick_optimization_vf_fixed():
 
     E2d = np.array([E, E])
 
-    vf_rand = np.random.rand()
+    vf_rand = rng.random()
     ball_and_stick.set_fixed_parameter(
         'partial_volume_0', np.r_[vf_rand, vf_rand])
     ball_and_stick.set_fixed_parameter(
         'partial_volume_1', np.r_[1 - vf_rand, 1 - vf_rand])
     ball_and_stick.set_initial_guess_parameter(
-        'C1Stick_1_lambda_par', (np.random.rand() + 1.) * 1e-9)
+        'C1Stick_1_lambda_par', (rng.random() + 1.) * 1e-9)
     ball_and_stick.set_initial_guess_parameter(
         'G1Ball_1_lambda_iso', gt_lambda_par / 2.)
     ball_and_stick.set_initial_guess_parameter(
-        'C1Stick_1_mu', np.random.rand(2))
+        'C1Stick_1_mu', rng.random(2))
 
     vf_fitted = ball_and_stick.fit(
         scheme, E2d).fitted_parameters['partial_volume_0'][0]
@@ -111,13 +166,14 @@ def test_simple_ball_and_stick_optimization_vf_fixed():
 
 
 def test_multi_dimensional_x0():
+    rng = np.random.default_rng(0)
     stick = cylinder_models.C1Stick()
     ball = gaussian_models.G1Ball()
     ball_and_stick = (
         modeling_framework.MultiCompartmentModel(
             models=[ball, stick],)
     )
-    gt_lambda_par = (np.random.rand() + 1.) * 1e-9
+    gt_lambda_par = (rng.random() + 1.) * 1e-9
     gt_lambda_iso = gt_lambda_par / 2.
     gt_partial_volume = 0.3
     gt_mu_array = np.empty((10, 10, 2))
@@ -174,8 +230,9 @@ def test_stick_and_tortuous_zeppelin_to_spherical_mean_fit():
     of each shell). The final check is whether the parallel diffusivity and
     volume fraction between the 3D and spherical mean models correspond."""
 
-    gt_mu = np.clip(np.random.rand(2), .3, np.inf)
-    gt_lambda_par = (np.random.rand() + 1.) * 1e-9
+    rng = np.random.default_rng(0)
+    gt_mu = np.clip(rng.random(2), .3, np.inf)
+    gt_lambda_par = (rng.random() + 1.) * 1e-9
     gt_partial_volume = 0.3
 
     stick = cylinder_models.C1Stick()
@@ -231,10 +288,8 @@ def test_stick_and_tortuous_zeppelin_to_spherical_mean_fit():
 
     res_sm = stick_and_tortuous_zeppelin_sm.fit(scheme, E).fitted_parameters
 
-    assert_array_almost_equal(
-        gt_lambda_par, res_sm['G2Zeppelin_1_lambda_par'].squeeze(), 2)
-    assert_array_almost_equal(
-        gt_partial_volume, res_sm['partial_volume_0'].squeeze(), 2)
+    assert_close(res_sm['G2Zeppelin_1_lambda_par'], gt_lambda_par)
+    assert abs(float(res_sm['partial_volume_0'].squeeze()) - gt_partial_volume) <= FRACTION_ATOL
 
 
 def test_fractions_add_up_to_one():
@@ -245,7 +300,7 @@ def test_fractions_add_up_to_one():
     dot5 = sphere_models.S1Dot()
     dots = modeling_framework.MultiCompartmentModel(
         models=[dot1, dot2, dot3, dot4, dot5])
-    random_fractions = np.random.rand(5)
+    random_fractions = np.random.default_rng(0).random(5)
     random_fractions /= random_fractions.sum()
     parameter_vector = dots.parameters_to_parameter_vector(
         partial_volume_0=random_fractions[0],
