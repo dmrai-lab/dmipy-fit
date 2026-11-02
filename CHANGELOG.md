@@ -42,13 +42,13 @@ microstructure maps. It is the analytical inverse of the dmipy ecosystem: the eq
   signed projection of the wave-vector reaches the forms, which are even in it, where a gradient against the axis read the
   cross-section's attenuation alone. The JAX forward of NEXI reads the parameters the model exposes (it raised a
   `KeyError`), and a pair the closed form is not wired for is refused by name. `S3` and `S4` sum over dmipy-analytic's shared
-  Neumann roots, with no private copy of a root left (their values move by at most 2e-10). The JAX spherical-mean fit
-  refuses, at setup and naming the zeppelin and its ranges, a zeppelin whose range admits an oblate tensor, where the twin
-  returns NaN.
+  Neumann roots, with no private copy of a root left (their values move by at most 2e-10).
 - **Deleted.** `white_matter.surface.b_hat_ea_short`, whose exponent was not dimensionless and which nothing called, and
   with it the module `white_matter.surface`, which held nothing else.
 - **Fitting on the device.** `solver="jax"` fits a whole slice on the GPU; batched DTI, Tournier 2007 CSD and
-  multi-shell multi-tissue CSD run on JAX or PyTorch. dipy is not a runtime dependency (the `oracle` extra only).
+  multi-shell multi-tissue CSD run on JAX or PyTorch. The JAX spherical mean of the zeppelin covers the full range of its
+  diffusivities, prolate, spherical and oblate tensors alike (the oblate average is dmipy-analytic's Gauss-Legendre twin).
+  dipy is not a runtime dependency (the `oracle` extra only).
 - **Acquisition.** `AcquisitionScheme` reads a `ScannerSequence` (dmipy-replay's acquisition object, built by the
   `pgse`, `pgste`, `ogse`, `cpmg`, `ste` and `pte` builders) or a `Protocol` of them.
 - **Pairs with** dmipy-analytic `>=3,<4` (`[special]`, and `[jax]` in the `jax` and `jax-gpu` extras), dmipy-sim `>=3,<4` and
