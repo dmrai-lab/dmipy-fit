@@ -1623,7 +1623,7 @@
     "bitwise": true
    },
    "numpy/S3/legacy/A": {
-    "sha256": "d1050388dc35e30a0a5490325ac0282b4ece5a6e77c24003d59ab7b30ef616a6",
+    "sha256": "e024af6daae2022a887a786042513194de5bf4465625bf257367521c6eeca5ad",
     "shape": [
      32
     ],
@@ -1639,7 +1639,7 @@
     "bitwise": true
    },
    "numpy/S3/legacy/C": {
-    "sha256": "060f72a7e9fa2354f261de5d5facaeae87fd7bdd3a47cab47454ba9c3acd399c",
+    "sha256": "17194ba602bb889be5dbdae3150ca229a99052004163fd4243fb714c4c7cbf32",
     "shape": [
      32
     ],
@@ -1647,7 +1647,7 @@
     "bitwise": true
    },
    "numpy/S3/pgse/A": {
-    "sha256": "d969cf98347ba540d2adda6779bdd15263965d4eab2d7c4a7c7c881299efe1d3",
+    "sha256": "7167d5443a38e22040f92f7ae170655f6fefc77d47a89f4c9c40977be6eaea7f",
     "shape": [
      32
     ],
@@ -1663,7 +1663,7 @@
     "bitwise": true
    },
    "numpy/S3/pgse/C": {
-    "sha256": "b9f79f640000ae4b0ddd7ea124e2da670920f7cf9a7151f869402007e9a0714f",
+    "sha256": "7e92fb92646f0c670582929537270f0d292c333824e02429848d44c8dc35f5c5",
     "shape": [
      32
     ],
@@ -1671,7 +1671,7 @@
     "bitwise": true
    },
    "numpy/S3/pgse2/A": {
-    "sha256": "a5a13000381d3733d81a20537924bcab9ef9dd796940030208e08e426dfb8b6a",
+    "sha256": "5d5d13f7149fdbe85eed6f793b33075d0e45b6d31c77212b58734662f01f3762",
     "shape": [
      32
     ],
@@ -1687,7 +1687,7 @@
     "bitwise": true
    },
    "numpy/S3/pgse2/C": {
-    "sha256": "2893194ceb0dc86f0d03a99128ec7f060023acde963eff0ecf640db5d46de178",
+    "sha256": "a0fc98dd229e724909c30968b430bf834aef870cfc6d4bcdd5bac89e64b1475c",
     "shape": [
      32
     ],
@@ -1695,7 +1695,7 @@
     "bitwise": true
    },
    "numpy/S4/legacy/A": {
-    "sha256": "4d971df86d0d4d316f9f8dfd3eb865e1bddb016ced599cdce77d3f505cf2217d",
+    "sha256": "0b45c162c2d67e7849aa3e3716f3d6db99b20ce8f1ea62e2b35b5bc76022fed1",
     "shape": [
      32
     ],
@@ -1703,7 +1703,7 @@
     "bitwise": true
    },
    "numpy/S4/legacy/B": {
-    "sha256": "e83eed06a6be8ccea704017d5d0673fd67418edb9451e2e2f9707282b8870eae",
+    "sha256": "95228d958843b7abadf851181b240324b298aa947d0975c976e85632ea6da4cd",
     "shape": [
      32
     ],
@@ -1711,7 +1711,7 @@
     "bitwise": true
    },
    "numpy/S4/legacy/C": {
-    "sha256": "077e4a880df44cd2a4488bf951f0343fcaf1607972bbd9a7f9f2add5567b83b7",
+    "sha256": "a3f46025fe3f90901e9cc29c047f85af23b9f25671ce7e6f2f8575d2dce7d25e",
     "shape": [
      32
     ],
@@ -1719,7 +1719,7 @@
     "bitwise": true
    },
    "numpy/S4/legacy2/A": {
-    "sha256": "d95717de29882784609a7222798c69dd33dbdfb71bd26c536c793f39164bf7df",
+    "sha256": "89cd2d869c1b312644b759cddccd08f9f652f9831a65e915d687629f1638b000",
     "shape": [
      32
     ],
@@ -1727,7 +1727,7 @@
     "bitwise": true
    },
    "numpy/S4/legacy2/B": {
-    "sha256": "3ba121989c43da5da18d4b072d8ad52784e88b251d435a27d59d797b79d1ff54",
+    "sha256": "7166316cadb782035b633d10f278efdb5f44f453f9abf2e2e66fae94699fa7ab",
     "shape": [
      32
     ],
@@ -1735,7 +1735,7 @@
     "bitwise": true
    },
    "numpy/S4/legacy2/C": {
-    "sha256": "633ca96917786f0043af777398d60bf5142ac5f1e87c1fb43892bed5396aac46",
+    "sha256": "a65d4648f9b882ea5025dccf9033a0e2cbd47df47c953fff2e1b08cc6646e72d",
     "shape": [
      32
     ],
@@ -1743,7 +1743,7 @@
     "bitwise": true
    },
    "numpy/S4/mixed/A": {
-    "sha256": "99b6cc4ec3d7981a33e7310f7a00889b0674b23e03700fe935ca241d77bd1a10",
+    "sha256": "a299f8e232169012a079a3edb023a542bd066f108940014a1207da45d6d9d201",
     "shape": [
      40
     ],
@@ -1751,7 +1751,7 @@
     "bitwise": true
    },
    "numpy/S4/mixed/B": {
-    "sha256": "17be28e7e9bd66e479483f6e17be1ed370259d8f6fd3b1fd978411aba877b470",
+    "sha256": "c12433f5bbb00582f14ea267b70d56a5d3d0b05fa2ab5e8612c06bcb58b7db85",
     "shape": [
      40
     ],
@@ -1759,7 +1759,7 @@
     "bitwise": true
    },
    "numpy/S4/mixed/C": {
-    "sha256": "b7e3de655a1dc8ffc5a51237c9ef97901bc8f2c16ccb9fc85f161e0c18231d3a",
+    "sha256": "9b945c3cec3d719125c8952f84d01f7149d5c82f623581f0a618369ce69f77d9",
     "shape": [
      40
     ],
@@ -1767,7 +1767,7 @@
     "bitwise": true
    },
    "numpy/S4/ogse/A": {
-    "sha256": "08f952fc9ec65fe997bd325130abfee767ce6bcf2e41aac577f964b77408f0ab",
+    "sha256": "62674d30950519ae620b1c67686b523d690cf3fd97ac0c82252235a387ce98d6",
     "shape": [
      8
     ],
@@ -1775,7 +1775,7 @@
     "bitwise": true
    },
    "numpy/S4/ogse/B": {
-    "sha256": "7f73c47155c9f9f1c9f789c2f436d27637f8ca6d8023d42fd2831752453888d2",
+    "sha256": "bb599fefd3ea123ed929d0bbc090262a280d3da1c2a494d3ea58007c6bab2e54",
     "shape": [
      8
     ],
@@ -1783,7 +1783,7 @@
     "bitwise": true
    },
    "numpy/S4/ogse/C": {
-    "sha256": "4698fc0e702132ba2551b93b0161a76d0edcb2584f10a7296f6547f8d8c55f27",
+    "sha256": "533c1f7a8bfad8c388f87ef849166ef601d1b83172e2cd8ea3018b7767bfdefe",
     "shape": [
      8
     ],
@@ -1791,7 +1791,7 @@
     "bitwise": true
    },
    "numpy/S4/ogse_trap/A": {
-    "sha256": "b40318a3693c8304746d0d710412734bd86d5ae1fdcca9e67f55be3182043899",
+    "sha256": "526feb8287594d322edb9e35552a383a56d4b29aa60510565f4b918bb7230544",
     "shape": [
      8
     ],
@@ -1799,7 +1799,7 @@
     "bitwise": true
    },
    "numpy/S4/ogse_trap/B": {
-    "sha256": "d735824f1e97003f231e8ac5f9944ecb2f691833e244d7c1b12c5ffb86c86afb",
+    "sha256": "f40133c30b1e4f025be6e4488482edeb6dee093900351484b80ce58f3654a732",
     "shape": [
      8
     ],
@@ -1807,7 +1807,7 @@
     "bitwise": true
    },
    "numpy/S4/ogse_trap/C": {
-    "sha256": "4bf0afd1db1c9d3abb7abba25710c2b8ddddc907c9cebbc9736213e1171fa2af",
+    "sha256": "a0834e83f3e94b6ebdb93a4e2150005758ca62ce26297b04ecd4569c855454f2",
     "shape": [
      8
     ],
@@ -1815,7 +1815,7 @@
     "bitwise": true
    },
    "numpy/S4/pgse/A": {
-    "sha256": "74c03fb4c97c35b9da9d0a4e9ac0c8cab6807a2454d947b4159e57b333ba4a63",
+    "sha256": "7d8dfd9b8c34ad632c4ca33fd56692415d3bf0f78e22e48486fa8c6e67f0e846",
     "shape": [
      32
     ],
@@ -1823,7 +1823,7 @@
     "bitwise": true
    },
    "numpy/S4/pgse/B": {
-    "sha256": "a96e09739a97e49ba7647940c8faf888f0c1adc805c8320d7cd2525036e673d0",
+    "sha256": "b00bc15bca84eba27be3a66ce0a55dc6d2c3cb267ac87814fecb76b3e2ec3cf1",
     "shape": [
      32
     ],
@@ -1831,7 +1831,7 @@
     "bitwise": true
    },
    "numpy/S4/pgse/C": {
-    "sha256": "f1e7b50e9593d3f3a9def86b46ce75178bc502b01f116e570e5fa3cdf552458f",
+    "sha256": "cf7275daedd41bbcfb7b274344a3bcebe93651156dce87fe1e0652e0fe7f794b",
     "shape": [
      32
     ],
@@ -1839,7 +1839,7 @@
     "bitwise": true
    },
    "numpy/S4/pgse2/A": {
-    "sha256": "8a1278e1f2a0c5565e11a28a42064769ecf0bef970b847f91c10da982b6ef58b",
+    "sha256": "e961332a649a9e0e40cbc07f215911583c51fea7d17b5d70ae4c60477f3437c0",
     "shape": [
      32
     ],
@@ -1847,7 +1847,7 @@
     "bitwise": true
    },
    "numpy/S4/pgse2/B": {
-    "sha256": "3071f987f6fc9bccc2f4664d090267bf712b1c75da7e7b5933d7c62275958340",
+    "sha256": "77acf103e5d318b25434cc4d2ebacc89ef4191f08dc412db1d1852d49ffcbeea",
     "shape": [
      32
     ],
@@ -1855,7 +1855,7 @@
     "bitwise": true
    },
    "numpy/S4/pgse2/C": {
-    "sha256": "7473774bd1077db80fb3cedb5fa28d98950330a8b5d315adc151dc9c942509a6",
+    "sha256": "8c349a6f9d48395d5f21e5832de4a9a20582e6921d2ca15d31e61a13f4231f11",
     "shape": [
      32
     ],
@@ -1863,7 +1863,7 @@
     "bitwise": true
    },
    "numpy/S4/pte/A": {
-    "sha256": "53d1db96137ec781bef2c24615fe4482d3673982dd8e968cf83e23a29697b877",
+    "sha256": "bc08242755dd2341924401feefbf2e098f8eeeb765cb4ab8175483ef7789a406",
     "shape": [
      4
     ],
@@ -1871,7 +1871,7 @@
     "bitwise": true
    },
    "numpy/S4/pte/B": {
-    "sha256": "d92c9187688743f171a3fc5e205171950017b9b243232685bbc922ba66517ad4",
+    "sha256": "8b0124204fb853353d85d05e2d8fbc1384019ab099fed71f9b8bddaa338b2315",
     "shape": [
      4
     ],
@@ -1879,7 +1879,7 @@
     "bitwise": true
    },
    "numpy/S4/pte/C": {
-    "sha256": "a25d9b7bd9a7df7f055092295fa1b9313fed0ad3852ddf45f1e6c6d706e8d655",
+    "sha256": "f767b3b57e08c13ace619bb3d91bc4d19181af2c9417d01dd1b0ffce5ea26b1f",
     "shape": [
      4
     ],
@@ -1887,7 +1887,7 @@
     "bitwise": true
    },
    "numpy/S4/ste/A": {
-    "sha256": "57e6904896a2292293fc0acf90baf7c3392f3facf1e855120eb3fba02aa5bc80",
+    "sha256": "6c312ab8546e72562b33f84596b4454d410540abcf0bd0eddfa73182ceecfc88",
     "shape": [
      4
     ],
@@ -1895,7 +1895,7 @@
     "bitwise": true
    },
    "numpy/S4/ste/B": {
-    "sha256": "5294258441f7319f4baf60f66e5daaefe2c1ec26a0382790ee66fd477a5a7357",
+    "sha256": "9154e27d6729cbf2380af508997a71dd97cc3410dbb0bed6b73f168914b4282b",
     "shape": [
      4
     ],
@@ -1903,7 +1903,7 @@
     "bitwise": true
    },
    "numpy/S4/ste/C": {
-    "sha256": "c5c8c8d5abdafcc1c0988b9ab8c567a573e7aff389841b76cd97cf55cd599f5a",
+    "sha256": "87b8282b675909d033d6781ccc10fb6688933f8bc7de75a5ef12be3f71493c67",
     "shape": [
      4
     ],
@@ -1911,7 +1911,7 @@
     "bitwise": true
    },
    "numpy/S4x/pgse2/A": {
-    "sha256": "b8890af48b8a3cea475d0f749635fff1c037181dc8dfa67e7b285ce6c2a20734",
+    "sha256": "c0b59ed216222023d0de068c7ef2ac13683e00a4c10a75752dde23525fe5311d",
     "shape": [
      32
     ],
@@ -2081,7 +2081,7 @@
     "bitwise": true
    },
    "numpy/composite/dist.gamma_s4/pgse2": {
-    "sha256": "c9de12596661055c2b3a759e1d3281e6c6980103050a1c3abdba65e4c2917433",
+    "sha256": "f7828d340af639044d916cc5b37edf212b26e88ecf9742bb28303ceddc90b342",
     "shape": [
      32
     ],
@@ -2265,7 +2265,7 @@
     "bitwise": true
    },
    "numpy/composite/karger.sphere_ball/pgse2": {
-    "sha256": "01a30e92075f5a4a3009475de24ffbdd22c51c6eddecd8d57c1c50a0f09ca624",
+    "sha256": "f26e73cb7801ff2248d7cef362292214b6f85f5b63ca8a8bf15dce601bee5d26",
     "shape": [
      32
     ],
@@ -2393,7 +2393,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.exchange_impulsed/pgse2": {
-    "sha256": "039cacc710db8e9ad2454b4a97330e069df0680164bdb52139a8f626b04caad4",
+    "sha256": "8a818fba6e8104c90559f5fcad4dc7da2fc830aa6d8f6d077ad659cca278a788",
     "shape": [
      32
     ],
@@ -2417,7 +2417,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.impulsed/mixed": {
-    "sha256": "bb142e83fe259b9f0d380554ad15861b518d8662838b31a8186e5f8262b9b475",
+    "sha256": "71da10b57f0a75f77320cdd52f457fb01f0c6093a8bdcc401012eb8977109b78",
     "shape": [
      40
     ],
@@ -2425,7 +2425,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.impulsed/ogse": {
-    "sha256": "346ff933f3625b673c5301f9809dd69ba513875b889a626566a42961a35e2a2e",
+    "sha256": "bf8b58ff191ec62803f104f85295c2740d2b5f5fd2365fc84dd0f0ce53543b84",
     "shape": [
      8
     ],
@@ -2497,7 +2497,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.sandi/mixed": {
-    "sha256": "eb092503657f3f364f51935f52938eb13e324dc9a0a63a32897192fffbc83565",
+    "sha256": "2edf5ccbe03ef439c4a4de54d9b06b3a4d3f246c2a49a967c5ef85e50c2a56b9",
     "shape": [
      40
     ],
@@ -2505,7 +2505,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.sandi/pgse2": {
-    "sha256": "a0a79773dad9071f3a4e19b65c5fe44af6b98715953920761454bd0820b3c029",
+    "sha256": "5ebc5acfe2f8c9bbcefc88867396f9d5f2c785f9abbb46c33a6b514454abe248",
     "shape": [
      32
     ],
@@ -2513,7 +2513,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.sandix/pgse2": {
-    "sha256": "7f82704d03a66f559c1d35ca8f388b2e1307ca86032ac26b8975cf9cc23b113f",
+    "sha256": "660bf602084a1fede484f0dd9329a8668ebf032da0856b02e27cccbda27ae42c",
     "shape": [
      32
     ],
@@ -2561,7 +2561,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.verdict/ogse": {
-    "sha256": "e014084e9c71311db1b27925b79a3d715997cf23e2820c778442cc1ffc8467b0",
+    "sha256": "0b3ad87bcf9e87a6e59939a95fadc50f41b0d39fb52889aff1d4e40171416ac1",
     "shape": [
      8
     ],
@@ -2569,7 +2569,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.verdict/pgse2": {
-    "sha256": "ffde0c573ff7084b2681bc79c34450cd3baf22472003af608f36960ea67b166b",
+    "sha256": "005b386108e6ca9e6e3babaa64a2714d178922da028aff4089519ebf92f68dda",
     "shape": [
      32
     ],
@@ -2721,7 +2721,7 @@
     "bitwise": true
    },
    "numpy/composite/single.s4/legacy2": {
-    "sha256": "36bf3ee05dee1cef930b3f5d1ff7ff54c0307c9d425edeb5a93b78574f4c972c",
+    "sha256": "7fe7e45204feef58603e8a423bd50e86574749cfecc775ecf8926e0289fbe181",
     "shape": [
      32
     ],
@@ -2729,7 +2729,7 @@
     "bitwise": true
    },
    "numpy/composite/single.s4/ogse": {
-    "sha256": "0a16dd07d7df44187d6ad954f1e43eeeaa726fc92f307b19a30305850cb91422",
+    "sha256": "4e7e1e3c712cd6cc485dfa3de680edf76f3c28b940966d915d658676aa6226b6",
     "shape": [
      8
     ],
@@ -2737,7 +2737,7 @@
     "bitwise": true
    },
    "numpy/composite/single.s4/pgse2": {
-    "sha256": "d90e5e9a8fd09dda3faf4ccfe1166d028951850555962746e357fd82721c13ad",
+    "sha256": "40fae764e6fde983676c43be9df3ac6e717252d3e195859cf7eff1a4ab133d20",
     "shape": [
      32
     ],
@@ -2745,7 +2745,7 @@
     "bitwise": true
    },
    "numpy/composite/single.s4/ste": {
-    "sha256": "ce07ecf1961e7933082f5a67f605f052bb98c9d8d680e61ece86487d1ead1f60",
+    "sha256": "238737af700ba3b0ab55f76a06a56ab95c38f9b79b188885b178e1f2b5b7be66",
     "shape": [
      4
     ],
@@ -4458,7 +4458,7 @@
     "bitwise": true
    },
    "jax_f64/forward/karger.sphere_ball/pgse2": {
-    "sha256": "cc620ba60b5d8d92b61bcf70e631f3df8fccc8c5f51cf4866def11e9f8de120c",
+    "sha256": "a3a534906c21c19e799b869a0bab4fe9dc0d82ca7770d9e863b914998bc30989",
     "shape": [
      32
     ],
@@ -4578,7 +4578,7 @@
     "bitwise": true
    },
    "jax_f64/forward/ref.exchange_impulsed/pgse2": {
-    "sha256": "fc2f094a5df9a13ecb643d444b4f7332b665b3365fbe9cdedb813237a26e1e63",
+    "sha256": "7babbf61fec4495939fa478caf90daf58f75300783a67cb2e9dd2da1cdae560e",
     "shape": [
      32
     ],
@@ -4602,7 +4602,7 @@
     "bitwise": true
    },
    "jax_f64/forward/ref.impulsed/mixed": {
-    "sha256": "16a4673277dedce16db31e8b7213e807892eb476a78da133a2687cb56b73bd4a",
+    "sha256": "0e570cd43406764bd045b4b74ce6c4948877e18ae1787bf0752ea9715d8fdaa7",
     "shape": [
      40
     ],
@@ -4610,7 +4610,7 @@
     "bitwise": true
    },
    "jax_f64/forward/ref.impulsed/ogse": {
-    "sha256": "2e09bf8bc18d9302ca1af148f4d66f1781045aef13cbc0fad33cd1aa3630352e",
+    "sha256": "48db995456193337443ddc17983e4e660e2df15d730b9fa5cb9477811362803d",
     "shape": [
      8
     ],
@@ -4682,7 +4682,7 @@
     "bitwise": true
    },
    "jax_f64/forward/ref.sandi/mixed": {
-    "sha256": "cb42a5e624bea548586228119a2449ebb51a470310c0a373f3f5e969da93d8af",
+    "sha256": "1f113b65897239086512447302962bf9153733ab9cb0cdb9b8fb402bf59e7f4a",
     "shape": [
      40
     ],
@@ -4690,7 +4690,7 @@
     "bitwise": true
    },
    "jax_f64/forward/ref.sandi/pgse2": {
-    "sha256": "f341398560582316f8cc89b2d87fdaf49a31ea5a820d8968b9eefe8def4f1bea",
+    "sha256": "0d5a7575bc5662693ad3434a5dbc723f1106c9ba5196598e069d6400474098f5",
     "shape": [
      32
     ],
@@ -4698,7 +4698,7 @@
     "bitwise": true
    },
    "jax_f64/forward/ref.sandix/pgse2": {
-    "sha256": "5c7d8052bacf29783b112f9168c239eb031c29fbb97ba7445f053f3be6235059",
+    "sha256": "670a3ea065f2ddba7e4c7ec452467140f34e6a371263ca34a57704c529eb7969",
     "shape": [
      32
     ],
@@ -4746,7 +4746,7 @@
     "bitwise": true
    },
    "jax_f64/forward/ref.verdict/ogse": {
-    "sha256": "c3ada594eb9b907351c092c4c22709ae5f9fa80920b99f7acbf94e3ffe7043a9",
+    "sha256": "40cc0d10a97c9d2abb804e5d6ed67ca19b12d1e9c2fd3c07e48533b963b063c8",
     "shape": [
      8
     ],
@@ -4754,7 +4754,7 @@
     "bitwise": true
    },
    "jax_f64/forward/ref.verdict/pgse2": {
-    "sha256": "c1988fb37a116ed7ac728b68badfdb4dec04eabc5d8346d379fcac111bd81eda",
+    "sha256": "8b34e2b5f3232c8af8de2be323bb75c17a91f77b248f4b3be649f75eb16efc3e",
     "shape": [
      32
     ],
@@ -4898,7 +4898,7 @@
     "bitwise": true
    },
    "jax_f64/forward/single.s4/legacy2": {
-    "sha256": "beb066205cbc1519768c67350af57b42716ee0d630b1bebb47f2aca197bcbe21",
+    "sha256": "1c6d480eb49588be6ed971d903c7f132f9426d94423c739f9a7b9d87969e189c",
     "shape": [
      32
     ],
@@ -4906,7 +4906,7 @@
     "bitwise": true
    },
    "jax_f64/forward/single.s4/ogse": {
-    "sha256": "a86c28e641500738335cd6fdac6f577d5bba547443a63985f008c7aa299fa605",
+    "sha256": "1296ad021d6909099efdfb675d4233a19f9f776c1799656bd0ef070947fd7fc6",
     "shape": [
      8
     ],
@@ -4914,7 +4914,7 @@
     "bitwise": true
    },
    "jax_f64/forward/single.s4/pgse2": {
-    "sha256": "6d2b3623f08df5d688300efa45943260de69d3e81da978be29db5276926eafa5",
+    "sha256": "859ca4b2e936c1387600d4be131502126470416cb36dbc841f8e9a6ba4f48d80",
     "shape": [
      32
     ],
@@ -4922,7 +4922,7 @@
     "bitwise": true
    },
    "jax_f64/forward/single.s4/ste": {
-    "sha256": "d46d73f74a1ff7c666a1e09c9e0c9d3bb81cc103201a72a8c9bc7c9b0a0cfc21",
+    "sha256": "a0591d770be7f866cc77e2903296f43e9c4834943eb7e74aba434a3e72a14680",
     "shape": [
      4
     ],
