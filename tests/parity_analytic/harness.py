@@ -19,9 +19,13 @@ its jit of a form is a second implementation of it):
 * ``python tests/parity_analytic/harness.py inputs``: write ``inputs.npz``, the fixed arrays the cases read.
 * ``python tests/parity_analytic/harness.py list``: the case ids.
 
-Tolerance of a case that is not bit-reproducible: ``rtol = ops * eps * max(1, -log(min E))``, with ``eps`` the machine
-epsilon of the output dtype and ``ops`` the number of rounding operations between the inputs and the output, declared
-at the case. The ``-log E`` factor is the rounding of the exponent that ``exp`` carries to the output.
+Tolerance of a case that is not bit-reproducible: ``ops`` is the number of rounding operations between the inputs and
+the output, declared at the case, and ``eps`` the machine epsilon of the output dtype. A case whose two runs differ is
+held to ``rtol = ops * eps * max(1, -log(min E))`` (the ``-log E`` factor is the rounding of the exponent that ``exp``
+carries to the output). A case that declares ``host_dependent`` is held to ``atol = ops * eps``: XLA compiles the
+complex matrix products of the JAX matrix method for the host CPU, so their rounding differs between x86-64 machines
+(bit-identical on the laptop, different at the 1e-13 level on a GitHub runner), and the propagation is a contraction
+of a unit state, so its rounding is absolute.
 """
 import hashlib
 import importlib
@@ -92,10 +96,12 @@ REGISTRY = {}     # case id -> Case
 class Case:
     """One recorded output: ``thunk()`` returns an array. ``section`` is ``numpy``, ``jax_f32`` or ``jax_f64``;
     ``ops`` the rounding operations of the output (the tolerance of a case that is not bit-reproducible);
-    ``trivial`` admits a constant output (a b = 0 acquisition or the dot)."""
+    ``trivial`` admits a constant output (a b = 0 acquisition or the dot); ``host_dependent`` marks a case whose
+    rounding depends on the host CPU (held to its derived tolerance, not to the digest)."""
 
-    def __init__(self, cid, section, thunk, ops=8, trivial=False):
+    def __init__(self, cid, section, thunk, ops=8, trivial=False, host_dependent=False):
         self.cid, self.section, self.thunk, self.ops, self.trivial = cid, section, thunk, ops, trivial
+        self.host_dependent = host_dependent
 
 
 def add(section, cid, thunk, **kw):
@@ -141,16 +147,24 @@ def inputs():
 # ---------------------------------------------------------------------------------------------------------------------
 # Acquisition grids
 # ---------------------------------------------------------------------------------------------------------------------
+N_T = 1000                                                                           # samples per waveform
 B_PGSE = [0., 0.] + [5e8] * 6 + [1e9] * 6 + [2e9] * 6 + [3e9] * 6 + [5e9] * 6      # s/m^2
 B_OGSE = [0., 0., 3e8, 3e8, 3e8, 6e8, 6e8, 6e8]
 F_OGSE = [0., 0., 50., 50., 50., 100., 100., 100.]                                   # Hz
 _scheme_cache = {}
 
 
+def _timing():
+    """A spin-echo timing budget with finite RF pulses (2 ms excitation, 6 ms refocusing window, 4 ms readout)."""
+    from dmipy_replay.acquisition.timing import SequenceTiming
+    return SequenceTiming(t_excite=0.002, t_refocus=0.006, t_readout_pre_echo=0.004)
+
+
 def scheme(name):
     """The acquisition scheme ``name``: ``pgse``/``pgse2`` (one / two timings; the waveform-first scheme),
     ``legacy``/``legacy2`` (the waveform-free scheme), ``ogse`` (cosine), ``ogse_trap`` (trapezoid), ``mixed``
-    (PGSE and OGSE measurements), ``ste``, ``pte`` (b-tensor encodings), ``pgste`` (stimulated echo)."""
+    (PGSE and OGSE measurements), ``ste``, ``pte`` (b-tensor encodings), ``pgste`` (stimulated echo), ``pgse_rf`` and
+    ``pgste_rf`` (the same with finite RF pulses)."""
     if name not in _scheme_cache:
         import numpy as np
         from dmipy_fit.core.acquisition_scheme import AcquisitionScheme, acquisition_scheme_from_bvalues
@@ -171,6 +185,8 @@ def scheme(name):
             "ste": lambda: AcquisitionScheme.from_btensor_ste(np.array([0., 1e9, 2e9, 3e9]), 0.03),
             "pte": lambda: AcquisitionScheme.from_btensor_pte(np.array([0., 1e9, 2e9, 3e9]), [0., 0., 1.], 0.03),
             "pgste": lambda: AcquisitionScheme.from_pgste(b, dirs, 0.01, 0.1, TE=0.13),
+            "pgse_rf": lambda: AcquisitionScheme.from_pgse(b, dirs, 0.010, 0.025, TE=0.08, timing=_timing()),
+            "pgste_rf": lambda: AcquisitionScheme.from_pgste(b, dirs, 0.01, 0.1, TE=0.13, timing=_timing()),
         }
         _scheme_cache[name] = build[name]()
     return _scheme_cache[name]
@@ -293,6 +309,43 @@ def _method_cases():
                     add("numpy", f"numpy/{key}.{meth}/{sch}/{pk}",
                         lambda c=entry[1], k=entry[2], s=sch, m=meth, pp=p:
                         np.asarray(getattr(_import(c)(**k), m)(scheme(s), **pp)))
+
+
+def _karger_rh_cases():
+    import numpy as np
+    from dmipy_fit.signal_models import cylinder_models as cm, gaussian_models as gm
+    from dmipy_fit.signal_models.exchange_models import X0GeneralizedKarger
+    from dmipy_fit.core.modeling_framework import MultiCompartmentModel
+
+    def rh(sch):
+        karger = X0GeneralizedKarger(cm.C1Stick(), gm.G2Zeppelin())
+        mcm = MultiCompartmentModel([karger])
+        params = mcm.parameter_vector_to_parameters(midpoint_vector(mcm))
+        params = {k[len(mcm.model_names[0]):]: v for k, v in params.items()}
+        return np.asarray(karger.rotational_harmonics_representation(scheme(sch), **params))
+    for sch in ("pgse2", "legacy2"):
+        add("numpy", f"numpy/X0GeneralizedKarger.rotational_harmonics_representation/{sch}", lambda s=sch: rh(s))
+
+
+def _sm_forward_cases():
+    """The spherical-mean forward of the JAX fit: per shell and broadcast to every measurement."""
+    from dmipy_fit.core.modeling_framework import MultiCompartmentSphericalMeanModel
+    from dmipy_fit.signal_models import cylinder_models as cm, gaussian_models as gm
+    for cid, models in (("ball", [gm.G1Ball]), ("stick_zeppelin", [cm.C1Stick, gm.G2Zeppelin]),
+                        ("stick_ball", [cm.C1Stick, gm.G1Ball])):
+        for broadcast in (False, True):
+            for sect in ("jax_f32", "jax_f64"):
+                add(sect, f"{sect}/sm_forward/{cid}/{'meas' if broadcast else 'shell'}",
+                    lambda m=models, bc=broadcast: _sm_forward(MultiCompartmentSphericalMeanModel([x() for x in m]),
+                                                                scheme("pgse"), bc))
+
+
+def _sm_forward(model, sch, broadcast):
+    import jax.numpy as jnp
+    import numpy as np
+    from dmipy_fit.jax.multicompartment_jax import build_mc_sm_forward_fn
+    fn = build_mc_sm_forward_fn(model, sch, broadcast=broadcast)
+    return np.asarray(fn(jnp.asarray(midpoint_vector(model))))
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -445,6 +498,18 @@ def _composites():
         ("karger.stick_zeppelin_T2_T1", karger(cm.C1Stick, gm.G2Zeppelin, [T2, T1], [T2, T1]), ["pgste"]),
         ("karger.stick_zeppelin_T2", karger(cm.C1Stick, gm.G2Zeppelin, [T2], [T2]), ["pgse2"]),
         ("karger.sphere_ball", karger(sm.S4SphereGaussianPhaseApproximation, gm.G1Ball), ["pgse2"]),
+        ("karger.ball_ball", karger(gm.G1Ball, gm.G1Ball), ["pgse_rf"]),
+        ("karger.stick_zeppelin_T2_rf", karger(cm.C1Stick, gm.G2Zeppelin, [T2], [T2]), ["pgse_rf"]),
+        ("karger.ball_ball_T2_T1_rf", karger(gm.G1Ball, gm.G1Ball, [T2, T1], [T2, T1]), ["pgste_rf"]),
+        ("single.g3", wrapped(gm.G3TemporalZeppelin), ["pgse2", "legacy2"]),
+        ("single.dot", wrapped(sm.S1Dot), ["pgse"]),
+        ("single.c2", wrapped(cm.C2CylinderStejskalTannerApproximation), ["pgse", "legacy"]),
+        ("single.c3", wrapped(cm.C3CylinderCallaghanApproximation), ["pgse2", "legacy2"]),
+        ("single.c4", wrapped(cm.C4CylinderGaussianPhaseApproximation), ["pgse2", "legacy2", "ogse"]),
+        ("single.s2", wrapped(sm.S2SphereStejskalTannerApproximation), ["pgse", "legacy"]),
+        ("single.s4", wrapped(sm.S4SphereGaussianPhaseApproximation), ["pgse2", "legacy2", "ogse", "ste"]),
+        ("single.p2", wrapped(pm.P2PlaneStejskalTannerApproximation), ["pgse", "legacy"]),
+        ("single.p3", wrapped(pm.P3PlaneCallaghanApproximation), ["pgse2", "legacy2"]),
         ("dist.watson_stick_zeppelin", lambda: MultiCompartmentModel([dm.SD1WatsonDistributed(
             [cm.C1Stick(), gm.G2Zeppelin()])]), ["pgse", "legacy", "ste", "pte"]),
         ("dist.bingham_stick_zeppelin", lambda: MultiCompartmentModel([dm.SD2BinghamDistributed(
@@ -476,11 +541,14 @@ def _composites():
     return comp
 
 
+TRIVIAL_COMPOSITES = {"single.dot"}          # the dot does not attenuate
+
+
 def _composite_cases():
     for cid, builder, schemes in _composites():
         for sch in schemes:
             add("numpy", f"numpy/composite/{cid}/{sch}",
-                lambda b=builder, s=sch, c=cid: _simulate(b(), scheme(s), c))
+                lambda b=builder, s=sch, c=cid: _simulate(b(), scheme(s), c), trivial=cid in TRIVIAL_COMPOSITES)
 
 
 OVERRIDES = {"dist.sh_stick": lambda: {
@@ -509,10 +577,12 @@ def _jax_direct_cases():
         _, cls_path, kwargs, kind, _ = entry
         for sch in schemes:
             for pk, params in _params(kind).items():
-                for sect in (("jax_f64",) if key in FLOAT64_ONLY or key in ("C5", "S5", "P5")
-                             else ("jax_f32", "jax_f64")):
+                matrix = key in ("C5", "S5", "P5")
+                n_modes = 24 if key == "P5" else 16
+                for sect in (("jax_f64",) if key in FLOAT64_ONLY or matrix else ("jax_f32", "jax_f64")):
                     add(sect, f"{sect}/{key}/{sch}/{pk}",
-                        lambda c=cls_path, k=kwargs, s=sch, p=params: _call(c, k, s, p, use_jax=True))
+                        lambda c=cls_path, k=kwargs, s=sch, p=params: _call(c, k, s, p, use_jax=True),
+                        ops=N_T * (2 * n_modes + 4) if matrix else 8, host_dependent=matrix)
 
 
 # The composites build_mc_forward_fn refuses or cannot evaluate on main, by id: the forward factories have no twin
@@ -528,19 +598,26 @@ JAX_UNSUPPORTED = {
 }
 
 
+# schemes the JAX forwards do not evaluate: the finite-RF schemes (the relaxation path refuses them and the closed
+# Karger path would ignore the pulses) and the schemes without delta for the models that read it
+JAX_SKIP_SCHEMES = {"pgse_rf", "pgste_rf"}
+JAX_SKIP_CASES = {("single.c4", "ogse")}
+
+
 def _jax_composite_cases():
     cases = []
     for cid, builder, schemes in _composites():
         if cid in JAX_UNSUPPORTED:
             continue
         for sch in schemes:
-            cases.append((cid, builder, sch))
+            if sch not in JAX_SKIP_SCHEMES and (cid, sch) not in JAX_SKIP_CASES:
+                cases.append((cid, builder, sch))
     for cid, builder, sch in cases:
         add("jax_f64", f"jax_f64/forward/{cid}/{sch}",
-            lambda b=builder, s=sch, c=cid: _forward_jax(b(), scheme(s), c))
+            lambda b=builder, s=sch, c=cid: _forward_jax(b(), scheme(s), c), trivial=cid in TRIVIAL_COMPOSITES)
         if not _needs_float64(cid):
             add("jax_f32", f"jax_f32/forward/{cid}/{sch}",
-                lambda b=builder, s=sch, c=cid: _forward_jax(b(), scheme(s), c))
+                lambda b=builder, s=sch, c=cid: _forward_jax(b(), scheme(s), c), trivial=cid in TRIVIAL_COMPOSITES)
 
 
 F64_COMPOSITES = ("cylinder", "c2", "c3", "c4", "charmed", "axcaliber", "active_ax", "gamma", "poisson")
@@ -568,10 +645,12 @@ def build_registry():
         return REGISTRY
     _numpy_model_cases()
     _method_cases()
+    _karger_rh_cases()
     _standalone_cases()
     _composite_cases()
     _jax_direct_cases()
     _jax_composite_cases()
+    _sm_forward_cases()
     return REGISTRY
 
 
@@ -688,10 +767,16 @@ def record():
                 b = second[key]
                 same = a.dtype == b.dtype and a.shape == b.shape and np.array_equal(a, b)
                 cid = key.replace("__", "/")
-                entry = {"sha256": digest(a), "shape": list(a.shape), "dtype": a.dtype.str, "bitwise": bool(same)}
-                if not same:
+                host = REGISTRY[cid].host_dependent
+                entry = {"sha256": digest(a), "shape": list(a.shape), "dtype": a.dtype.str,
+                         "bitwise": bool(same) and not host}
+                if host:
+                    entry["reason"] = "host_dependent"
+                    entry["atol"] = REGISTRY[cid].ops * float(np.finfo(a.dtype).eps)
+                    entry["ops"] = REGISTRY[cid].ops
+                elif not entry["bitwise"]:
                     entry["rtol"] = derived_rtol(REGISTRY[cid].ops, a)
-                    entry["rtol_ops"] = REGISTRY[cid].ops
+                    entry["ops"] = REGISTRY[cid].ops
                 entries[cid] = entry
             manifest["sections"][section] = dict(sorted(entries.items()))
             np.savez(os.path.join(RECORD, section + ".npz"), **first)
@@ -739,6 +824,11 @@ def check():
                     d = np.abs(a - r)
                     failures.append(f"{cid}: differs: max abs {d.max():.3e}, max {ulps(a, r).max():.1f} ulp, "
                                     f"{int((a != r).sum())}/{a.size} elements")
+            elif "atol" in entry:
+                err = np.abs(a - r)
+                if not (err <= entry["atol"]).all():
+                    failures.append(f"{cid}: host dependent, beyond its derived atol {entry['atol']:.2e}: "
+                                    f"max abs {err.max():.3e}")
             else:
                 tol = entry["rtol"]
                 err = np.abs(a - r) / np.maximum(np.abs(r), np.finfo(r.dtype).tiny)

@@ -1989,6 +1989,24 @@
     "dtype": "<f8",
     "bitwise": true
    },
+   "numpy/X0GeneralizedKarger.rotational_harmonics_representation/legacy2": {
+    "sha256": "4584c0f526bde2875cbec36fa288c900ccb89b82ffe563c632db1870f2ff7836",
+    "shape": [
+     10,
+     7
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/X0GeneralizedKarger.rotational_harmonics_representation/pgse2": {
+    "sha256": "4584c0f526bde2875cbec36fa288c900ccb89b82ffe563c632db1870f2ff7836",
+    "shape": [
+     10,
+     7
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
    "numpy/composite/dist.bingham_stick_zeppelin/pgse": {
     "sha256": "23307ecfbc43b27a04cbb041fc5195502ff4987c28685498a4e184ebe0550df1",
     "shape": [
@@ -2221,8 +2239,24 @@
     "dtype": "<f8",
     "bitwise": true
    },
+   "numpy/composite/karger.ball_ball/pgse_rf": {
+    "sha256": "09959d5787dd1d4c5ad7f9ea71bba84a63cdd83baded07f20ee9c3c6a99ab331",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
    "numpy/composite/karger.ball_ball_T2/pgse2": {
     "sha256": "f5c98ac692e367dec74e1abf5a18e5fd7c455a72d6c86bfb7dbb8599ca1afcd7",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/karger.ball_ball_T2_T1_rf/pgste_rf": {
+    "sha256": "e700435d0545b8e1bb269f821a59b1b54f3feaffe5310d841c57af48b687e45e",
     "shape": [
      32
     ],
@@ -2247,6 +2281,14 @@
    },
    "numpy/composite/karger.stick_zeppelin_T2_T1/pgste": {
     "sha256": "2aa54d37d7648822ed1e115dd7c55a73c5c3e29979f91a3fb871f6a9a15881d5",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/karger.stick_zeppelin_T2_rf/pgse_rf": {
+    "sha256": "5cdd6f86f685b0900c1bafcaf81c0c59bbacb9880f1e353248dc9273ad56303e",
     "shape": [
      32
     ],
@@ -2543,6 +2585,166 @@
    },
    "numpy/composite/ref.zeppelin/ste": {
     "sha256": "baf1b5831e414650cf2f9f9467a582d9174946bfb5dba23e4b712506599f9a9c",
+    "shape": [
+     4
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.c2/legacy": {
+    "sha256": "1c2367c90ba1025c8aa9797d43f7b4edc3936938396a1869a795e642c06b2749",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.c2/pgse": {
+    "sha256": "c77eb7bd8ca882a1b46c6eeab1d47199a5af7175a444c85c7c400315e281f7c9",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.c3/legacy2": {
+    "sha256": "7e05fdc7a66b08ca3e81e121d314ead5c6f89fe267f8ced6a826c08ab0ccd716",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.c3/pgse2": {
+    "sha256": "8080d8a5e99977f99239707fcf5e069c0af4aa2fe64784486a256c0627921cef",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.c4/legacy2": {
+    "sha256": "a73f6c330df48245e7abd5c5dd90a6308896e769dfbec0845f63c38f80a48a9a",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.c4/ogse": {
+    "sha256": "53a6503daadc7c3722ad9d2da2a95a094b7de892f87494e1e89d9f3240b6e281",
+    "shape": [
+     8
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.c4/pgse2": {
+    "sha256": "7b6e9e623fac31c0ff48d1b57be996e1deae5a2cff65b8e26e557a57b1ed2aa4",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.dot/pgse": {
+    "sha256": "7179c4179fe03dbc87124ef7768706bcdf0530cb7a83eeb90ca338ae9e1f9149",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.g3/legacy2": {
+    "sha256": "65ad97bab1fddf7f0035be2c55ebb1add726911b6274e56d3dc90fe18c009716",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.g3/pgse2": {
+    "sha256": "65ad97bab1fddf7f0035be2c55ebb1add726911b6274e56d3dc90fe18c009716",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.p2/legacy": {
+    "sha256": "8a347ae03a559333cc5175eee7357a049e850354bbcac872bd9ce31ac357544f",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.p2/pgse": {
+    "sha256": "ab55ab1a5743fa33f7536e5d0e88d6ecd2f2dba6a0ce30bbb78ea4b55f63ec2a",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.p3/legacy2": {
+    "sha256": "75de49d757cc02c7c99761e9b203a79fa18eb173481eb0844d583fd91068e7dc",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.p3/pgse2": {
+    "sha256": "0580a26e04aff845ca4cfe91c80280ce69bd9bc7e5dc68ffd96fa3e32659ded0",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.s2/legacy": {
+    "sha256": "6825068f37a488ba6629fdcb36085f72139fdd791b2e2eb1cfdbaa872d741ee6",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.s2/pgse": {
+    "sha256": "c86e1627c463c72838c9d7e1056fa09c5b366c2d43b5d9dbf9ab4bab6e60e321",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.s4/legacy2": {
+    "sha256": "36bf3ee05dee1cef930b3f5d1ff7ff54c0307c9d425edeb5a93b78574f4c972c",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.s4/ogse": {
+    "sha256": "0a16dd07d7df44187d6ad954f1e43eeeaa726fc92f307b19a30305850cb91422",
+    "shape": [
+     8
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.s4/pgse2": {
+    "sha256": "d90e5e9a8fd09dda3faf4ccfe1166d028951850555962746e357fd82721c13ad",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/single.s4/ste": {
+    "sha256": "ce07ecf1961e7933082f5a67f605f052bb98c9d8d680e61ece86487d1ead1f60",
     "shape": [
      4
     ],
@@ -3357,6 +3559,158 @@
     ],
     "dtype": "<f4",
     "bitwise": true
+   },
+   "jax_f32/forward/single.dot/pgse": {
+    "sha256": "4c1427d64fb75ac0b0e517fac57657356127e828971f0e4e08a10364b2155326",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/forward/single.g3/legacy2": {
+    "sha256": "3abc102dac60a715313deceb2052aee137ea021eb515c43f7b08bd5fdc673ebd",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/forward/single.g3/pgse2": {
+    "sha256": "3abc102dac60a715313deceb2052aee137ea021eb515c43f7b08bd5fdc673ebd",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/forward/single.p2/legacy": {
+    "sha256": "63b71ac4038782ad8502208c4e7a0c44aeff785c6fe0cabe27f345e5b13cf95b",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/forward/single.p2/pgse": {
+    "sha256": "485abbf39689a0c6b008d03daf5750fd9a86f831dac251283abe149e7b29f118",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/forward/single.p3/legacy2": {
+    "sha256": "50af32f302a5e1dd5cf4ecd167efd9b04dfee018ce264765ec2608ebdd8445bc",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/forward/single.p3/pgse2": {
+    "sha256": "ae16949fa8c1885a3019acc1346138efa922e99290c20ceba8260afd497da5a7",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/forward/single.s2/legacy": {
+    "sha256": "0bfa04af4c0572dc57e63767f50688c47ae5fe9dd2980f1255ae7206f050303c",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/forward/single.s2/pgse": {
+    "sha256": "dee69d4e2e3610760aad52fd68421feb7a8adff6e088b16facbe9a87f1990553",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/forward/single.s4/legacy2": {
+    "sha256": "a3f33ff83357e0b9dbdee4bd1a496dfe542f59939be087fa28bc50d026870925",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/forward/single.s4/ogse": {
+    "sha256": "0e3fb1164362413e40708f43e20339d9f7eeb46605c771eb524814d89f31f7e1",
+    "shape": [
+     8
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/forward/single.s4/pgse2": {
+    "sha256": "0c03b48c0db208eafd488917d87200891e9ca5c070d73a9815114417ac80288e",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/forward/single.s4/ste": {
+    "sha256": "cb56d0268f9b5702f4896a968a2bc05150c4482a781d7225686b11ca84ae1eb5",
+    "shape": [
+     4
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/sm_forward/ball/meas": {
+    "sha256": "e937d9f493c829528afd3e7ded4ba385f5527dc435716c57614e096273396ce3",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/sm_forward/ball/shell": {
+    "sha256": "c5a0b6758425ea6c640169ae51f44514a3e85af44af98b11fa405bfa4958ceee",
+    "shape": [
+     6
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/sm_forward/stick_ball/meas": {
+    "sha256": "7bb830493b42cb4793461a0033558b737ca1510cf2cf949ee1050bff836e6c29",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/sm_forward/stick_ball/shell": {
+    "sha256": "d1b01a351316357652550bc0be029708370c09e329f042ed1084b3dd33d6f01c",
+    "shape": [
+     6
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/sm_forward/stick_zeppelin/meas": {
+    "sha256": "4f039ec2b3c85717fbe6b8b8480975654e07ee9f398f42a0eea9915d2d6f3421",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/sm_forward/stick_zeppelin/shell": {
+    "sha256": "231e449588e6807259867164ae9e051a87664b085258408109e36e09dfa90aaf",
+    "shape": [
+     6
+    ],
+    "dtype": "<f4",
+    "bitwise": true
    }
   },
   "jax_f64": {
@@ -3582,7 +3936,10 @@
      8
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 7.993605777301127e-12,
+    "ops": 36000
    },
    "jax_f64/C5/ogse/B": {
     "sha256": "bbe8436c188e64c76f557c68ce0224aa4be811d694ad52c008042d6bb75df6ff",
@@ -3590,7 +3947,10 @@
      8
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 7.993605777301127e-12,
+    "ops": 36000
    },
    "jax_f64/C5/ogse/C": {
     "sha256": "fa4326354f5ce461e56e2b58b5a58ccc3c598fe37e01c79655818a1ab847ace6",
@@ -3598,7 +3958,10 @@
      8
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 7.993605777301127e-12,
+    "ops": 36000
    },
    "jax_f64/C5/pgse/A": {
     "sha256": "bef1f2a6cf172f42aa418d67a046bc70af41ccea9a85ca17a7e70d1374b485ab",
@@ -3606,7 +3969,10 @@
      32
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 7.993605777301127e-12,
+    "ops": 36000
    },
    "jax_f64/C5/pgse/B": {
     "sha256": "556f79667f6ecc2c41279d44f7d63819e10d4e92cd8330dcaee95089e18a55e9",
@@ -3614,7 +3980,10 @@
      32
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 7.993605777301127e-12,
+    "ops": 36000
    },
    "jax_f64/C5/pgse/C": {
     "sha256": "f0a5a2122ea8f478830977e6f24e5fdaf1d858b2c51e7eb74d646e024f5bd35e",
@@ -3622,7 +3991,10 @@
      32
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 7.993605777301127e-12,
+    "ops": 36000
    },
    "jax_f64/G1Ball/legacy/A": {
     "sha256": "9420e765c11c07a66c3f9215955fc99cf91fd03a03bbd4ce5e8fdf0d108d4370",
@@ -3710,7 +4082,10 @@
      8
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 1.1546319456101628e-11,
+    "ops": 52000
    },
    "jax_f64/P5/ogse/B": {
     "sha256": "b220b169be2949e52840a90e595753b15a934e1e907cda7057ddb0aaef3bcb6c",
@@ -3718,7 +4093,10 @@
      8
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 1.1546319456101628e-11,
+    "ops": 52000
    },
    "jax_f64/P5/ogse/C": {
     "sha256": "fe486bf394776471a813b93d72ca8226e4a601b70ae2abe0b49846da8c64d51c",
@@ -3726,7 +4104,10 @@
      8
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 1.1546319456101628e-11,
+    "ops": 52000
    },
    "jax_f64/P5/pgse/A": {
     "sha256": "62fc5aae3bf6d25303ff269ef5bd496c2bbf2b60a72994f62b6c5c46e67f33b5",
@@ -3734,7 +4115,10 @@
      32
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 1.1546319456101628e-11,
+    "ops": 52000
    },
    "jax_f64/P5/pgse/B": {
     "sha256": "65ecc753ce9ef7d9833d66ccf5dba785a73ae152cb079ede3739ab55457a7918",
@@ -3742,7 +4126,10 @@
      32
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 1.1546319456101628e-11,
+    "ops": 52000
    },
    "jax_f64/P5/pgse/C": {
     "sha256": "d1406e93efb0dc922c0f576b33fe77d643ca519f47c9320075c08ea9587044ec",
@@ -3750,7 +4137,10 @@
      32
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 1.1546319456101628e-11,
+    "ops": 52000
    },
    "jax_f64/S2/legacy/A": {
     "sha256": "8cae953be53ec54b91b4d28364e8808bc677ebc865225a5a812a330cd79de759",
@@ -3806,7 +4196,10 @@
      8
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 7.993605777301127e-12,
+    "ops": 36000
    },
    "jax_f64/S5/ogse/B": {
     "sha256": "7f9410fcb7febb01dd34d868c207550aa83f176dd321d380ca70d4a48cab8adf",
@@ -3814,7 +4207,10 @@
      8
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 7.993605777301127e-12,
+    "ops": 36000
    },
    "jax_f64/S5/ogse/C": {
     "sha256": "3a1b7fec1073347d8fe08946a0d565ec89656410089d9045f5e904b73b38f96d",
@@ -3822,7 +4218,10 @@
      8
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 7.993605777301127e-12,
+    "ops": 36000
    },
    "jax_f64/S5/pgse/A": {
     "sha256": "46ea11d53b8657f152b2139a3397ec3117c7ea467eb0befc7890cdc64f46765f",
@@ -3830,7 +4229,10 @@
      32
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 7.993605777301127e-12,
+    "ops": 36000
    },
    "jax_f64/S5/pgse/B": {
     "sha256": "02ebbb9f3fb601b74a8ef03e29f73fc69e36fe075d36f6e732ade458f0166eef",
@@ -3838,7 +4240,10 @@
      32
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 7.993605777301127e-12,
+    "ops": 36000
    },
    "jax_f64/S5/pgse/C": {
     "sha256": "642352055fe35338a0ad112c1d140306d79ff66d41dc4ead47de92640b2ceebc",
@@ -3846,7 +4251,10 @@
      32
     ],
     "dtype": "<f8",
-    "bitwise": true
+    "bitwise": false,
+    "reason": "host_dependent",
+    "atol": 7.993605777301127e-12,
+    "ops": 36000
    },
    "jax_f64/forward/dist.bingham_stick_zeppelin/pgse": {
     "sha256": "bbbd0df7c7dfce0898baf922477ece7c4253a4264f536a51ca3864c3f39daade",
@@ -4340,6 +4748,206 @@
     "sha256": "cf8c06486446d565fe02148c765012667a8750e5a60af861333727ad174463f9",
     "shape": [
      4
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.c2/legacy": {
+    "sha256": "bd2db7cd76b81bd232e39decff01ae9c591a7ab1344d3f86828200e42c902185",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.c2/pgse": {
+    "sha256": "0de8ac66fb28873a5b345ba33032fd41e176599958d9b3838bf90fd4893781a2",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.c3/legacy2": {
+    "sha256": "8f6e6c3f7b13ba330dd5e42a2a9a28ef45de2aaa9709658862774a231c2d7b43",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.c3/pgse2": {
+    "sha256": "978ee329e011414e82c560abcdd7766cce57ce0e0133baf6d578d42a31225bb3",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.c4/legacy2": {
+    "sha256": "f59fbecbc79c222ce1c0e01009f6d30a8f851c30b99e6bfdee0b69a7ae1e92d4",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.c4/pgse2": {
+    "sha256": "8bf5e71946ae4ab29a2125a88134d3fdf197bc68e707cfd176455619578ce29a",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.dot/pgse": {
+    "sha256": "7179c4179fe03dbc87124ef7768706bcdf0530cb7a83eeb90ca338ae9e1f9149",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.g3/legacy2": {
+    "sha256": "f03ae375f191ab45fbec464d1dd8cf25e6a7a8cbd3ae8d488e367e11cc0b5ec0",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.g3/pgse2": {
+    "sha256": "f03ae375f191ab45fbec464d1dd8cf25e6a7a8cbd3ae8d488e367e11cc0b5ec0",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.p2/legacy": {
+    "sha256": "8a347ae03a559333cc5175eee7357a049e850354bbcac872bd9ce31ac357544f",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.p2/pgse": {
+    "sha256": "ab55ab1a5743fa33f7536e5d0e88d6ecd2f2dba6a0ce30bbb78ea4b55f63ec2a",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.p3/legacy2": {
+    "sha256": "75de49d757cc02c7c99761e9b203a79fa18eb173481eb0844d583fd91068e7dc",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.p3/pgse2": {
+    "sha256": "0580a26e04aff845ca4cfe91c80280ce69bd9bc7e5dc68ffd96fa3e32659ded0",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.s2/legacy": {
+    "sha256": "6825068f37a488ba6629fdcb36085f72139fdd791b2e2eb1cfdbaa872d741ee6",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.s2/pgse": {
+    "sha256": "c86e1627c463c72838c9d7e1056fa09c5b366c2d43b5d9dbf9ab4bab6e60e321",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.s4/legacy2": {
+    "sha256": "beb066205cbc1519768c67350af57b42716ee0d630b1bebb47f2aca197bcbe21",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.s4/ogse": {
+    "sha256": "a86c28e641500738335cd6fdac6f577d5bba547443a63985f008c7aa299fa605",
+    "shape": [
+     8
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.s4/pgse2": {
+    "sha256": "6d2b3623f08df5d688300efa45943260de69d3e81da978be29db5276926eafa5",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/single.s4/ste": {
+    "sha256": "d46d73f74a1ff7c666a1e09c9e0c9d3bb81cc103201a72a8c9bc7c9b0a0cfc21",
+    "shape": [
+     4
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/sm_forward/ball/meas": {
+    "sha256": "7363996c5e93e3bc1db3558645ef952f7a2c661589292912d90c249984b9fe5e",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/sm_forward/ball/shell": {
+    "sha256": "76d081a1a8d9b9dc419c0515b60e31c5dc9de45a17a21d9890554e0f1538ef4e",
+    "shape": [
+     6
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/sm_forward/stick_ball/meas": {
+    "sha256": "58abd3c28b247bf32d074e9de4263af0a532dd941485c59045100b61389aacaa",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/sm_forward/stick_ball/shell": {
+    "sha256": "14a26736ff605f66686f5eeec4f272dda6f9c0b0ba5e308aac5ddb2022565f9c",
+    "shape": [
+     6
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/sm_forward/stick_zeppelin/meas": {
+    "sha256": "58abd3c28b247bf32d074e9de4263af0a532dd941485c59045100b61389aacaa",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/sm_forward/stick_zeppelin/shell": {
+    "sha256": "14a26736ff605f66686f5eeec4f272dda6f9c0b0ba5e308aac5ddb2022565f9c",
+    "shape": [
+     6
     ],
     "dtype": "<f8",
     "bitwise": true
