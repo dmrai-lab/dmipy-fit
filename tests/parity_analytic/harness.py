@@ -341,16 +341,28 @@ def _karger_rh_cases():
 
 
 def _sm_forward_cases():
-    """The spherical-mean forward of the JAX fit: per shell and broadcast to every measurement."""
+    """The spherical-mean forward of the JAX fit: per shell and broadcast to every measurement. A zeppelin is prolate
+    (the JAX average is defined for ``lambda_par >= lambda_perp`` and the fit refuses a range that admits less): by
+    bounds that keep ``lambda_perp`` below ``lambda_par``, and by the tortuosity link of MC-SMT."""
     from dmipy_fit.core.modeling_framework import MultiCompartmentSphericalMeanModel
+    from dmipy_fit.custom_optimizers.reference_models import mcsmt
     from dmipy_fit.signal_models import cylinder_models as cm, gaussian_models as gm
-    for cid, models in (("ball", [gm.G1Ball]), ("stick_zeppelin", [cm.C1Stick, gm.G2Zeppelin]),
-                        ("stick_ball", [cm.C1Stick, gm.G1Ball])):
+
+    def compartments(*classes):
+        return lambda: MultiCompartmentSphericalMeanModel([x() for x in classes])
+
+    def prolate_stick_zeppelin():
+        model = compartments(cm.C1Stick, gm.G2Zeppelin)()
+        model.set_parameter_optimization_bounds("G2Zeppelin_1_lambda_par", [[1.0e-9, 3.0e-9]])
+        model.set_parameter_optimization_bounds("G2Zeppelin_1_lambda_perp", [[0.1e-9, 1.0e-9]])
+        return model
+
+    for cid, build in (("ball", compartments(gm.G1Ball)), ("stick_zeppelin", prolate_stick_zeppelin),
+                       ("stick_ball", compartments(cm.C1Stick, gm.G1Ball)), ("mcsmt", mcsmt)):
         for broadcast in (False, True):
             for sect in ("jax_f32", "jax_f64"):
                 add(sect, f"{sect}/sm_forward/{cid}/{'meas' if broadcast else 'shell'}",
-                    lambda m=models, bc=broadcast: _sm_forward(MultiCompartmentSphericalMeanModel([x() for x in m]),
-                                                                scheme("pgse"), bc))
+                    lambda b=build, bc=broadcast: _sm_forward(b(), scheme("pgse"), bc))
 
 
 def _sm_forward(model, sch, broadcast):
