@@ -342,8 +342,8 @@ def _karger_rh_cases():
 
 def _sm_forward_cases():
     """The spherical-mean forward of the JAX fit: per shell and broadcast to every measurement. A zeppelin is prolate
-    (the JAX average is defined for ``lambda_par >= lambda_perp`` and the fit refuses a range that admits less): by
-    bounds that keep ``lambda_perp`` below ``lambda_par``, and by the tortuosity link of MC-SMT."""
+    (``lambda_par > lambda_perp``: the closed form with ``erf``) by narrowed bounds and by the tortuosity link of MC-SMT,
+    and oblate (``lambda_par < lambda_perp``: the Gauss-Legendre rule of dmipy-analytic) by narrowed bounds."""
     from dmipy_fit.core.modeling_framework import MultiCompartmentSphericalMeanModel
     from dmipy_fit.custom_optimizers.reference_models import mcsmt
     from dmipy_fit.signal_models import cylinder_models as cm, gaussian_models as gm
@@ -351,13 +351,17 @@ def _sm_forward_cases():
     def compartments(*classes):
         return lambda: MultiCompartmentSphericalMeanModel([x() for x in classes])
 
-    def prolate_stick_zeppelin():
-        model = compartments(cm.C1Stick, gm.G2Zeppelin)()
-        model.set_parameter_optimization_bounds("G2Zeppelin_1_lambda_par", [[1.0e-9, 3.0e-9]])
-        model.set_parameter_optimization_bounds("G2Zeppelin_1_lambda_perp", [[0.1e-9, 1.0e-9]])
-        return model
+    def stick_zeppelin(par_bounds, perp_bounds):
+        def build():
+            model = compartments(cm.C1Stick, gm.G2Zeppelin)()
+            model.set_parameter_optimization_bounds("G2Zeppelin_1_lambda_par", [par_bounds])
+            model.set_parameter_optimization_bounds("G2Zeppelin_1_lambda_perp", [perp_bounds])
+            return model
+        return build
 
-    for cid, build in (("ball", compartments(gm.G1Ball)), ("stick_zeppelin", prolate_stick_zeppelin),
+    for cid, build in (("ball", compartments(gm.G1Ball)),
+                       ("stick_zeppelin", stick_zeppelin([1.0e-9, 3.0e-9], [0.1e-9, 1.0e-9])),
+                       ("stick_zeppelin_oblate", stick_zeppelin([0.1e-9, 1.0e-9], [1.0e-9, 3.0e-9])),
                        ("stick_ball", compartments(cm.C1Stick, gm.G1Ball)), ("mcsmt", mcsmt)):
         for broadcast in (False, True):
             for sect in ("jax_f32", "jax_f64"):
