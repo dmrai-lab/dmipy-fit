@@ -38,7 +38,9 @@ def test_stored_sphere_is_dipys_symmetric724():
     hemi = HemiSphere(phi=sph.phi, theta=sph.theta)
     v = sh_basis.positivity_hemisphere()
     assert v.shape == (362, 3)
-    np.testing.assert_array_equal(v, hemi.vertices)
+    # dipy rebuilds the hemisphere's vertices from its angles (arccos and arctan2, then sin, cos and a product, each
+    # within about one ulp), so their last bits follow the platform's libm: the same unit vectors to a few ulps of 1
+    np.testing.assert_allclose(v, hemi.vertices, rtol=0, atol=8 * np.finfo(np.float64).eps)
     full = sh_basis.symmetric_sphere()
     assert full.shape == sph.vertices.shape
     # the same 724 points; only the order differs
