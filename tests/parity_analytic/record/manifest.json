@@ -3689,6 +3689,22 @@
     "dtype": "<f4",
     "bitwise": true
    },
+   "jax_f32/sm_forward/mcsmt/meas": {
+    "sha256": "dcb2612eba45e5c7edf38a4674b7289876b2e51d99a6c7a6a95d6edea5a25cd5",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/sm_forward/mcsmt/shell": {
+    "sha256": "3eefa571f14f8899b325093bf4e2f79f297ee30da40065af3d13124b66c806a3",
+    "shape": [
+     6
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
    "jax_f32/sm_forward/stick_ball/meas": {
     "sha256": "7bb830493b42cb4793461a0033558b737ca1510cf2cf949ee1050bff836e6c29",
     "shape": [
@@ -3706,7 +3722,7 @@
     "bitwise": true
    },
    "jax_f32/sm_forward/stick_zeppelin/meas": {
-    "sha256": "4f039ec2b3c85717fbe6b8b8480975654e07ee9f398f42a0eea9915d2d6f3421",
+    "sha256": "ab8f7ebf2ed6a15e8736a9d55901518d36077aeecc2fea038c974da83f0e6526",
     "shape": [
      32
     ],
@@ -3714,7 +3730,7 @@
     "bitwise": true
    },
    "jax_f32/sm_forward/stick_zeppelin/shell": {
-    "sha256": "231e449588e6807259867164ae9e051a87664b085258408109e36e09dfa90aaf",
+    "sha256": "31f5c441dedef758c3a2c2c7ac35134e41e47e31a4f9bfbcadec0485073fb9bc",
     "shape": [
      6
     ],
@@ -4945,6 +4961,22 @@
     "dtype": "<f8",
     "bitwise": true
    },
+   "jax_f64/sm_forward/mcsmt/meas": {
+    "sha256": "d062dd8e9f37bc7a9066a203e2f6f228dbe178cc0da6b0b6d01c1f62fd5d217d",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/sm_forward/mcsmt/shell": {
+    "sha256": "394a01d0d0b8069f2d02bee02e6f5671201a337a46e41b13e7be9746dbd6f126",
+    "shape": [
+     6
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
    "jax_f64/sm_forward/stick_ball/meas": {
     "sha256": "58abd3c28b247bf32d074e9de4263af0a532dd941485c59045100b61389aacaa",
     "shape": [
@@ -4962,7 +4994,7 @@
     "bitwise": true
    },
    "jax_f64/sm_forward/stick_zeppelin/meas": {
-    "sha256": "58abd3c28b247bf32d074e9de4263af0a532dd941485c59045100b61389aacaa",
+    "sha256": "ece330f5f352da078c2a019f10e3e686fdbe87bed1b1b621e964375f586db6a6",
     "shape": [
      32
     ],
@@ -4970,7 +5002,7 @@
     "bitwise": true
    },
    "jax_f64/sm_forward/stick_zeppelin/shell": {
-    "sha256": "14a26736ff605f66686f5eeec4f272dda6f9c0b0ba5e308aac5ddb2022565f9c",
+    "sha256": "d1edb03ae969ab0c2f352f7ca39a21e9acef35612efb2daaaac14b5dbbd9e417",
     "shape": [
      6
     ],

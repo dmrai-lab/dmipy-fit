@@ -794,6 +794,66 @@ _JAX_SM_MODEL_FNS = {
 }
 
 
+def _refuse_oblate_zeppelins(model):
+    """Refuse a spherical-mean model with a zeppelin whose fit range admits ``lambda_perp > lambda_par``.
+
+    The JAX spherical mean of the zeppelin (:func:`dmipy_analytic.jax.gaussian.zeppelin_powder_average`) is defined for a
+    prolate tensor, ``lambda_par >= lambda_perp``: the oblate average needs ``erfi``, which JAX does not provide, and
+    the twin returns NaN for it. A zeppelin is accepted when its perpendicular diffusivity is the tortuosity
+    ``(1 - f) lambda_par`` of the very parallel diffusivity it is paired with (prolate by construction), or when the
+    ranges the fit searches (the free ranges, the fixed values, the equalities) keep ``lambda_perp`` at or below
+    ``lambda_par``.
+    """
+    from ..utils.utils import T1_tortuosity, parameter_equality
+    from ..core.model_properties import ReturnFixedValue
+
+    def full(model_obj, local):
+        return local if model_obj is None else model.model_names[model.models.index(model_obj)] + local
+
+    links = {full(dep_model, local): (fn, deps) for dep_model, local, fn, deps in model.parameter_links}
+    ranges, scales = model.parameter_ranges, model.parameter_scales
+
+    def root(name):
+        """What ``name`` is in a fit: ('free', name), ('fixed', value), ('tortuous', root of its parallel
+        diffusivity) or ('unknown', name)."""
+        if name in ranges:
+            return ("free", name)
+        fn, deps = links.get(name, (None, None))
+        if isinstance(fn, ReturnFixedValue):
+            return ("fixed", float(fn.value))
+        if fn is parameter_equality:
+            return root(full(*deps[0]))
+        if isinstance(fn, T1_tortuosity):
+            return ("tortuous", root(full(*deps[0])))
+        return ("unknown", name)
+
+    def interval(r):
+        if r[0] == "free":
+            lower, upper = np.ravel(ranges[r[1]])           # a scalar parameter's range, as (2,) or (1, 2)
+            return float(lower * scales[r[1]]), float(upper * scales[r[1]])
+        if r[0] == "fixed":
+            return r[1], r[1]
+        if r[0] == "tortuous":
+            return 0.0, interval(r[1])[1]
+        return None
+
+    for model_obj, name in zip(model.models, model.model_names):
+        if type(model_obj) is not G2Zeppelin:
+            continue
+        parallel, perpendicular = root(name + 'lambda_par'), root(name + 'lambda_perp')
+        if perpendicular == ("tortuous", parallel):
+            continue
+        parallel_range, perpendicular_range = interval(parallel), interval(perpendicular)
+        if (parallel_range is None or perpendicular_range is None
+                or parallel_range[0] < perpendicular_range[1]):
+            raise ValueError(
+                f"The JAX spherical mean of the zeppelin '{name}' is defined for lambda_par >= lambda_perp (the oblate "
+                f"average needs erfi, which JAX does not provide), but the fit range of '{name}lambda_perp' "
+                f"({perpendicular_range}) is not below that of '{name}lambda_par' ({parallel_range}) m^2/s. Link them "
+                "(set_tortuous_parameter) or narrow the bounds (set_parameter_optimization_bounds) so that "
+                "lambda_perp <= lambda_par.")
+
+
 def build_mc_sm_forward_fn(model, acquisition_scheme, broadcast=True):
     """Build a jax.jit-compiled forward function for
     MultiCompartmentSphericalMeanModel.
@@ -823,6 +883,8 @@ def build_mc_sm_forward_fn(model, acquisition_scheme, broadcast=True):
                 "Add it to _JAX_SM_MODEL_FNS in "
                 "multicompartment_jax.py.".format(m.__class__.__name__, type(m))
             )
+
+    _refuse_oblate_zeppelins(model)
 
     dispatch   = _build_dispatch(model)          # reuse same helper
     N_shells   = acquisition_scheme.N_shells
