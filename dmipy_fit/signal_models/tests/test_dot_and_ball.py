@@ -4,8 +4,9 @@ import numpy as np
 from dmipy_fit.core.acquisition_scheme import (
     acquisition_scheme_from_bvalues)
 
-bvals = np.random.rand(10) * 1e9
-bvecs = np.random.rand(10, 3)
+rng = np.random.default_rng(0)
+bvals = rng.random(10) * 1e9
+bvecs = rng.random((10, 3))
 bvecs /= np.linalg.norm(bvecs, axis=1)[:, None]
 delta = 0.01
 Delta = 0.03

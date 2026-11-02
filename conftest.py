@@ -1,4 +1,4 @@
-"""Pytest session configuration: per-test JAX float64 (x64) policy.
+"""Pytest session configuration: per-test JAX float64 (x64) policy and NumPy random state.
 
 ``jax_enable_x64`` is a *process-global* JAX flag, but the suite genuinely needs both settings:
 
@@ -14,7 +14,14 @@ Here we set x64 explicitly per test — on for the float64 modules below, off ot
 reset to the float32 baseline afterwards, so the suite is deterministic regardless of order.
 (Production robustness for the cylinder->CSD case is additionally handled in
 CsdOsqpOptimizer.fit_batch, which forces x64 off around its own solve.)
+
+NumPy's global random state is set per test as well, to a function of the test's id: the tests that draw random
+parameters from it (and scipy routines that draw from it, such as the differential evolution of the MIX solver) get
+the same draws on every run and in any order. A test that wants its own stream uses ``np.random.default_rng(seed)``.
 """
+import zlib
+
+import numpy as np
 import pytest
 import jax
 
@@ -36,3 +43,8 @@ def _jax_x64_policy(request):
     jax.config.update("jax_enable_x64", want_x64)
     yield
     jax.config.update("jax_enable_x64", False)
+
+
+@pytest.fixture(autouse=True)
+def _numpy_random_state(request):
+    np.random.seed(zlib.crc32(request.node.nodeid.encode()))
