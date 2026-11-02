@@ -3,16 +3,20 @@
 ## 3.0.0 - 2026-11-02
 
 dmipy-fit fits multi-compartment diffusion-MRI models to data, voxel by voxel, and returns interpretable
-microstructure maps. It is the analytical inverse of the dmipy ecosystem: the signal side is
+microstructure maps. It is the analytical inverse of the dmipy ecosystem: the equations are
+[dmipy-analytic](https://github.com/dmrai-lab/dmipy-analytic)'s, the signal side
 [dmipy-replay](https://github.com/dmrai-lab/dmipy-replay), the forward engine
 [dmipy-sim](https://github.com/dmrai-lab/dmipy-sim).
 
 - **Models.** Sticks, cylinders, spheres, planes, Gaussian compartments and tissue responses, with Watson and Bingham
   dispersion and gamma diameter distributions.
+- **The equations are dmipy-analytic's.** The signal models keep their parameters, ranges, orientation handling and
+  composition and call dmipy-analytic's forms (`gaussian`, `restricted`, `exchange`, `relaxation`, `orientation`,
+  `constants`); the JAX optimisers call its twins. No equation is left in dmipy-fit, and no re-export stands in for one.
 - **Restricted diffusion for any waveform.** The exact matrix-method compartments `P5PlaneMatrixMethod`,
   `C5CylinderMatrixMethod` and `S5SphereMatrixMethod` (the Callaghan 1997 / Grebenkov 2007 multiple-correlation-function
   solution) are exact for an arbitrary gradient waveform (PGSE, OGSE, fixed direction) up to eigenmode truncation; the
-  eigenmode solver is dmipy-sim's (`dmipy_sim.math.matrix_method`), once. The Gaussian-phase compartments
+  eigenmode solver is dmipy-analytic's (`dmipy_analytic.restricted.matrix_method`), once. The Gaussian-phase compartments
   `P4PlaneGaussianPhaseApproximation` (the finite-pulse approximation for a 1-D slab, Balinov et al. 1993), `C4`
   (Van Gelderen) and `S4` (Murday-Cotts) are their approximations where the Gaussian-phase assumption holds, and depart
   at high b and short pulses. `use_jax=True` on `C5`/`S5`/`P5` evaluates a differentiable `jax.lax.scan` Strang
@@ -34,11 +38,20 @@ microstructure maps. It is the analytical inverse of the dmipy ecosystem: the si
   once to a KB-scale kernel of `E(diameter, b, cos_theta[, rho])` (`ReplayKernel`), and fitting interpolates it per
   measurement. It is a fit accelerator, interpolation-grade (the signed signal is interpolated so that diffraction zeros
   do not inflate); the replay compartments stay exact, and other waveforms use them.
+- **Fixes.** The capped cylinders (`CC2`, `CC3`) attenuate along the axis alike for a gradient and its reverse: the
+  signed projection of the wave-vector reaches the forms, which are even in it, where a gradient against the axis read the
+  cross-section's attenuation alone. The JAX forward of NEXI reads the parameters the model exposes (it raised a
+  `KeyError`), and a pair the closed form is not wired for is refused by name. `S3` and `S4` sum over dmipy-analytic's shared
+  Neumann roots, with no private copy of a root left (their values move by at most 2e-10). The JAX spherical-mean fit
+  refuses, at setup and naming the zeppelin and its ranges, a zeppelin whose range admits an oblate tensor, where the twin
+  returns NaN.
+- **Deleted.** `white_matter.surface.b_hat_ea_short`: its exponent was not dimensionless and nothing called it.
 - **Fitting on the device.** `solver="jax"` fits a whole slice on the GPU; batched DTI, Tournier 2007 CSD and
   multi-shell multi-tissue CSD run on JAX or PyTorch. dipy is not a runtime dependency (the `oracle` extra only).
 - **Acquisition.** `AcquisitionScheme` reads a `ScannerSequence` (dmipy-replay's acquisition object, built by the
   `pgse`, `pgste`, `ogse`, `cpmg`, `ste` and `pte` builders) or a `Protocol` of them.
-- **Pairs with** dmipy-sim `>=3,<4` and dmipy-replay `>=0.2,<0.3`. Python >= 3.10, NumPy >= 2.0, SciPy >= 1.10;
+- **Pairs with** dmipy-analytic `>=3,<4` (`[special]`, and `[jax]` in the `jax` and `jax-gpu` extras), dmipy-sim `>=3,<4` and
+  dmipy-replay `>=0.2,<0.3`. Python >= 3.10, NumPy >= 2.0, SciPy >= 1.10;
   extras `jax`, `jax-gpu`, `torch`, `speed`, `data`, `hub`, `viz`, `legacy`, `oracle` and `all`.
 - **Licence** AGPL-3.0-only or commercial.
 
