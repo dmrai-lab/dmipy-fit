@@ -5,17 +5,16 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ master, main ]
-  schedule:
-    - cron: "0 4 * * 1"     # weekly: the slow tests
   workflow_dispatch:
 
 env:
   # The 3.0 line is not on PyPI yet (dmipy-sim 3.0, dmipy-replay 0.2): CI installs each from the commit this
-  # revision was tested against (dmipy-sim: the head of dmipy-sim#852, which makes `simulate`'s pack state its
-  # acquisition's scanner class). Move each ref forward when the releases land and `pip install` resolves them from
-  # PyPI instead.
-  DMIPY_SIM_REF: 88aff1869586e9edc5922ee909f4e9ed732aa8de
-  DMIPY_REPLAY_REF: 38110c577804e8d122b556ac556d2214b5401262
+  # revision was tested against (dmipy-sim: the head of dmipy-sim#873, the replay move's S3b, after which dmipy-sim has
+  # no ReplayPack; dmipy-replay: the merge of dmipy-replay#20, R6, on its main, which holds the pose replay, the study
+  # and the phantoms). Move the dmipy-sim ref to its merge on main when it merges, and drop both when the releases land
+  # and `pip install` resolves them from PyPI instead.
+  DMIPY_SIM_REF: 87618f8984747e127a8ff4f929d60eb148a1ecda
+  DMIPY_REPLAY_REF: 85da6252d57b31dd55aaeb1038acea5856630a8d
 
 jobs:
   test:
@@ -56,7 +55,7 @@ jobs:
           pytest dmipy_fit/ tests/ -q --tb=short -m "not slow"
 
       - name: Run the slow tests
-        if: matrix.python-version == '3.12' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
+        if: matrix.python-version == '3.12' && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
         run: |
           pytest dmipy_fit/ tests/ -q --tb=short -m slow
 

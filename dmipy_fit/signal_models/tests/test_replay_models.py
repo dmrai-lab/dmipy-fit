@@ -1,6 +1,6 @@
 """``MonteCarloReplay``: one pack as a compartment, posed by ``mu``, equal to the pack's own replay."""
 import numpy as np
-from dmipy_sim.spec import Tissue
+from dmipy_replay.spec.tissue import Tissue
 import numpy.testing as npt
 import pytest
 
@@ -42,8 +42,10 @@ def test_a_declared_frame_is_honoured(pack):
     replay at that axis (exactly, the same rotation), and the z-stored pack's to the walk's Monte-Carlo floor --
     ``mu`` names an axis and leaves the roll about it to the frame's gauge, which a finite walk is not blind to."""
     import copy
-    from dmipy_sim.replay import ReplayPack, so3
-    from dmipy_sim.replay.compression import pack_position_arrays, read_position_coeffs
+    from dmipy_replay import ReplayPack
+    from dmipy_replay.replay import so3
+    from dmipy_sim.replay.compression import pack_position_arrays
+    from dmipy_replay.replay.compression import read_position_coeffs
     Q = so3.rotation_of((1.0, 0.0, 0.0))
     C = read_position_coeffs(pack.arrays, dtype=np.float64) @ Q.T
     arrays = {k: v for k, v in pack.arrays.items() if not k.startswith("pos_")}     # the rotated walk in the float container
