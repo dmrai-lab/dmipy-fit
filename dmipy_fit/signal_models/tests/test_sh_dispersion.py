@@ -16,15 +16,15 @@ import numpy.testing as npt
 import pytest
 import sys
 
+from dmipy_analytic.orientation import watson_sh as watson_odf_lm
+from dmipy_analytic.restricted import cylinder
+from dmipy_analytic.restricted.matrix_method import cylinder_neumann_roots
 from dmipy_fit.signal_models.cylinder_models import (
     C4CylinderGaussianPhaseApproximation,
     E_lm_from_exponent_coeffs,
     dispersed_signal_from_E_lm,
-    watson_odf_lm,
     _SPHERE_QUAD_PTS,
     _SPHERE_QUAD_W,
-    _compute_C_geom,
-    _cylinder_signal_from_gamma_lm,
 )
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
 
@@ -37,7 +37,6 @@ SIGMA = 40e-3     # 40 ms gradient duration
 N_T = 400         # 400 timesteps → dt = 0.1 ms
 
 C4 = C4CylinderGaussianPhaseApproximation
-_ROOTS = C4._CYLINDER_TRASCENDENTAL_ROOTS
 
 
 def _build_rotating_scheme(n_meas=5, G_amplitudes=None, sigma=SIGMA, n_t=N_T):
@@ -138,7 +137,7 @@ def test_E_lm_l0_equals_spherical_mean():
     scheme, _, dt = _build_rotating_scheme(n_meas=1, G_amplitudes=[G0])
 
     # Compute exponent coefficients (perpendicular only)
-    C_geom = _compute_C_geom(R, D, _ROOTS)
+    C_geom = cylinder.geometry_factor(2 * R, D)
     gamma_lm = scheme.gamma_lm(l_max=4)
     Gamma00 = gamma_lm[:, 0]
     int_G2_dt = Gamma00 * np.sqrt(4.0 * np.pi)
@@ -212,7 +211,7 @@ def test_isotropic_ODF_gives_spherical_mean():
     )
 
     # Spherical mean: directly from quadrature
-    C_geom = _compute_C_geom(R, D, _ROOTS)
+    C_geom = cylinder.geometry_factor(2 * R, D)
     gamma_lm = scheme.gamma_lm(l_max=4)
     Gamma00 = gamma_lm[:, 0]; int_G2_dt = Gamma00 * np.sqrt(4.0 * np.pi)
     Gamma2m = gamma_lm[:, 1:]
@@ -461,7 +460,7 @@ def test_watson_mc_validation():  # noqa: N802 (legacy test 5→6 renumbering)
 
     print(f"\nTest 5: Watson MC validation")
     print(f"  R={R_val*1e6:.0f} um, D={D_val:.1e} m^2/s, kappa={kappa}")
-    print(f"  alpha1*sigma = {((_ROOTS[0]/R_val)**2)*D_val*sigma:.1f} >> 1 (fast-eigenmode valid)")
+    print(f"  alpha1*sigma = {((cylinder_neumann_roots(1, 1)[0]/R_val)**2)*D_val*sigma:.1f} >> 1 (fast-eigenmode valid)")
     print(f"  odf_lm (l=0,2): {odf_lm}")
 
     S_core = dispersed_signal_from_E_lm(

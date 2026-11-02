@@ -101,18 +101,19 @@ def _c4():
 
 
 # ---------------------------------------------------------------------------
-# 1. PGSE path consistency: signal_from_gamma_lm == perpendicular_attenuation
+# 1. PGSE path consistency: signal_from_gamma_lm == the Van Gelderen Gaussian phase
 #    for a collinear waveform — pure analytical comparison, no fixture needed.
 # ---------------------------------------------------------------------------
 
 def test_gamma_lm_matches_standard_pgse_path():
-    """Γ_lm path and standard C4.perpendicular_attenuation agree for PGSE.
+    """Γ_lm path and the standard cylinder.gaussian_phase agree for PGSE.
 
     For a collinear PGSE waveform the Γ_lm is a fast-eigenmode approximation
     of the exact Van Gelderen GPA.  The two paths produce consistent signals
     within the known Γ_lm approximation error (~1–2% absolute at moderate b).
     Tolerance: 0.02 (consistent with rotating-waveform MC tests).
     """
+    from dmipy_analytic.restricted import cylinder
     from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
     from dmipy_fit.signal_models.cylinder_models import C4CylinderGaussianPhaseApproximation
 
@@ -140,7 +141,7 @@ def test_gamma_lm_matches_standard_pgse_path():
     c4 = C4CylinderGaussianPhaseApproximation(diffusion_perpendicular=D, diameter=DIAM)
 
     E_standard = np.array([
-        c4.perpendicular_attenuation(G, delta, DELTA, DIAM)
+        cylinder.gaussian_phase(G, delta, DELTA, DIAM, c4.diffusion_perpendicular, gamma=c4.gyromagnetic_ratio)
         for G in G_amps
     ])
     # Explicit Γ_lm call — collinear waveform doesn't auto-dispatch in __call__
@@ -286,13 +287,13 @@ def test_dispersed_isotropic_odf_equals_spherical_mean_fixture():
     Purely analytical: signal_lm() + dispersed_signal_from_E_lm() vs 724-point spherical quadrature.
     No fixture file needed.  Tolerance: 0.02.
     """
+    from dmipy_analytic.orientation import watson_sh as watson_odf_lm
+    from dmipy_analytic.restricted import cylinder
     from dmipy_fit.signal_models.cylinder_models import (
         C4CylinderGaussianPhaseApproximation,
         dispersed_signal_from_E_lm,
-        watson_odf_lm,
         _SPHERE_QUAD_PTS,
         _SPHERE_QUAD_W,
-        _compute_C_geom,
     )
 
     G_amps = [0.1, 0.3]
@@ -307,8 +308,7 @@ def test_dispersed_isotropic_odf_equals_spherical_mean_fixture():
         c4.signal_lm(scheme, diameter=DIAM, lambda_par=D), odf_lm
     )
 
-    roots  = C4CylinderGaussianPhaseApproximation._CYLINDER_TRASCENDENTAL_ROOTS
-    C_geom = _compute_C_geom(R_M, D, roots)
+    C_geom = cylinder.geometry_factor(2 * R_M, D)
     gam_lm = scheme.gamma_lm(l_max=4)
     Gamma00 = gam_lm[:, 0]
     Gamma2m = gam_lm[:, 1:]

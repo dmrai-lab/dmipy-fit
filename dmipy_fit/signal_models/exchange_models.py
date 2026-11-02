@@ -23,7 +23,7 @@ from __future__ import division
 from collections import OrderedDict
 
 import numpy as np
-from scipy.linalg import expm as _expm
+from dmipy_analytic import exchange
 
 from ..core.signal_model_properties import AnisotropicSignalModelProperties
 from ..distributions.distribute_models import DistributedModel
@@ -33,151 +33,6 @@ __all__ = [
 ]
 
 from ..core.constants import DIFFUSIVITY_SCALING
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _karger_formula(R1, R2, kappa, f, t_d):
-    """Karger exchange signal from effective dephasing exponents.
-
-    Parameters
-    ----------
-    R1, R2 : ndarray, shape (N,)
-        Effective dephasing exponents -log(E1), -log(E2) for each measurement.
-    kappa  : float  — intra→extra exchange rate (s⁻¹)
-    f      : float  — intra volume fraction
-    t_d    : ndarray or float — effective diffusion time (s)
-
-    Returns
-    -------
-    E : ndarray, shape (N,)
-    """
-    EPS = 1e-10
-    kee = kappa * f / (1.0 - f)   # back-rate (detailed balance)
-    kt = kappa * t_d               # (N,) or scalar
-    keet = kee * t_d
-
-    Tr = R1 + R2 + kt + keet
-    Det = R1 * R2 + R1 * keet + R2 * kt
-
-    disc_sq = np.maximum(Tr ** 2 - 4.0 * Det, 0.0)
-    disc = np.sqrt(disc_sq)
-
-    lam_plus = (Tr + disc) / 2.0
-    lam_minus = (Tr - disc) / 2.0
-
-    safe_disc = np.where(disc > EPS, disc, np.ones_like(disc))
-    safe_keet = keet if np.ndim(keet) == 0 else np.where(
-        keet > EPS, keet, np.ones_like(keet))
-
-    sp_full = f * (R1 - lam_minus) * (lam_minus - R2) / (safe_keet * safe_disc)
-
-    # κ=0 limit: differentiate from initial rate → σ₊ = (f·R1+(1-f)·R2−λ-)/disc
-    # This reduces to (1-f) when R2>R1, f when R1>R2 (correct mixture weights).
-    sp_kappa0 = (f * R1 + (1.0 - f) * R2 - lam_minus) / safe_disc
-    sigma_plus = np.where(
-        disc <= EPS,
-        0.5,                                         # degenerate: E = exp(-λ) anyway
-        np.where(np.asarray(keet) <= EPS, sp_kappa0, sp_full),
-    )
-
-    return sigma_plus * np.exp(-lam_plus) + (1.0 - sigma_plus) * np.exp(-lam_minus)
-
-
-# ---------------------------------------------------------------------------
-# Matrix-exponential Kärger propagators (eq:karger_se_finite, eq:karger_ste_finite)
-# ---------------------------------------------------------------------------
-
-def _build_K(kappa, f):
-    """2×2 exchange-rate matrix (detailed-balance: kee = kappa * f / (1-f))."""
-    kee = kappa * f / (1.0 - f)
-    return np.array([[-kappa, kee],
-                     [kappa, -kee]], dtype=float)
-
-
-def _karger_propagator_se(D1, D2, T2_1, T2_2, T1_1, T1_2, kappa, f,
-                          B1, B2, dt1, dt2, tau_exc, tau_180):
-    """Finite-RF SE Kärger propagator — eq:karger_se_finite.
-
-    Returns the magnetisation vector M(TE) given M0 = [f, 1-f].
-    Signal = sum(M_TE).
-
-    Parameters
-    ----------
-    D1, D2 : float — effective diffusion coefficients for each compartment (m²/s)
-    T2_1, T2_2 : float — T2 relaxation times (s); use 1e10 for no relaxation
-    T1_1, T1_2 : float — T1 relaxation times (s); use 1e10 for no relaxation
-    kappa : float — intra→extra exchange rate (s⁻¹)
-    f : float — intra volume fraction
-    B1, B2 : float — partial b-values for the two free-precession intervals (s/m²)
-    dt1, dt2 : float — durations of the two free-precession intervals (s)
-    tau_exc, tau_180 : float — RF pulse durations (s); 0 for instantaneous RF
-
-    Returns
-    -------
-    M_TE : ndarray, shape (2,)
-    """
-    K   = _build_K(kappa, f)
-    RT2 = np.diag([1.0 / T2_1, 1.0 / T2_2])
-    RT1 = np.diag([1.0 / T1_1, 1.0 / T1_2])
-    RD  = np.diag([D1, D2])
-    # During RF pulses, both T1 and T2 contribute (mixed relaxation)
-    R12 = (2.0 / np.pi) * (RT2 + RT1)
-    M0  = np.array([f, 1.0 - f])
-
-    # Four factors in chronological order (rightmost applied first):
-    # 1. excitation pulse    2. first free precession
-    # 3. 180° refocus pulse  4. second free precession
-    P_exc  = _expm((K - R12) * tau_exc)
-    P_fp1  = _expm((K - RT2) * dt1 - B1 * RD)
-    P_180  = _expm((K - R12) * tau_180)
-    P_fp2  = _expm((K - RT2) * dt2 - B2 * RD)
-
-    M_TE = P_fp2 @ P_180 @ P_fp1 @ P_exc @ M0
-    return M_TE
-
-
-def _karger_propagator_ste(D1, D2, T2_1, T2_2, T1_1, T1_2, kappa, f,
-                           B1, B2, delta, TM, tau_90, dt6):
-    """Finite-RF STE Kärger propagator — eq:karger_ste_finite.
-
-    Parameters
-    ----------
-    D1, D2 : float — effective diffusion coefficients (m²/s)
-    T2_1, T2_2, T1_1, T1_2 : float — relaxation times (s); 1e10 = no relaxation
-    kappa : float — exchange rate (s⁻¹)
-    f : float — intra volume fraction
-    B1, B2 : float — partial b-values for the two encoding intervals (s/m²)
-    delta : float — encoding duration (s)
-    TM : float — mixing time (s)
-    tau_90 : float — 90° RF pulse duration (s); 0 for instantaneous
-    dt6 : float — second encoding lobe duration (s); = delta in the zero-width-pulse
-        limit (transverse encoding total = 2*delta)
-
-    Returns
-    -------
-    M_TE : ndarray, shape (2,)
-        Includes the 0.5 STE pathway factor.
-    """
-    K   = _build_K(kappa, f)
-    RT2 = np.diag([1.0 / T2_1, 1.0 / T2_2])
-    RT1 = np.diag([1.0 / T1_1, 1.0 / T1_2])
-    RD  = np.diag([D1, D2])
-    R12 = (2.0 / np.pi) * (RT2 + RT1)
-    M0  = np.array([f, 1.0 - f])
-
-    # Six factors in chronological order:
-    P_exc   = _expm((K - R12) * tau_90)
-    P_enc1  = _expm((K - RT2) * delta - B1 * RD)
-    P_store = _expm((K - R12) * tau_90)
-    P_mix   = _expm((K - RT1) * TM)
-    P_rec   = _expm((K - R12) * tau_90)
-    P_enc2  = _expm((K - RT2) * dt6 - B2 * RD)
-
-    M_TE = 0.5 * P_enc2 @ P_rec @ P_mix @ P_store @ P_enc1 @ P_exc @ M0
-    return M_TE
 
 
 class _GLNodeScheme:
@@ -195,7 +50,7 @@ class _GLNodeScheme:
         self.gradient_directions = np.asarray(gradient_directions)
         self.delta = np.full(n, float(delta))
         self.Delta = np.full(n, float(Delta))
-        self.tau = float(Delta) - float(delta) / 3.0
+        self.tau = exchange.diffusion_time(float(delta), float(Delta))
         self.TE = None
         self.b0_mask = np.zeros(n, dtype=bool)
         self._G = None  # signals PGSE path to all models
@@ -398,9 +253,8 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
     def __call__(self, acquisition_scheme, **kwargs):
         r"""Evaluate the Karger exchange signal using the matrix-exponential propagator.
 
-        Uses the finite-RF SE (eq:karger_se_finite) or STE (eq:karger_ste_finite)
-        propagator when timing parameters are available.  Falls back gracefully to
-        the scalar eigenvalue formula (_karger_formula) via matrix expm at kappa=0.
+        Uses the finite-RF SE or STE propagator of :mod:`dmipy_analytic.exchange` when relaxation or radiofrequency
+        durations are present, and its closed Karger form otherwise.
 
         Parameters
         ----------
@@ -473,6 +327,10 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
 
         if has_relaxation or has_finite_rf:
             # Use matrix-exponential propagator
+            K = exchange.exchange_matrix(kappa, f)
+            M0 = np.array([f, 1.0 - f])
+            T2 = np.array([T2_1, T2_2])
+            T1 = np.array([T1_1, T1_2])
             E_out = np.zeros(len(R1))
             for idx in range(len(R1)):
                 b = float(acquisition_scheme.bvalues[idx])
@@ -498,11 +356,8 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
                     tm = (float(TM_[idx]) if hasattr(TM_, '__len__')
                           else float(TM_))
                     dt6 = d
-                    B1 = b / 2.0
-                    B2 = b / 2.0
-                    M_TE = _karger_propagator_ste(
-                        D1_eff, D2_eff, T2_1, T2_2, T1_1, T1_2,
-                        kappa, f, B1, B2, d, tm, tau_90, dt6)
+                    E_out[idx] = float(exchange.stimulated_echo_signal(
+                        K, M0, np.array([D1_eff, D2_eff]), T2, T1, b, d, tm, dt6, tau_90))
                 else:
                     # SE pathway
                     te = (float(TE_[idx]) if TE_ is not None and hasattr(TE_, '__len__')
@@ -511,19 +366,14 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
                     t180 = te / 2.0 - tau_exc / 2.0
                     dt1 = max(t180 - tau_exc, 0.0)
                     dt2 = max(te - t180 - tau_180, 0.0)
-                    B1 = b / 2.0
-                    B2 = b / 2.0
-                    M_TE = _karger_propagator_se(
-                        D1_eff, D2_eff, T2_1, T2_2, T1_1, T1_2,
-                        kappa, f, B1, B2, dt1, dt2, tau_exc, tau_180)
+                    E_out[idx] = float(exchange.spin_echo_signal(
+                        K, M0, np.array([D1_eff, D2_eff]), T2, T1, b, dt1, dt2, tau_exc, tau_180))
 
-                E_out[idx] = float(np.sum(M_TE))
             return E_out
 
         else:
             # Fast path: no relaxation, instantaneous RF → scalar eigenvalue formula
-            t_d = Delta - delta / 3.0
-            return _karger_formula(R1, R2, kappa, f, t_d)
+            return exchange.karger(R1, R2, kappa, f, exchange.diffusion_time(delta, Delta))
 
     # ------------------------------------------------------------------
     # Rotational harmonics (GL quadrature)
@@ -597,9 +447,9 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
             EPS  = 1e-10
             R1_u = -np.log(np.maximum(E1_u, EPS))
             R2_u = -np.log(np.maximum(E2_u, EPS))
-            t_d  = Delta_v - delta_v / 3.0
+            t_d  = exchange.diffusion_time(delta_v, Delta_v)
 
-            E_u = _karger_formula(R1_u, R2_u, kappa, f, t_d)
+            E_u = exchange.karger(R1_u, R2_u, kappa, f, t_d)
 
             for l_half in range(sh_order // 2 + 1):
                 l     = 2 * l_half

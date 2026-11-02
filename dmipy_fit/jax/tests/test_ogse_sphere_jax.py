@@ -18,10 +18,10 @@ import jax.numpy as jnp
 
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
 from dmipy_fit.signal_models.sphere_models import S4SphereGaussianPhaseApproximation
-from dmipy_fit.jax.signal_models_jax import s4sphere_ogse_signal_jax
+from dmipy_analytic.jax.restricted.sphere import gaussian_phase_waveform as s4sphere_ogse_signal_jax
 
 
-from dmipy_replay.constants import GAMMA
+from dmipy_analytic.constants import GAMMA
 
 
 def _make_bvecs(n_m):
@@ -54,14 +54,13 @@ def test_jax_ogse_matches_numpy():
     # Numpy path
     E_numpy = s4(scheme)
 
-    # JAX path via s4sphere_ogse_signal_jax
-    roots_jax = jnp.array(s4.SPHERE_TRASCENDENTAL_ROOTS)
+    # JAX path via the sampled-waveform Gaussian phase of dmipy-analytic
     G_waveform = jnp.array(scheme._G)   # (n_m, n_t, 3)
     dt = float(scheme._dt)
 
     def _single(G_m):
         return s4sphere_ogse_signal_jax(
-            G_m, dt, diameter, D, roots_jax, float(GAMMA))
+            G_m, dt, diameter, D, gamma=float(GAMMA))
 
     E_jax = np.array(jax.vmap(_single)(G_waveform))
 
@@ -102,13 +101,12 @@ def test_jax_pgse_matches_numpy():
     E_numpy = s4(scheme)
 
     # JAX waveform path
-    roots_jax = jnp.array(s4.SPHERE_TRASCENDENTAL_ROOTS)
     G_waveform = jnp.array(scheme._G)
     dt = float(scheme._dt)
 
     def _single(G_m):
         return s4sphere_ogse_signal_jax(
-            G_m, dt, diameter, D, roots_jax, float(GAMMA))
+            G_m, dt, diameter, D, gamma=float(GAMMA))
 
     E_jax = np.array(jax.vmap(_single)(G_waveform))
 
@@ -125,15 +123,12 @@ def test_jax_pgse_matches_numpy():
 # ---------------------------------------------------------------------------
 
 def test_jax_ogse_jit_compilable():
-    """s4sphere_ogse_signal_jax is JIT-compilable (no Python control flow)."""
+    """The sampled-waveform Gaussian phase of the sphere is JIT-compilable (no Python control flow)."""
     diameter = 10e-6
     D = 1.7e-9
     f = 50.0
     sigma = 0.04
     n_t = 100   # small for fast JIT
-
-    roots_jax = jnp.array(
-        S4SphereGaussianPhaseApproximation.SPHERE_TRASCENDENTAL_ROOTS)
 
     bvalues = np.array([1e9])
     bvecs = np.atleast_2d(np.r_[1., 0., 0.])
@@ -149,7 +144,7 @@ def test_jax_ogse_jit_compilable():
     # JIT compile
     fn_jit = jax.jit(
         lambda G: s4sphere_ogse_signal_jax(
-            G, dt, diameter, D, roots_jax, float(GAMMA)))
+            G, dt, diameter, D, gamma=float(GAMMA)))
 
     E = fn_jit(G_m)
     E_val = float(E)

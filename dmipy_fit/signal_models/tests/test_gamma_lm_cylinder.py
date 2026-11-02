@@ -25,18 +25,12 @@ import numpy.testing as npt
 import pytest
 import sys
 
-from dmipy_fit.signal_models.cylinder_models import (
-    C4CylinderGaussianPhaseApproximation,
-    _compute_C_geom,
-    _cylinder_signal_from_gamma_lm,
-    _eval_Y2m_at_direction,
-    _attenuation_perpendicular_gaussian_phase,
-    _ogse_cosine_cylinder_signal,
-    _ogse_numerical_cylinder_signal,
-)
+from dmipy_analytic.restricted import cylinder
+from dmipy_analytic.restricted.matrix_method import cylinder_neumann_roots
+from dmipy_fit.signal_models.cylinder_models import C4CylinderGaussianPhaseApproximation
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
 
-from dmipy_replay.constants import GAMMA
+from dmipy_analytic.constants import GAMMA
 
 # Physical parameters
 R = 5e-6        # 5 um cylinder radius
@@ -47,7 +41,7 @@ SIGMA = 40e-3   # 40 ms gradient duration
 N_T = 400       # 400 timesteps -> dt = 0.1 ms
 DT = SIGMA / (N_T - 1)
 
-_ROOTS = C4CylinderGaussianPhaseApproximation._CYLINDER_TRASCENDENTAL_ROOTS
+_ROOTS = cylinder_neumann_roots(1, 100)
 
 
 def _build_rotating_waveform_and_scheme(R_use=R, G0_use=G0, sigma=SIGMA, n_t=N_T):
@@ -113,20 +107,16 @@ def test_C_geom_matches_pgse_perpendicular():
 
     # Full Van Gelderen GPA (reference)
     diameter = 2.0 * R
-    E_gpa = _attenuation_perpendicular_gaussian_phase(
-        diameter, np.array([G_strength]), delta_, Delta_,
-        D, GAMMA, _ROOTS
-    )
+    E_gpa = cylinder.gaussian_phase(
+        np.array([G_strength]), delta_, Delta_, diameter, D, gamma=GAMMA)
     E_gpa_scalar = float(np.atleast_1d(E_gpa).ravel()[0])
 
     # Gamma_lm path
-    C_geom = _compute_C_geom(R, D, _ROOTS)
     gamma_lm = scheme.gamma_lm(l_max=4)
     mu_z = np.array([0.0, 0.0, 1.0])
     b_par = np.zeros(1)
-    E_gamma = _cylinder_signal_from_gamma_lm(
-        gamma_lm, b_par, C_geom, mu_z, lambda_par=0.0
-    )
+    E_gamma = cylinder.gaussian_phase_gamma_lm(
+        gamma_lm, b_par, mu_z, 2 * R, D, 0.0)
 
     phi_gpa = -np.log(E_gpa_scalar)
     phi_gamma = -np.log(float(E_gamma[0]))
@@ -138,7 +128,7 @@ def test_C_geom_matches_pgse_perpendicular():
     print(f"  phi_gamma = {phi_gamma:.6f}")
     print(f"  phi_gamma/phi_gpa = {phi_gamma/phi_gpa:.4f}")
     print(f"  alpha1*delta = {((_ROOTS[0]/R)**2)*D*delta:.2f} (fast-eig criterion)")
-    print(f"  C_geom = {C_geom:.6e}")
+    print(f"  C_geom = {cylinder.geometry_factor(2 * R, D):.6e}")
 
     # Sanity: Gamma_lm path produces attenuation in (0,1]
     assert 0.0 < E_gamma[0] <= 1.0, f"Signal out of range: {E_gamma[0]}"
@@ -177,16 +167,14 @@ def test_gamma_lm_fixed_direction_vs_iir():
 
     # IIR reference: project gradient onto perpendicular plane (cylinder along z)
     G_perp_t = np.sqrt(G_vec[:, 0]**2 + G_vec[:, 1]**2)  # = G0 always
-    E_iir = float(_ogse_numerical_cylinder_signal(G_perp_t, dt, D, R, _ROOTS))
+    E_iir = float(cylinder.gaussian_phase_waveform(G_perp_t, dt, 2 * R, D))
 
     # Gamma_lm path at mu=z (purely perpendicular)
-    C_geom = _compute_C_geom(R, D, _ROOTS)
     gamma_lm = scheme.gamma_lm(l_max=4)
     mu_z = np.array([0.0, 0.0, 1.0])
     b_par = np.zeros(1)
-    E_gamma = float(_cylinder_signal_from_gamma_lm(
-        gamma_lm, b_par, C_geom, mu_z, lambda_par=0.0
-    )[0])
+    E_gamma = float(cylinder.gaussian_phase_gamma_lm(
+        gamma_lm, b_par, mu_z, 2 * R, D, 0.0)[0])
 
     phi_iir = -np.log(E_iir)
     phi_gamma = -np.log(E_gamma)
@@ -219,7 +207,6 @@ def test_gamma_lm_fixed_direction_vs_iir():
 def test_gamma_lm_physical_range():
     """E in (0, 1] for rotating gradient at 20 cylinder axis orientations."""
     scheme, G_vec, dt = _build_rotating_waveform_and_scheme()
-    C_geom = _compute_C_geom(R, D, _ROOTS)
     gamma_lm = scheme.gamma_lm(l_max=4)
 
     n_orient = 20
@@ -236,9 +223,8 @@ def test_gamma_lm_physical_range():
             np.cos(thetas[i])
         ])
         b_par = bvals * np.dot(n_dirs, mu_cart) ** 2
-        E = _cylinder_signal_from_gamma_lm(
-            gamma_lm, b_par, C_geom, mu_cart, lambda_par=1.7e-9
-        )
+        E = cylinder.gaussian_phase_gamma_lm(
+            gamma_lm, b_par, mu_cart, 2 * R, D, 1.7e-9)
         if not (0.0 < E[0] <= 1.0):
             errors.append((i, float(E[0])))
 
@@ -293,22 +279,20 @@ def test_gamma_lm_vs_monte_carlo():
         E_mc = float(np.abs(pack.replay(wf, tissue=None, orientation=(0.0, 0.0, 1.0), tol=None))[0])
 
         G_perp_t = np.sqrt(Gx**2 + Gy**2)
-        E_iir = float(_ogse_numerical_cylinder_signal(
-            G_perp_t, dt, D, R_use, _ROOTS))
+        E_iir = float(cylinder.gaussian_phase_waveform(
+            G_perp_t, dt, 2 * R_use, D))
 
         grad_dir = np.array([[1.0 / np.sqrt(2.0), 1.0 / np.sqrt(2.0), 0.0]])
         # rotating x->y gradient is intentionally not moment-nulled (gamma_lm only
         # needs int|G|^2, not refocusing)
         scheme = AcquisitionScheme.from_waveform(G_arr, dt, grad_dir,
                                                  allow_unrefocused=True)
-        C_geom = _compute_C_geom(R_use, D, _ROOTS)
         gamma_lm = scheme.gamma_lm(l_max=4)
         mu_z = np.array([0.0, 0.0, 1.0])
         bvals = scheme.bvalues
         b_par = bvals * np.dot(scheme.gradient_directions, mu_z) ** 2
-        E_gamma = float(_cylinder_signal_from_gamma_lm(
-            gamma_lm, b_par, C_geom, mu_z, lambda_par=D
-        )[0])
+        E_gamma = float(cylinder.gaussian_phase_gamma_lm(
+            gamma_lm, b_par, mu_z, 2 * R_use, D, D)[0])
 
         alpha1_sigma = ((_ROOTS[0] / R_use) ** 2) * D * sigma
         diff_gm = abs(E_gamma - E_mc)

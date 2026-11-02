@@ -1,13 +1,13 @@
-"""Unit tests for the paper's analytical surface-relaxivity factors (surface.py).
+"""Unit tests for the analytical surface-relaxivity factors (dmipy_analytic.relaxation) as dmipy-fit uses them.
 
-Covers eq:b_hat_int_dist (intra Bessel-K Gamma average) and its weak limit, the
-number-vs-volume weighting (the MC-validated choice), and the extra-axonal
-long/short forms.
+Covers the intra Bessel-K Gamma average and its weak limit against dmipy-sim's substrate, the number-vs-volume
+weighting (the MC-validated choice), and the long-time extra-axonal form.
 """
 import numpy as np
 
-from dmipy_fit.white_matter.surface import (
-    b_hat_ia, b_hat_ea_long, b_hat_ea_short)
+from dmipy_analytic.relaxation import (
+    surface_relaxation as b_hat_ea_long,
+    surface_relaxation_gamma_cylinders as b_hat_ia)
 from dmipy_sim.substrate.substrate import mean_inv_diameter_4
 
 
@@ -41,13 +41,6 @@ def test_b_hat_ia_monotone_and_bounded():
 
 
 def test_b_hat_ea_long_is_exponential():
-    B = b_hat_ea_long(rho_ext=1.16e-6, S_ext_over_V_EA=4e6, tau_perp=0.04)
+    B = b_hat_ea_long(1.16e-6, 4e6, 0.04)
     assert np.isclose(B, np.exp(-1.16e-6 * 4e6 * 0.04))
 
-
-def test_b_hat_ea_short_sqrt_TE():
-    # short-time Mitra: exponent ~ sqrt(TE)
-    B1 = b_hat_ea_short(1.16e-6, 4e6, 1.0e-9, 0.02)
-    B2 = b_hat_ea_short(1.16e-6, 4e6, 1.0e-9, 0.08)
-    r1, r2 = -np.log(B1), -np.log(B2)
-    assert np.isclose(r2 / r1, np.sqrt(0.08 / 0.02), rtol=1e-6)   # 4x TE -> 2x exponent

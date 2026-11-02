@@ -65,6 +65,9 @@ class TestSmForwardFn:
         zep  = G2Zeppelin()
         ball = G1Ball()
         mc   = MultiCompartmentSphericalMeanModel(models=[zep, ball])
+        # the JAX spherical mean of the zeppelin is defined for lambda_par >= lambda_perp: bounds that keep it prolate
+        mc.set_parameter_optimization_bounds('G2Zeppelin_1_lambda_par', [[1.0e-9, 3.0e-9]])
+        mc.set_parameter_optimization_bounds('G2Zeppelin_1_lambda_perp', [[0.1e-9, 1.0e-9]])
         params = mc.parameters_to_parameter_vector(
             G2Zeppelin_1_lambda_par=1.7e-9,
             G2Zeppelin_1_lambda_perp=0.5e-9,

@@ -13,22 +13,19 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
+from dmipy_analytic.jax import exchange as jexchange
+from dmipy_analytic.jax import gaussian as jgaussian
+from dmipy_analytic.jax import relaxation as jrelaxation
+from dmipy_analytic.jax.restricted import plane as jplane
+from dmipy_analytic.jax.restricted import sphere as jsphere
+
 from .jax_compat import scheme_to_jax, unitsphere2cart_1d_jax
 from .signal_models_jax import (
-    g1ball_signal,
-    c1stick_signal,
-    g2zeppelin_signal,
-    s2sphere_signal,
-    s4sphere_ogse_signal_jax,
     c2cylinder_signal,
     c4cylinder_signal,
     build_c3cylinder_jax_fn,
-    c1stick_spherical_mean,
-    g2zeppelin_spherical_mean,
 )
-from .exchange_models_jax import (
-    karger_signal, karger_isotropic_signal, karger_from_Ri_Re,
-    build_exchange_matrix, karger_matrix_se_signal, karger_matrix_ste_signal)
+from .exchange_models_jax import karger_signal, karger_isotropic_signal
 from ..signal_models.gaussian_models import G1Ball, G2Zeppelin, G3TemporalZeppelin
 from ..signal_models.exchange_models import X0GeneralizedKarger
 # Backward-compat alias: X1KargerModel was renamed to X0GeneralizedKarger
@@ -80,19 +77,19 @@ def _apply_t2_weighting(E, scheme_jax, params):
     T2 = params.get('T2')
     TE = scheme_jax.get('TE')
     if T2 is not None and TE is not None:
-        t2_factor = jnp.where(jnp.isfinite(T2), jnp.exp(-TE / T2), 1.0)
+        t2_factor = jnp.where(jnp.isfinite(T2), jrelaxation.transverse_decay(TE, T2), 1.0)
         return E * t2_factor
     return E
 
 
 def _g1ball_jax_fn(scheme_jax, params):
-    E = g1ball_signal(scheme_jax['bvalues'], params['lambda_iso'])
+    E = jgaussian.ball(scheme_jax['bvalues'], params['lambda_iso'])
     return _apply_t2_weighting(E, scheme_jax, params)
 
 
 def _c1stick_jax_fn(scheme_jax, params):
     mu_cart = unitsphere2cart_1d_jax(params['mu'])
-    E = c1stick_signal(
+    E = jgaussian.stick(
         scheme_jax['bvalues'],
         scheme_jax['gradient_directions'],
         mu_cart,
@@ -103,7 +100,7 @@ def _c1stick_jax_fn(scheme_jax, params):
 
 def _g2zeppelin_jax_fn(scheme_jax, params):
     mu_cart = unitsphere2cart_1d_jax(params['mu'])
-    E = g2zeppelin_signal(
+    E = jgaussian.zeppelin(
         scheme_jax['bvalues'],
         scheme_jax['gradient_directions'],
         mu_cart,
@@ -119,23 +116,16 @@ def _g3temporal_zeppelin_jax_fn(scheme_jax, params):
     Requires 'delta' and 'Delta' in scheme_jax (PGSE timing).
     Signal: E = exp(-b * (D_perp + (λ_par - D_perp) * (n·μ)²))
     """
-    mu_cart    = unitsphere2cart_1d_jax(params['mu'])
-    lambda_par = params['lambda_par']
-    lambda_inf = params['lambda_inf']
-    A          = params['A']
-    bvals      = scheme_jax['bvalues']           # (n_m,)
-    n          = scheme_jax['gradient_directions']  # (n_m, 3)
-    delta      = scheme_jax['delta']             # (n_m,)
-    Delta      = scheme_jax['Delta']             # (n_m,)
-
-    D_perp = lambda_inf + A * (jnp.log(Delta / delta) + 1.5) / (Delta - delta / 3.0)
-    n_dot_mu = jnp.dot(n, mu_cart)              # (n_m,)
-    E = jnp.exp(-bvals * (D_perp + (lambda_par - D_perp) * n_dot_mu ** 2))
+    mu_cart = unitsphere2cart_1d_jax(params['mu'])
+    E = jgaussian.temporal_zeppelin(
+        scheme_jax['bvalues'], scheme_jax['gradient_directions'], mu_cart,
+        params['lambda_par'], params['lambda_inf'], params['A'],
+        scheme_jax['delta'], scheme_jax['Delta'])
     return _apply_t2_weighting(E, scheme_jax, params)
 
 
 def _s2sphere_jax_fn(scheme_jax, params):
-    E = s2sphere_signal(scheme_jax['qvalues'], params['diameter'])
+    E = jsphere.sgp_long_time(scheme_jax['qvalues'], params['diameter'])
     return _apply_t2_weighting(E, scheme_jax, params)
 
 
@@ -156,7 +146,6 @@ def _make_c4cylinder_jax_fn(model_obj, acquisition_scheme=None):
     """Factory: creates a C4 dispatch fn closed over this instance's constants."""
     D = float(model_obj.diffusion_perpendicular)
     gamma = float(model_obj.gyromagnetic_ratio)
-    roots_jax = jnp.array(model_obj._CYLINDER_TRASCENDENTAL_ROOTS)
 
     def _c4cylinder_jax_fn(scheme_jax, params):
         mu_cart = unitsphere2cart_1d_jax(params['mu'])
@@ -171,7 +160,6 @@ def _make_c4cylinder_jax_fn(model_obj, acquisition_scheme=None):
             params['diameter'],
             D,
             gamma,
-            roots_jax,
         )
         return _apply_t2_weighting(E, scheme_jax, params)
     return _c4cylinder_jax_fn
@@ -196,11 +184,8 @@ def _make_s4sphere_ogse_jax_fn(model_obj, acquisition_scheme=None):
     -------
     fn : callable (scheme_jax, params) -> jnp.array (n_m,)
     """
-    from .signal_models_jax import s4sphere_pgse_signal_jax
-
     D     = float(model_obj.diffusion_constant)
     gamma = float(model_obj.gyromagnetic_ratio)
-    roots_jax = jnp.array(model_obj.SPHERE_TRASCENDENTAL_ROOTS)
 
     # Decide path at factory time (Python-level, not inside JIT)
     has_waveform = (acquisition_scheme is not None
@@ -215,8 +200,8 @@ def _make_s4sphere_ogse_jax_fn(model_obj, acquisition_scheme=None):
             dt         = scheme_jax['dt']
 
             def _single_measurement(G_m):
-                return s4sphere_ogse_signal_jax(
-                    G_m, dt, diameter, D, roots_jax, gamma)
+                return jsphere.gaussian_phase_waveform(
+                    G_m, dt, diameter, D, gamma=gamma)
 
             E = jax.vmap(_single_measurement)(G_waveform)  # (n_m,)
             return _apply_t2_weighting(E, scheme_jax, params)
@@ -232,8 +217,8 @@ def _make_s4sphere_ogse_jax_fn(model_obj, acquisition_scheme=None):
             Delta              = scheme_jax['Delta']                # (n_m,)
 
             def _single_meas(g, d, D_big):
-                return s4sphere_pgse_signal_jax(
-                    g, d, D_big, diameter, D, roots_jax, gamma)
+                return jsphere.gaussian_phase(
+                    g, d, D_big, diameter, D, gamma=gamma)
 
             E = jax.vmap(_single_meas)(gradient_strengths, delta, Delta)
             return _apply_t2_weighting(E, scheme_jax, params)
@@ -244,7 +229,8 @@ def _make_s4sphere_ogse_jax_fn(model_obj, acquisition_scheme=None):
 def _make_c3cylinder_jax_fn(model_obj, acquisition_scheme=None):
     """Factory: creates a C3 dispatch fn closed over this instance's alpha table."""
     inner_fn = build_c3cylinder_jax_fn(
-        model_obj.alpha,
+        model_obj.number_of_roots,
+        model_obj.number_of_functions,
         model_obj.diffusion_perpendicular,
     )
 
@@ -321,46 +307,17 @@ def _s1dot_jax_fn(scheme_jax, params):
 
 def _p2plane_jax_fn(scheme_jax, params):
     """P2 plane (Balinov SGP): 2(1-cos(2 pi q d)) / (2 pi q d)^2, 1 at q=0."""
-    q = scheme_jax['qvalues']
-    arg = 2.0 * jnp.pi * q * params['diameter']
-    safe = jnp.where(arg == 0.0, 1.0, arg)
-    E = jnp.where(q > 0, 2.0 * (1.0 - jnp.cos(arg)) / safe ** 2, 1.0)
+    E = jplane.sgp_long_time(scheme_jax['qvalues'], params['diameter'])
     return _apply_t2_weighting(E, scheme_jax, params)
 
 
 def _make_p3plane_jax_fn(model_obj, acquisition_scheme=None):
     """P3 plane (finite-time Callaghan): root sum over xi (cos) and zeta (sin)."""
-    xi = jnp.asarray(model_obj.xi, dtype=float)        # arange(N)*pi  (xi[0]=0)
-    zeta = jnp.asarray(model_obj.zeta, dtype=float)    # arange(N)*pi + pi/2
     D = float(model_obj.Dintra)
+    n_roots = model_obj.number_of_roots
 
     def fn(scheme_jax, params):
-        q = scheme_jax['qvalues']
-        tau = scheme_jax['tau']
-        radius = params['diameter'] / 2.0
-        qa = 2.0 * jnp.pi * q * radius
-        qa2 = qa ** 2
-
-        def xi_term(xi_n):
-            xi_n2 = xi_n ** 2
-            div = jnp.where(xi_n == 0.0, 1.0, jnp.sin(2 * xi_n) / 2 * xi_n)
-            num = (qa * jnp.sin(qa) * jnp.cos(xi_n)
-                   - xi_n * jnp.cos(qa) * jnp.sin(xi_n)) ** 2
-            t = (2 * jnp.exp(-xi_n2 * D * tau / radius ** 2) / (1 + div)
-                 * num / (qa2 - xi_n2) ** 2)
-            return jnp.where(jnp.isfinite(t), t, 0.0)
-
-        def zeta_term(zeta_m):
-            zeta_m2 = zeta_m ** 2
-            div = jnp.sin(2 * zeta_m) / (2 * zeta_m)
-            num = (qa * jnp.cos(qa) * jnp.sin(zeta_m)
-                   - zeta_m * jnp.sin(qa) * jnp.cos(zeta_m)) ** 2
-            t = (2 * jnp.exp(-zeta_m2 * D * tau / radius ** 2) / (1 - div)
-                 * num / (qa2 - zeta_m2) ** 2)
-            return jnp.where(jnp.isfinite(t), t, 0.0)
-
-        res = jax.vmap(xi_term)(xi).sum(0) + jax.vmap(zeta_term)(zeta).sum(0)
-        E = jnp.where(q > 0, res, 1.0)
+        E = jplane.sgp(scheme_jax['qvalues'], scheme_jax['tau'], params['diameter'], D, n_roots)
         return _apply_t2_weighting(E, scheme_jax, params)
 
     return fn
@@ -436,7 +393,8 @@ def _make_dd1gamma_jax_fn(model_obj, acquisition_scheme=None):
         # ── C3 Callaghan path ──────────────────────────────────────────────
         _cyl_param_prefix = 'C3CylinderCallaghanApproximation_1_'
         c3_fn = build_c3cylinder_jax_fn(
-            inner_c3.alpha,
+            inner_c3.number_of_roots,
+            inner_c3.number_of_functions,
             inner_c3.diffusion_perpendicular,
         )
 
@@ -467,7 +425,7 @@ def _make_dd1gamma_jax_fn(model_obj, acquisition_scheme=None):
             T2 = params.get(_cyl_param_prefix + 'T2')
             TE = scheme_jax.get('TE')
             if T2 is not None and TE is not None:
-                t2_factor = jnp.where(jnp.isfinite(T2), jnp.exp(-TE / T2), 1.0)
+                t2_factor = jnp.where(jnp.isfinite(T2), jrelaxation.transverse_decay(TE, T2), 1.0)
                 E = E * t2_factor
             return E
 
@@ -476,7 +434,6 @@ def _make_dd1gamma_jax_fn(model_obj, acquisition_scheme=None):
         _cyl_param_prefix = 'C4CylinderGaussianPhaseApproximation_1_'
         _D_perp = float(inner_c4.diffusion_perpendicular)
         _gamma  = float(inner_c4.gyromagnetic_ratio)
-        _roots  = jnp.array(inner_c4._CYLINDER_TRASCENDENTAL_ROOTS)
 
         def dd1gamma_jax_fn(scheme_jax, params):
             alpha      = params['DD1Gamma_1_alpha']
@@ -499,7 +456,7 @@ def _make_dd1gamma_jax_fn(model_obj, acquisition_scheme=None):
                     scheme_jax['delta'],
                     scheme_jax['Delta'],
                     mu_cart, lambda_par, d,
-                    _D_perp, _gamma, _roots,
+                    _D_perp, _gamma,
                 )
 
             signals = jax.vmap(cyl_at_d)(_quad_d)
@@ -507,7 +464,7 @@ def _make_dd1gamma_jax_fn(model_obj, acquisition_scheme=None):
             T2 = params.get(_cyl_param_prefix + 'T2')
             TE = scheme_jax.get('TE')
             if T2 is not None and TE is not None:
-                t2_factor = jnp.where(jnp.isfinite(T2), jnp.exp(-TE / T2), 1.0)
+                t2_factor = jnp.where(jnp.isfinite(T2), jrelaxation.transverse_decay(TE, T2), 1.0)
                 E = E * t2_factor
             return E
 
@@ -528,7 +485,8 @@ def _make_dd2poisson_jax_fn(model_obj, acquisition_scheme=None):
     inner_c3 = next(m for m in model_obj.models
                     if isinstance(m, C3CylinderCallaghanApproximation))
     c3_fn = build_c3cylinder_jax_fn(
-        inner_c3.alpha,
+        inner_c3.number_of_roots,
+        inner_c3.number_of_functions,
         inner_c3.diffusion_perpendicular,
     )
 
@@ -570,7 +528,7 @@ def _make_dd2poisson_jax_fn(model_obj, acquisition_scheme=None):
         T2 = params.get('C3CylinderCallaghanApproximation_1_T2')
         TE = scheme_jax.get('TE')
         if T2 is not None and TE is not None:
-            t2_factor = jnp.where(jnp.isfinite(T2), jnp.exp(-TE / T2), 1.0)
+            t2_factor = jnp.where(jnp.isfinite(T2), jrelaxation.transverse_decay(TE, T2), 1.0)
             E = E * t2_factor
         return E
 
@@ -657,7 +615,7 @@ def _make_karger_matrix_jax_fn(model_obj, acquisition_scheme):
         b = scheme_jax['bvalues']
         Delta = scheme_jax['Delta']
         f = params['f']
-        K = build_exchange_matrix(params['kappa'], f)
+        K = jexchange.exchange_matrix(params['kappa'], f)
         M0 = jnp.array([f, 1.0 - f])
 
         EPS = 1e-10
@@ -671,13 +629,13 @@ def _make_karger_matrix_jax_fn(model_obj, acquisition_scheme):
         if has_TM:
             TM = scheme_jax['tau_par']                          # per-measurement
             delta = scheme_jax['delta']
-            E = jax.vmap(lambda Dm, bm, dm, tm: karger_matrix_ste_signal(
+            E = jax.vmap(lambda Dm, bm, dm, tm: jexchange.stimulated_echo_signal(
                 K, M0, Dm, T2, T1, bm, dm, tm, dm))(D, b, delta, TM)
         else:
             te = scheme_jax.get('TE')
             te = (2.0 * Delta) if te is None else te            # fallback 2*Delta
             dt = te / 2.0                                       # instantaneous RF
-            E = jax.vmap(lambda Dm, bm, dtm: karger_matrix_se_signal(
+            E = jax.vmap(lambda Dm, bm, dtm: jexchange.spin_echo_signal(
                 K, M0, Dm, T2, T1, bm, dtm, dtm))(D, b, dt)
         return jnp.where(b < B0_THRESH, 1.0, E)
     return fn
@@ -736,17 +694,29 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
         def _sphere_ball_jax_fn(scheme_jax, params):
             # Sub-model signals (no T2 — parent applies it)
             E_intra = s4_jax_fn(scheme_jax, {'diameter': params[sphere_param]})
-            E_extra = g1ball_signal(scheme_jax['bvalues'], params[ball_param])
+            E_extra = jgaussian.ball(scheme_jax['bvalues'], params[ball_param])
             EPS = 1e-10
             Ri = -jnp.log(jnp.maximum(E_intra, EPS))
             Re = -jnp.log(jnp.maximum(E_extra, EPS))
-            t_d = scheme_jax['Delta'] - scheme_jax['delta'] / 3.0
-            E = karger_from_Ri_Re(t_d, Ri, Re, params['f'], params['kappa'])
+            t_d = jexchange.diffusion_time(scheme_jax['delta'], scheme_jax['Delta'])
+            E = jexchange.karger(Ri, Re, params['kappa'], params['f'], t_d)
             return E
         return _sphere_ball_jax_fn
 
-    # ── Variant 3: Oriented anisotropic (legacy C1Stick/G2Zeppelin) ─────────
+    # ── Variant 3: oriented Stick + Zeppelin (NEXI) ─────────────────────────
+    if not (intra_type is C1Stick and extra_type is G2Zeppelin):
+        raise NotImplementedError(
+            f"No JAX route for X0GeneralizedKarger of {intra_type.__name__} and {extra_type.__name__}: the closed "
+            "Karger form is wired for G1Ball with G1Ball, S4SphereGaussianPhaseApproximation with G1Ball, and "
+            "C1Stick with G2Zeppelin.")
+    names = model_obj._inverted_parameter_map          # (sub-model, name) -> the name X0 exposes it under
+    stick_parallel = names[(model_obj.model_intra, 'lambda_par')]
+    zeppelin_parallel = names[(model_obj.model_extra, 'lambda_par')]
+    zeppelin_perpendicular = names[(model_obj.model_extra, 'lambda_perp')]
+
     def _anisotropic_jax_fn(scheme_jax, params):
+        # the links X0 holds: the tortuosity of NEXI sets the zeppelin's perpendicular diffusivity from its parallel one
+        params = model_obj.add_linked_parameters_to_parameters(params)
         mu_cart = unitsphere2cart_1d_jax(params['mu'])
         E = karger_signal(
             scheme_jax['bvalues'],
@@ -754,9 +724,9 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
             scheme_jax['Delta'],
             scheme_jax['gradient_directions'],
             mu_cart,
-            params['Di'],
-            params['De_par'],
-            params['De_perp'],
+            params[stick_parallel],
+            params[zeppelin_parallel],
+            params[zeppelin_perpendicular],
             params['f'],
             params['kappa'],
         )
@@ -802,17 +772,17 @@ _JAX_MODEL_FACTORIES = {
 
 def _g1ball_sm_fn(shell_bvals_jax, params):
     """G1Ball spherical mean: same as signal (isotropic)."""
-    return g1ball_signal(shell_bvals_jax, params['lambda_iso'])
+    return jgaussian.ball(shell_bvals_jax, params['lambda_iso'])
 
 
 def _c1stick_sm_fn(shell_bvals_jax, params):
     """C1Stick spherical mean (analytical)."""
-    return c1stick_spherical_mean(shell_bvals_jax, params['lambda_par'])
+    return jgaussian.stick_powder_average(shell_bvals_jax, params['lambda_par'])
 
 
 def _g2zeppelin_sm_fn(shell_bvals_jax, params):
     """G2Zeppelin spherical mean (analytical)."""
-    return g2zeppelin_spherical_mean(
+    return jgaussian.zeppelin_powder_average(
         shell_bvals_jax, params['lambda_par'], params['lambda_perp'])
 
 
@@ -822,6 +792,66 @@ _JAX_SM_MODEL_FNS = {
     C1Stick:    _c1stick_sm_fn,
     G2Zeppelin: _g2zeppelin_sm_fn,
 }
+
+
+def _refuse_oblate_zeppelins(model):
+    """Refuse a spherical-mean model with a zeppelin whose fit range admits ``lambda_perp > lambda_par``.
+
+    The JAX spherical mean of the zeppelin (:func:`dmipy_analytic.jax.gaussian.zeppelin_powder_average`) is defined for a
+    prolate tensor, ``lambda_par >= lambda_perp``: the oblate average needs ``erfi``, which JAX does not provide, and
+    the twin returns NaN for it. A zeppelin is accepted when its perpendicular diffusivity is the tortuosity
+    ``(1 - f) lambda_par`` of the very parallel diffusivity it is paired with (prolate by construction), or when the
+    ranges the fit searches (the free ranges, the fixed values, the equalities) keep ``lambda_perp`` at or below
+    ``lambda_par``.
+    """
+    from ..utils.utils import T1_tortuosity, parameter_equality
+    from ..core.model_properties import ReturnFixedValue
+
+    def full(model_obj, local):
+        return local if model_obj is None else model.model_names[model.models.index(model_obj)] + local
+
+    links = {full(dep_model, local): (fn, deps) for dep_model, local, fn, deps in model.parameter_links}
+    ranges, scales = model.parameter_ranges, model.parameter_scales
+
+    def root(name):
+        """What ``name`` is in a fit: ('free', name), ('fixed', value), ('tortuous', root of its parallel
+        diffusivity) or ('unknown', name)."""
+        if name in ranges:
+            return ("free", name)
+        fn, deps = links.get(name, (None, None))
+        if isinstance(fn, ReturnFixedValue):
+            return ("fixed", float(fn.value))
+        if fn is parameter_equality:
+            return root(full(*deps[0]))
+        if isinstance(fn, T1_tortuosity):
+            return ("tortuous", root(full(*deps[0])))
+        return ("unknown", name)
+
+    def interval(r):
+        if r[0] == "free":
+            lower, upper = np.ravel(ranges[r[1]])           # a scalar parameter's range, as (2,) or (1, 2)
+            return float(lower * scales[r[1]]), float(upper * scales[r[1]])
+        if r[0] == "fixed":
+            return r[1], r[1]
+        if r[0] == "tortuous":
+            return 0.0, interval(r[1])[1]
+        return None
+
+    for model_obj, name in zip(model.models, model.model_names):
+        if type(model_obj) is not G2Zeppelin:
+            continue
+        parallel, perpendicular = root(name + 'lambda_par'), root(name + 'lambda_perp')
+        if perpendicular == ("tortuous", parallel):
+            continue
+        parallel_range, perpendicular_range = interval(parallel), interval(perpendicular)
+        if (parallel_range is None or perpendicular_range is None
+                or parallel_range[0] < perpendicular_range[1]):
+            raise ValueError(
+                f"The JAX spherical mean of the zeppelin '{name}' is defined for lambda_par >= lambda_perp (the oblate "
+                f"average needs erfi, which JAX does not provide), but the fit range of '{name}lambda_perp' "
+                f"({perpendicular_range}) is not below that of '{name}lambda_par' ({parallel_range}) m^2/s. Link them "
+                "(set_tortuous_parameter) or narrow the bounds (set_parameter_optimization_bounds) so that "
+                "lambda_perp <= lambda_par.")
 
 
 def build_mc_sm_forward_fn(model, acquisition_scheme, broadcast=True):
@@ -853,6 +883,8 @@ def build_mc_sm_forward_fn(model, acquisition_scheme, broadcast=True):
                 "Add it to _JAX_SM_MODEL_FNS in "
                 "multicompartment_jax.py.".format(m.__class__.__name__, type(m))
             )
+
+    _refuse_oblate_zeppelins(model)
 
     dispatch   = _build_dispatch(model)          # reuse same helper
     N_shells   = acquisition_scheme.N_shells

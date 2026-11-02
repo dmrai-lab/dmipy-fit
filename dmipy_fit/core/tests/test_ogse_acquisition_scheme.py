@@ -14,7 +14,7 @@ from numpy.testing import assert_allclose, assert_array_equal
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
 
 
-from dmipy_replay.constants import GAMMA
+from dmipy_analytic.constants import GAMMA
 
 
 def _make_bvecs(n_m):

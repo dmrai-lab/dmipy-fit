@@ -5,15 +5,12 @@ Document Module
 from __future__ import division
 
 import numpy as np
-from scipy.special import erf
+from dmipy_analytic import gaussian
 
 from ..utils import utils
 from ..core.modeling_framework import ModelProperties
 from ..core.signal_model_properties import (
     IsotropicSignalModelProperties, AnisotropicSignalModelProperties)
-from ..utils.sh_basis import optional_module
-
-numba, have_numba = optional_module("numba")
 
 from ..core.constants import DIFFUSIVITY_SCALING, A_SCALING
 
@@ -83,15 +80,11 @@ class G1Ball(ModelProperties, IsotropicSignalModelProperties):
         '''
         lambda_iso = kwargs.get('lambda_iso', self.lambda_iso)
         if use_jax:
+            from dmipy_analytic.jax import gaussian as jgaussian
             from ..jax.jax_compat import scheme_to_jax
-            from ..jax.signal_models_jax import g1ball_signal
-            import jax.numpy as jnp
             scheme_jax = scheme_to_jax(acquisition_scheme)
-            return np.array(g1ball_signal(scheme_jax['bvalues'],
-                                          float(lambda_iso)))
-        bvals = acquisition_scheme.bvalues
-        E_ball = np.exp(-bvals * lambda_iso)
-        return E_ball
+            return np.array(jgaussian.ball(scheme_jax['bvalues'], float(lambda_iso)))
+        return gaussian.ball(acquisition_scheme.bvalues, lambda_iso)
 
 
 class G2Zeppelin(ModelProperties, AnisotropicSignalModelProperties):
@@ -175,24 +168,17 @@ class G2Zeppelin(ModelProperties, AnisotropicSignalModelProperties):
         lambda_perp = kwargs.get('lambda_perp', self.lambda_perp)
         mu = kwargs.get('mu', self.mu)
         if use_jax:
+            from dmipy_analytic.jax import gaussian as jgaussian
             from ..jax.jax_compat import scheme_to_jax, unitsphere2cart_1d_jax
-            from ..jax.signal_models_jax import g2zeppelin_signal
             import jax.numpy as jnp
             scheme_jax = scheme_to_jax(acquisition_scheme)
             mu_cart = unitsphere2cart_1d_jax(jnp.array(mu))
-            return np.array(g2zeppelin_signal(
+            return np.array(jgaussian.zeppelin(
                 scheme_jax['bvalues'], scheme_jax['gradient_directions'],
                 mu_cart, float(lambda_par), float(lambda_perp)))
         mu_cart = utils.unitsphere2cart_1d(mu)
-        # B-tensor path: E = exp(-(λ_perp Tr(B) + (λ_par - λ_perp) uᵀBu))
-        # Correct for PGSE (rank-1 B = b·n⊗n) and tensor-valued encoding (STE, etc.)
-        B = acquisition_scheme.btensor()                           # (n_m, 3, 3)
-        b_trace = np.trace(B, axis1=1, axis2=2)                   # (n_m,)
-        u_dot_B_u = np.einsum('i,mij,j->m', mu_cart, B, mu_cart)  # (n_m,)
-        E_zeppelin = np.exp(
-            -(lambda_perp * b_trace + (lambda_par - lambda_perp) * u_dot_B_u)
-        )
-        return E_zeppelin
+        # the b-tensor form is exact for a pulsed gradient (rank-1 B = b n n^T) and for tensor-valued encodings
+        return gaussian.zeppelin_btensor(acquisition_scheme.btensor(), mu_cart, lambda_par, lambda_perp)
 
     def rotational_harmonics_representation(self, acquisition_scheme, **kwargs):
         r"""Analytical RH coefficients for the Zeppelin kernel.
@@ -242,13 +228,9 @@ class G2Zeppelin(ModelProperties, AnisotropicSignalModelProperties):
         lambda_par = kwargs.get('lambda_par', self.lambda_par)
         lambda_perp = kwargs.get('lambda_perp', self.lambda_perp)
 
-        from ..utils.sh_analytical import gaussian_J_l
         E_mean = np.ones_like(acquisition_scheme.shell_bvalues)
-        kappa_per_shell = -bvals * (lambda_par - lambda_perp)
-        J0_per_shell = np.array(
-            [gaussian_J_l(float(k), l_max=0)[0] for k in kappa_per_shell])
-        E_mean[~acquisition_scheme.shell_b0_mask] = (
-            np.exp(-bvals * lambda_perp) * J0_per_shell / 2.0)
+        E_mean[~acquisition_scheme.shell_b0_mask] = gaussian.zeppelin_powder_average(
+            bvals, lambda_par, lambda_perp)
         return E_mean
 
     def signal_lm(self, acquisition_scheme, **kwargs):
@@ -401,22 +383,10 @@ class G3TemporalZeppelin(ModelProperties, AnisotropicSignalModelProperties):
         mu = kwargs.get('mu', self.mu)
         mu_cart = utils.unitsphere2cart_1d(mu)
 
-        # Time-dependent perpendicular diffusivity (vectorised over measurements)
-        restricted_term = (
-            A * (np.log(Delta / delta) + 3. / 2.) / (Delta - delta / 3.)
-        )
-        D_perp = lambda_inf + restricted_term   # (n_m,)
-
-        # B-tensor path: E = exp(-(D_perp Tr(B) + (λ_par - D_perp) uᵀBu))
-        # Works for PGSE (rank-1 B) and tensor-valued encoding (STE, etc.)
-        # D_perp(δ,Δ) is computed from PGSE timing which must be present.
-        B = acquisition_scheme.btensor()                             # (n_m, 3, 3)
-        b_trace = np.trace(B, axis1=1, axis2=2)                     # (n_m,)
-        u_dot_B_u = np.einsum('i,mij,j->m', mu_cart, B, mu_cart)    # (n_m,)
-        E_zeppelin = np.exp(
-            -(D_perp * b_trace + (lambda_par - D_perp) * u_dot_B_u)
-        )
-        return E_zeppelin
+        # time-dependent perpendicular diffusivity per measurement, from the PGSE timing, then the zeppelin of that
+        # diffusivity under the b-tensor (a pulsed gradient or a tensor-valued encoding)
+        D_perp = gaussian.time_dependent_diffusivity(lambda_inf, A, delta, Delta)
+        return gaussian.zeppelin_btensor(acquisition_scheme.btensor(), mu_cart, lambda_par, D_perp)
 
     def spherical_mean(self, acquisition_scheme, **kwargs):
         """
@@ -447,16 +417,9 @@ class G3TemporalZeppelin(ModelProperties, AnisotropicSignalModelProperties):
         A = kwargs.get('A', self.A)
         E_mean = np.ones_like(acquisition_scheme.shell_bvalues)
 
-        restricted_term = (
-            A * (np.log(Delta / delta) + 3 / 2.) / (Delta - delta / 3.)
-        )
-        lambda_perp = lambda_inf + restricted_term
-        from ..utils.sh_analytical import gaussian_J_l
-        kappa_per_shell = -bvals * (lambda_par - lambda_perp)
-        J0_per_shell = np.array(
-            [gaussian_J_l(float(k), l_max=0)[0] for k in kappa_per_shell])
-        E_mean[~acquisition_scheme.shell_b0_mask] = (
-            np.exp(-bvals * lambda_perp) * J0_per_shell / 2.0)
+        lambda_perp = gaussian.time_dependent_diffusivity(lambda_inf, A, delta, Delta)
+        E_mean[~acquisition_scheme.shell_b0_mask] = gaussian.zeppelin_powder_average(
+            bvals, lambda_par, lambda_perp)
         return E_mean
 
     def rotational_harmonics_representation(self, acquisition_scheme, **kwargs):
@@ -481,28 +444,8 @@ class G3TemporalZeppelin(ModelProperties, AnisotropicSignalModelProperties):
             delta = float(rh_scheme.shell_delta[shell_index])
             Delta = float(rh_scheme.shell_Delta[shell_index])
             lambda_perp = float(np.asarray(
-                lambda_inf
-                + A * (np.log(Delta / delta) + 1.5) / (Delta - delta / 3.0)
-            ).flat[0])
+                gaussian.time_dependent_diffusivity(lambda_inf, A, delta, Delta)).flat[0])
             rh = gaussian_kernel_rh(b, lambda_par, lambda_perp,
                                     sh_order=max_sh_order)
             rh_array[i, :sh_order // 2 + 1] = rh[:sh_order // 2 + 1]
         return rh_array
-
-
-def _attenuation_zeppelin(bvals, lambda_par, lambda_perp, n, mu):
-    "Signal attenuation for Zeppelin model."
-    mu_perpendicular_plane = np.eye(3) - np.outer(mu, mu)
-    magnitude_parallel = np.dot(n, mu)
-    proj = np.dot(mu_perpendicular_plane, n.T)
-    magnitude_perpendicular = np.sqrt(
-        proj[0] ** 2 + proj[1] ** 2 + proj[2] ** 2)
-    E_zeppelin = np.exp(-bvals *
-                        (lambda_par * magnitude_parallel ** 2 +
-                         lambda_perp * magnitude_perpendicular ** 2)
-                        )
-    return E_zeppelin
-
-
-if have_numba:
-    _attenuation_zeppelin = numba.njit()(_attenuation_zeppelin)

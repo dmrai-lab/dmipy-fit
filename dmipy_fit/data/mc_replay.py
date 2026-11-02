@@ -23,7 +23,7 @@ from dmipy_replay.replay.replay import compile_scheme, replay_coefficients, surf
 from dmipy_replay.replay.compression import band_projection
 
 _FAMILY_CACHE = {}
-from dmipy_replay.constants import GAMMA
+from dmipy_analytic.constants import GAMMA
 
 
 def surface_relaxivity_of(kwargs):

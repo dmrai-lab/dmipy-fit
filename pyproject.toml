@@ -22,8 +22,9 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "dmipy-sim>=3,<4",       # the forward engine: the replay packs, the exact SH forms, the matrix method, the substrate catalogue
-    "dmipy-replay>=0.2,<0.3",  # the acquisition object, its builders, the gradient conversions, GAMMA, the pack reader
+    "dmipy-analytic[special]>=3,<4",  # the closed forms of the signal: the Gaussian, restricted, exchange and relaxation equations, the matrix method, the orientation kernels, GAMMA
+    "dmipy-sim>=3,<4",       # the forward engine: the replay packs, the substrate catalogue
+    "dmipy-replay>=0.2,<0.3",  # the acquisition object, its builders, the gradient conversions, the pack reader
     "numpy>=2.0",
     "scipy>=1.10",
     "packaging>=23.0",
@@ -31,6 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 jax = [
+    "dmipy-analytic[jax]>=3,<4",
     "jax[cpu]>=0.6.2",
     "jaxopt>=0.8",
 ]
@@ -41,6 +43,7 @@ torch = [
     "torch>=2.2",
 ]
 jax-gpu = [
+    "dmipy-analytic[jax]>=3,<4",
     "jax[cuda12]>=0.6.2",
     "jaxopt>=0.8",
 ]

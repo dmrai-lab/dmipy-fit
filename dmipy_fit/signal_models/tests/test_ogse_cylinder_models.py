@@ -15,11 +15,8 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from dmipy_fit.signal_models.cylinder_models import (
-    C4CylinderGaussianPhaseApproximation,
-    _ogse_cosine_cylinder_signal,
-    _ogse_numerical_cylinder_signal,
-)
+from dmipy_analytic.restricted import cylinder
+from dmipy_fit.signal_models.cylinder_models import C4CylinderGaussianPhaseApproximation
 from dmipy_fit.core.acquisition_scheme import (
     AcquisitionScheme,
     acquisition_scheme_from_bvalues,
@@ -50,7 +47,7 @@ def _pgse_scheme(n_m=10, delta=0.02, Delta=0.04):
 # ---------------------------------------------------------------------------
 
 def test_c4_pgse_bit_identical():
-    """omega=0 scheme → new __call__ gives exactly same result as perpendicular_attenuation."""
+    """omega=0 scheme → the call gives exactly the Gaussian phase of the perpendicular gradient."""
     delta, Delta, diam = 0.02, 0.04, 10e-6
     scheme = _pgse_scheme(n_m=15, delta=delta, Delta=Delta)
 
@@ -60,7 +57,7 @@ def test_c4_pgse_bit_identical():
 
     E_new = c4(scheme)
 
-    # Reference: compute directly via perpendicular_attenuation + parallel
+    # Reference: the Gaussian phase of the perpendicular gradient times free diffusion along the axis
     g = scheme.gradient_strengths
     n = scheme.gradient_directions
     from dmipy_fit.utils import utils
@@ -73,12 +70,10 @@ def test_c4_pgse_bit_identical():
     E_par_ref = np.exp(-bvals * 1.7e-9 * np.dot(n, mu_cart) ** 2)
     E_perp_ref = np.ones_like(g)
     mask = g_perp > 0
-    from dmipy_fit.signal_models.cylinder_models import _attenuation_perpendicular_gaussian_phase
-    roots = C4CylinderGaussianPhaseApproximation._CYLINDER_TRASCENDENTAL_ROOTS
     for i in np.where(mask)[0]:
-        E_perp_ref[i] = np.asarray(_attenuation_perpendicular_gaussian_phase(
-            diam, np.atleast_1d(g_perp[i]), delta, Delta,
-            c4.diffusion_perpendicular, c4.gyromagnetic_ratio, roots)).reshape(-1)[0]
+        E_perp_ref[i] = np.asarray(cylinder.gaussian_phase(
+            np.atleast_1d(g_perp[i]), delta, Delta, diam,
+            c4.diffusion_perpendicular, gamma=c4.gyromagnetic_ratio)).reshape(-1)[0]
     E_ref = E_par_ref * E_perp_ref
 
     assert_allclose(E_new, E_ref, rtol=1e-12,
@@ -196,12 +191,11 @@ def test_c4_ogse_one_cycle_is_a_valid_acquisition_and_not_a_pgse():
         AcquisitionScheme.from_ogse(np.array([b_val]), bvecs, oscillation_frequency=0.1, gradient_duration=sigma)
 
 # ---------------------------------------------------------------------------
-# 5. _ogse_cosine_cylinder_signal: physical range
+# 5. the cosine Gaussian phase: physical range
 # ---------------------------------------------------------------------------
 
 def test_ogse_cosine_cylinder_physical_range():
     """0 < E_perp ≤ 1 for a range of cylinder radii and frequencies."""
-    roots = C4CylinderGaussianPhaseApproximation._CYLINDER_TRASCENDENTAL_ROOTS
     D = 1.7e-9
     sigma = 0.04
 
@@ -209,33 +203,32 @@ def test_ogse_cosine_cylinder_physical_range():
         for f in [50.0, 100.0, 200.0]:
             omega = 2.0 * np.pi * f
             for G in [0.1, 0.3]:
-                E = _ogse_cosine_cylinder_signal(G, omega, sigma, D, R, roots)
+                E = cylinder.gaussian_phase_cosine(G, omega, sigma, 2 * R, D)
                 assert 0.0 < E <= 1.0 + 1e-9, (
                     f"E={E:.4f} out of physical range for R={R}, f={f}, G={G}")
 
 
 # ---------------------------------------------------------------------------
-# 6. _ogse_numerical_cylinder_signal matches analytical for cosine waveform
+# 6. the sampled-waveform Gaussian phase matches the closed form for a cosine waveform
 # ---------------------------------------------------------------------------
 
 def test_ogse_numerical_matches_analytical():
-    """Numerical path on a cosine waveform matches the analytical _ogse_cosine_cylinder_signal."""
+    """Numerical path on a cosine waveform matches the closed form of the cosine Gaussian phase."""
     D = 1.7e-9
     R = 8e-6
     f = 50.0
     sigma = 0.04
     G = 0.2
     omega = 2.0 * np.pi * f
-    roots = C4CylinderGaussianPhaseApproximation._CYLINDER_TRASCENDENTAL_ROOTS
 
-    E_analytical = _ogse_cosine_cylinder_signal(G, omega, sigma, D, R, roots)
+    E_analytical = cylinder.gaussian_phase_cosine(G, omega, sigma, 2 * R, D)
 
     # Build cosine waveform numerically
     n_t = 5000
     dt = sigma / (n_t - 1)
     t = np.arange(n_t) * dt
     G_t = G * np.cos(omega * t)
-    E_numerical = _ogse_numerical_cylinder_signal(G_t, dt, D, R, roots)
+    E_numerical = cylinder.gaussian_phase_waveform(G_t, dt, 2 * R, D)
 
     assert_allclose(E_numerical, E_analytical, rtol=0.005,
                     err_msg="Numerical cosine path does not match analytical")

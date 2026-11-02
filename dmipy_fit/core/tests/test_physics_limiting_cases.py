@@ -18,6 +18,7 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
+from dmipy_analytic.restricted import sphere
 from dmipy_fit.core.acquisition_scheme import acquisition_scheme_from_bvalues
 from dmipy_fit.signal_models.gaussian_models import G1Ball, G2Zeppelin
 from dmipy_fit.signal_models.cylinder_models import (
@@ -271,6 +272,11 @@ class TestS3SphereCallaghan:
             S3SphereCallaghanApproximation)
         return S3SphereCallaghanApproximation(diffusion_constant=self.D)
 
+    @staticmethod
+    def _s3_attenuation(s3, q, tau, diameter):
+        """The Callaghan series with the model's diffusivity and number of modes."""
+        return sphere.sgp(q, tau, diameter, s3.Dintra, s3.number_of_roots, s3.number_of_functions)
+
     def test_s3_long_time_limit_is_s2_structure_factor(self):
         """tau -> inf: S3 reduces to the SGP sphere structure factor (S2), exactly."""
         from dmipy_fit.signal_models.sphere_models import (
@@ -280,8 +286,8 @@ class TestS3SphereCallaghan:
         for diameter in (4e-6, 8e-6, 12e-6):
             q = np.linspace(1e4, 4e5, 12)
             tau = np.full_like(q, 3.0)  # 3 s >> R^2/D: fully restricted
-            e3 = s3.sphere_attenuation(q, tau, diameter)
-            e2 = s2.sphere_attenuation(q, diameter)
+            e3 = self._s3_attenuation(s3, q, tau, diameter)
+            e2 = sphere.sgp_long_time(q, diameter)
             assert np.max(np.abs(e3 - e2)) < 1e-4
 
     def test_s3_short_time_limit_is_unity(self):
@@ -289,7 +295,7 @@ class TestS3SphereCallaghan:
         s3 = self._s3()
         q = np.array([5e4, 1e5, 2e5, 3e5])
         tau = np.full_like(q, 1e-8)  # << R^2/D: high eigenmodes undamped
-        e3 = s3.sphere_attenuation(q, tau, 8e-6)
+        e3 = self._s3_attenuation(s3, q, tau, 8e-6)
         assert np.all(np.abs(e3 - 1.0) < 1e-3)
 
     def test_s3_matches_s4_gpa_in_overlap_regime(self):
@@ -306,10 +312,10 @@ class TestS3SphereCallaghan:
             tau = np.full_like(q, Delta - delta / 3.0)
             s4 = S4SphereGaussianPhaseApproximation(
                 diffusion_constant=self.D, diameter=diameter)
-            e4 = np.array([float(np.asarray(
-                s4.sphere_attenuation(g, delta, Delta, diameter)).ravel()[0])
+            e4 = np.array([float(np.asarray(sphere.gaussian_phase(
+                g, delta, Delta, diameter, s4.diffusion_constant, gamma=s4.gyromagnetic_ratio)).ravel()[0])
                 for g in G])
-            e3 = s3.sphere_attenuation(q, tau, diameter)
+            e3 = self._s3_attenuation(s3, q, tau, diameter)
             assert np.max(np.abs(e3 - e4)) < 0.03
 
     def test_s3_strong_attenuation_regression(self):
@@ -317,7 +323,7 @@ class TestS3SphereCallaghan:
         s3 = self._s3()
         q = np.array([4e4, 6e4, 8e4, 1.0e5])
         tau = np.full_like(q, 40e-3)
-        E = s3.sphere_attenuation(q, tau, 1e-5)  # diameter 10 um
+        E = self._s3_attenuation(s3, q, tau, 1e-5)  # diameter 10 um
         expected = np.array([0.723754, 0.471877, 0.245339, 0.092397])
         assert np.allclose(E, expected, atol=1e-5)
 
@@ -338,7 +344,7 @@ class TestS3SphereCallaghan:
         deltas, E_mc = fx["deltas"], fx["E_mc"]
 
         s3 = S3SphereCallaghanApproximation(diffusion_constant=float(fx["D"]))
-        E_s3 = s3.sphere_attenuation(q, np.full_like(q, tau), diameter)
+        E_s3 = self._s3_attenuation(s3, q, np.full_like(q, tau), diameter)
 
         # (1) the analytic curve the fixture was measured against is reproduced
         assert np.allclose(E_s3, fx["E_s3"], atol=1e-6)

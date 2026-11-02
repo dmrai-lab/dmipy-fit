@@ -29,6 +29,7 @@ factor is present, so it is never double-counted.
 """
 from collections import OrderedDict
 import numpy as np
+from dmipy_analytic import relaxation
 
 from ..utils import utils
 from ..core.modeling_framework import ModelProperties
@@ -99,7 +100,7 @@ class TransverseRelaxation(AttenuationFactor):
     def factor(self, acquisition_scheme, mu_cart, base_params, T2=None):
         if not _is_set(T2) or getattr(acquisition_scheme, 'TE', None) is None:
             return 1.0
-        return np.exp(-_tau_perp(acquisition_scheme) / T2)
+        return relaxation.transverse_decay(_tau_perp(acquisition_scheme), T2)
 
 
 class LongitudinalRelaxation(AttenuationFactor):
@@ -119,13 +120,7 @@ class LongitudinalRelaxation(AttenuationFactor):
         tau_par = _tau_par(acquisition_scheme)
         if not _is_set(T1) or tau_par is None:
             return 1.0
-        return np.exp(-tau_par / T1)
-
-
-# Surface-to-volume ratio of a restricted pore as a multiple of 1/diameter,
-# keyed by the compartment's ``diameter`` parameter geometry. Sphere S/V = 3/R =
-# 6/d; (infinite) cylinder S/V = 2/R = 4/d; plane (slab of thickness d) S/V = 2/d.
-SURFACE_TO_VOLUME_OVER_DIAMETER = {'sphere': 6.0, 'cylinder': 4.0, 'plane': 2.0}
+        return relaxation.longitudinal_decay(tau_par, T1)
 
 
 class SurfaceRelaxivity(AttenuationFactor):
@@ -156,9 +151,8 @@ class SurfaceRelaxivity(AttenuationFactor):
             d = base_params.get('diameter')
             if not _is_set(d):
                 return 1.0
-            coeff = SURFACE_TO_VOLUME_OVER_DIAMETER.get(self.geometry, 4.0)
-            sv = coeff / d
-        return np.exp(-surface_relaxivity * sv * _tau_perp(acquisition_scheme))
+            sv = relaxation.surface_to_volume(d, self.geometry or 'cylinder')
+        return relaxation.surface_relaxation(surface_relaxivity, sv, _tau_perp(acquisition_scheme))
 
 
 class IntraPoreSurfaceRelaxivity(AttenuationFactor):
@@ -186,11 +180,11 @@ class IntraPoreSurfaceRelaxivity(AttenuationFactor):
         if not _is_set(surface_relaxivity) \
                 or getattr(acquisition_scheme, 'TE', None) is None:
             return 1.0
-        from ..white_matter.surface import b_hat_ia
         g = float(g_ratio) if _is_set(g_ratio) else 1.0
         inner_scale = g * self.gamma_scale_outer_diameter      # inner = g x outer
-        return b_hat_ia(self.gamma_shape, inner_scale, float(surface_relaxivity),
-                        _tau_perp(acquisition_scheme), self.volume_weighted)
+        return relaxation.surface_relaxation_gamma_cylinders(
+            self.gamma_shape, inner_scale, float(surface_relaxivity), _tau_perp(acquisition_scheme),
+            self.volume_weighted)
 
 
 class IntraSphereSurfaceRelaxivity(AttenuationFactor):
@@ -201,7 +195,7 @@ class IntraSphereSurfaceRelaxivity(AttenuationFactor):
     Returns the Gamma-averaged surface attenuation
     ``B = E_d[exp(-rho (6/d) tau_perp)]`` for a sphere diameter
     ``d ~ Gamma(gamma_shape, gamma_scale_diameter)`` in closed form
-    (:func:`white_matter.surface.b_hat_sphere`): a sphere has ``S/V = 6/d`` and
+    (:func:`dmipy_analytic.relaxation.surface_relaxation_gamma_spheres`): a sphere has ``S/V = 6/d`` and
     its water content ~ volume ``d^3`` (volume weighting -> shape ``alpha+3``).
 
     Like :class:`IntraPoreSurfaceRelaxivity`, the Gamma parameters are fixed
@@ -223,10 +217,9 @@ class IntraSphereSurfaceRelaxivity(AttenuationFactor):
         if not _is_set(surface_relaxivity) \
                 or getattr(acquisition_scheme, 'TE', None) is None:
             return 1.0
-        from ..white_matter.surface import b_hat_sphere
-        return b_hat_sphere(self.gamma_shape, self.gamma_scale_diameter,
-                            float(surface_relaxivity),
-                            _tau_perp(acquisition_scheme), self.volume_weighted)
+        return relaxation.surface_relaxation_gamma_spheres(
+            self.gamma_shape, self.gamma_scale_diameter, float(surface_relaxivity), _tau_perp(acquisition_scheme),
+            self.volume_weighted)
 
 
 class ExteriorSurfaceRelaxivity(AttenuationFactor):
@@ -244,9 +237,8 @@ class ExteriorSurfaceRelaxivity(AttenuationFactor):
         if not _is_set(surface_relaxivity) \
                 or getattr(acquisition_scheme, 'TE', None) is None:
             return 1.0
-        from ..white_matter.surface import b_hat_ea_long
-        return b_hat_ea_long(float(surface_relaxivity), self.S_ext_over_V,
-                             _tau_perp(acquisition_scheme))
+        return relaxation.surface_relaxation(float(surface_relaxivity), self.S_ext_over_V,
+                                             _tau_perp(acquisition_scheme))
 
 
 class OccupancyGatedModel(ModelProperties, AnisotropicSignalModelProperties):

@@ -86,7 +86,7 @@ class ModelSubstrate:
     def response(self, seq, pose=None):
         """The model's signal at ``pose`` on ``seq``: complex ``(n_meas,)``. The model's axis is the third column
         of the pose (identity: along z); an isotropic model ignores it. Relaxation weights apply when declared."""
-        from dmipy_replay.math.sh_analytical import cart2sphere
+        from dmipy_analytic.harmonics import cart2sphere
         scheme = self._scheme(seq)
         kw = dict(self.params)
         if self.oriented:
