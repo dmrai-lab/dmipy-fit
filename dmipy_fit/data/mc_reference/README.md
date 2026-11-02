@@ -14,7 +14,7 @@ published reductions of those walks, kept as bundled data.
 
 | file | what it holds | paired analytic API |
 |------|---------------|---------------------|
-| `surface_relaxivity.npz` | per-compartment surface attenuation `B_ia/B_ea` (MC, self-consistent analytic, idealised) vs echo time `TES`; realised `S_ext/V` | `dmipy_fit.white_matter.surface.b_hat_ia / b_hat_ea_long` |
+| `surface_relaxivity.npz` | per-compartment surface attenuation `B_ia/B_ea` (MC, self-consistent analytic, idealised) vs echo time `TES`; realised `S_ext/V` | `dmipy_analytic.relaxation.surface_relaxation_gamma_cylinders / surface_relaxation` |
 | `parity_overlap.npz` | susceptibility `sin⁴θ` factor `A_xe*` vs angle, extra-axonal attenuation `B_ea*` vs b, EA signal `C_ea*` vs TE — MC and analytic, at 3T and 7T | `OccupancyGatedModel(G2Zeppelin, [Susceptibility, …])` |
 | `crossterm.npz` | diffusion×susceptibility apparent-D⊥ warp `dD` and exponent `lnX` vs field/b, for a fine and a large-calibre pack (seed-averaged) | `UnifiedWhiteMatterParameters.xi_cross_factor` |
 

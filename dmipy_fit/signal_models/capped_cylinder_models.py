@@ -1,3 +1,4 @@
+from dmipy_analytic.restricted import cylinder
 from . import cylinder_models, plane_models
 from ..utils import utils
 from ..core.modeling_framework import ModelProperties
@@ -117,19 +118,9 @@ class CC2CappedCylinderStejskalTannerApproximation(
             axis=0
         )
         q_parallel = q * np.dot(n, mu)
-        E_parallel = np.ones_like(q)
-        q_nonzero = q_parallel > 0
-        E_parallel[q_nonzero] = self._plane_model.plane_attenuation(
-            q_parallel[q_nonzero], length)
-
-        E_perpendicular = np.ones_like(q)
+        q_parallel = np.where(q_parallel > 0, q_parallel, 0.0)   # only q>0 attenuate along the axis
         q_perp = q * magnitude_perpendicular
-        q_nonzero = q_perp > 0
-        E_perpendicular[q_nonzero] = (
-            self._cylinder_model.perpendicular_attenuation(
-                q_perp[q_nonzero], diameter)
-        )
-        return E_parallel * E_perpendicular
+        return cylinder.capped_sgp_long_time(q_perp, q_parallel, diameter, length)
 
 
 class CC3CappedCylinderCallaghanApproximation(
@@ -260,16 +251,8 @@ class CC3CappedCylinderCallaghanApproximation(
             axis=0
         )
         q_parallel = q * np.dot(n, mu)
-        E_parallel = np.ones_like(q)
-        q_nonzero = q_parallel > 0
-        E_parallel[q_nonzero] = self._plane_model.plane_attenuation(
-            q_parallel[q_nonzero], tau[q_nonzero], length)
-        E_perpendicular = np.ones_like(q)
+        q_parallel = np.where(q_parallel > 0, q_parallel, 0.0)   # only q>0 attenuate along the axis
         q_perp = q * magnitude_perpendicular
-
-        q_nonzero = q_perp > 0
-        E_perpendicular[q_nonzero] = (
-            self._cylinder_model.perpendicular_attenuation(
-                q_perp[q_nonzero], tau[q_nonzero], diameter)
-        )
-        return E_parallel * E_perpendicular
+        return cylinder.capped_sgp(
+            q_perp, q_parallel, tau, diameter, length, self.diffusion_intra,
+            self.number_of_roots_cylinder, self.number_of_functions_cylinder, self.number_of_roots_plane)

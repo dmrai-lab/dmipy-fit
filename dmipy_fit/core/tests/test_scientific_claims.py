@@ -14,7 +14,7 @@ from dmipy_fit.core.constants import CONSTANTS
 from dmipy_replay.math.gradient_conversions import b_from_g, g_from_b
 from dmipy_fit.utils.spherical_convolution import sh_convolution
 
-from dmipy_replay.constants import GAMMA
+from dmipy_analytic.constants import GAMMA
 
 
 # ---------------------------------------------------------------------------

@@ -4,14 +4,14 @@ Physical validation, not just regression: the matrix method must (i) reproduce t
 in their valid low-b regime, (ii) reduce to free diffusion on unrestricted axes, (iii) obey restriction
 monotonicity and the physical range, (iv) converge in mode count, and (v) depart from the GPA (the exact
 model attenuates *more*) precisely where the Gaussian-phase approximation breaks down at high b. These
-compartments are acquisition-scheme glue around the shared solver `dmipy_sim.math.matrix_method`; the
+compartments are acquisition-scheme glue around the shared solver `dmipy_analytic.restricted.matrix_method`; the
 pure-numerics tests of that solver itself (unit-geometry convergence, the published narrow-pulse
 coefficients, free-diffusion/Mitra limits, ...) live in dmipy-sim's own `tests/math/test_matrix_method.py`.
 """
 import numpy as np
 import numpy.testing as npt
 
-from dmipy_sim.math.matrix_method import matrix_restricted_signal
+from dmipy_analytic.restricted.matrix_method import matrix_restricted_signal
 
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
 from dmipy_fit.core.constants import CONSTANTS
@@ -101,7 +101,7 @@ def test_mode_convergence():
 
 
 def test_matrix_method_matches_sim_for_pgse_slew_and_ogse():
-    "C5 (perpendicular axis), S5 and P5 reproduce dmipy_sim.math.matrix_method's own number for a PGSE at"
+    "C5 (perpendicular axis), S5 and P5 reproduce dmipy_analytic.restricted.matrix_method's own number for a PGSE at"
     "infinite slew, a slew-limited PGSE, and a cosine OGSE -- the model is acquisition-scheme glue around"
     "the shared solver, not a second implementation of it. A small n_modes keeps this a wiring check"
     "(sizing, axis projection, waveform reconstruction), not a convergence study."
@@ -140,7 +140,7 @@ def test_plane_approaches_free():
     b = np.array([0.0, 1e9])
     scheme = _scheme(b, [1., 0, 0])
     free = np.exp(-b[1] * P5PlaneMatrixMethod(diameter=6e-6).diffusion_constant)
-    # the plane's n_modes is one count of cosine modes (dmipy_sim.math.matrix_method); a wider slab needs more
+    # the plane's n_modes is one count of cosine modes (dmipy_analytic.restricted.matrix_method); a wider slab needs more
     # of them to reach the free limit on the same grid
     E = [P5PlaneMatrixMethod(diameter=L, n_modes=nm)(scheme)[1]
          for L, nm in ((40e-6, 64), (100e-6, 96), (300e-6, 160))]

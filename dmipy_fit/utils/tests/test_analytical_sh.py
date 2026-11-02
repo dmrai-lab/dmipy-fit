@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 from scipy.special import erfi
 
-from dmipy_replay.math.sh_analytical import watson_zonal_ratios, watson_sh, bingham_canonical_sh
+from dmipy_analytic.orientation import watson_zonal_ratios, watson_sh, bingham_canonical_sh
 from dmipy_fit.distributions.distributions import _bingham_sh as bingham_sh
 from dmipy_fit.utils.sh_analytical import gaussian_J_l, gaussian_kernel_rh
 
@@ -132,7 +132,7 @@ class TestWatsonSh:
     def test_matches_grid_at_low_kappa(self):
         """At low kappa the grid-based SD1Watson and analytical agree."""
         from dmipy_fit.distributions.distributions import SD1Watson, kappa2odi
-        from dmipy_replay.math.sh_analytical import cart2sphere
+        from dmipy_analytic.harmonics import cart2sphere
 
         kappa = 1.0
         mu_cart = np.r_[1., 0., 0.]
@@ -291,7 +291,7 @@ class TestBinghamCanonicalSh:
 
     def test_normalization_via_quad(self):
         """The partition function matches direct numerical integration over the sphere."""
-        from dmipy_replay.math.sh_analytical import bingham_normalization
+        from dmipy_analytic.orientation import bingham_normalization
         from scipy.integrate import dblquad
         k1, k2 = 1.5, 0.7
 
@@ -436,6 +436,7 @@ class TestBinghamDensityIsTheCoefficients:
 
     @pytest.mark.parametrize("kappa,beta_frac,psi", [(2.0, 0.5, 0.3), (8.0, 0.7, 1.1), (16.0, 0.25, 0.0)])
     def test_density_projects_onto_the_coefficients(self, kappa, beta_frac, psi):
+        from dmipy_analytic.harmonics import real_sh
         from dmipy_fit.distributions.distributions import SD2Bingham, kappa2odi
         from dmipy_replay.replay import so3
         mu_sph = np.r_[0.7, 0.4]
@@ -443,7 +444,7 @@ class TestBinghamDensityIsTheCoefficients:
         dirs, w = so3.sphere_quadrature(48, 96)
         density = model(dirs)
         np.testing.assert_allclose(float(np.sum(w * density)), 1.0, atol=1e-9)
-        Y = so3.real_sh(L_MAX, dirs)
+        Y = real_sh(L_MAX, dirs)
         c_model = (Y * (w * density)[:, None]).sum(axis=0)
         from dmipy_fit.utils import utils
         c = bingham_sh(utils.unitsphere2cart_1d(mu_sph), psi, kappa, beta_frac * kappa, l_max=L_MAX)

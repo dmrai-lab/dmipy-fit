@@ -7,7 +7,7 @@ import os as _os
 from os.path import join
 
 import numpy as np
-from dmipy_replay.math.sh_analytical import cart2sphere
+from dmipy_analytic.harmonics import cart2sphere
 from scipy import stats
 from scipy import special
 
@@ -143,7 +143,7 @@ class SD1Watson(ModelProperties):
         watson_sh : array,
             spherical harmonics of Watson probability density.
         """
-        from dmipy_replay.math.sh_analytical import watson_sh as _watson_sh
+        from dmipy_analytic.orientation import watson_sh as _watson_sh
         odi = kwargs.get('odi', self.odi)
         mu = kwargs.get('mu', self.mu)
         if sh_order is None:
@@ -248,7 +248,7 @@ class SD2Bingham(ModelProperties):
 
         R = utils.rotation_matrix_100_to_theta_phi_psi(mu[0], mu[1], psi)
         mu_beta = R.dot(np.r_[0., 1., 0.])
-        from dmipy_replay.math.sh_analytical import bingham_normalization
+        from dmipy_analytic.orientation import bingham_normalization
         # exp(kappa (n.mu)^2 + beta (n.mu_beta)^2) = exp(kappa) exp(-kappa (n.e1)^2 - (kappa - beta) (n.mu_beta)^2)
         # for the frame (e1, mu_beta, mu): the second factor's partition function is dmipy-sim's
         numerator = _probability_bingham(kappa, beta, mu_cart, mu_beta, n)
@@ -671,7 +671,7 @@ def _bingham_sh(mu_cart, psi, kappa, beta, l_max=8):
     dmipy-sim states a Bingham as a frame (e1, e2, pose axis) and the concentrations about e1 and e2; with the pose
     axis ``mu``, e2 = ``mu_beta`` and e1 their cross product, the density is ``exp(-kappa (n.e1)^2 - (kappa - beta)
     (n.e2)^2)`` up to a constant, so the concentrations are ``(kappa, kappa - beta)``."""
-    from dmipy_replay.math.sh_analytical import bingham_sh
+    from dmipy_analytic.orientation import bingham_sh
     mu_cart = np.asarray(mu_cart, dtype=np.float64)
     _, theta_mu, phi_mu = cart2sphere(mu_cart)
     mu_beta = utils.rotation_matrix_100_to_theta_phi_psi(float(theta_mu), float(phi_mu), float(psi)).dot(

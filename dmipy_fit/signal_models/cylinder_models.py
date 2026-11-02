@@ -1,18 +1,16 @@
 from __future__ import division
 
 import numpy as np
-from dmipy_replay.constants import GAMMA
-from scipy import special
-from scipy.special import erf
+from dmipy_analytic import gaussian
+from dmipy_analytic.constants import GAMMA
+from dmipy_analytic.restricted import cylinder
 
 from ..utils import utils
 from ..core.constants import CONSTANTS
 from ..core.modeling_framework import ModelProperties
 from ..core.signal_model_properties import AnisotropicSignalModelProperties
 from ._matrix_adapter import matrix_signal, matrix_signal_batch, pgse_waveform
-from ..utils.sh_basis import optional_module, real_sh_tournier, symmetric_sphere
-
-numba, have_numba = optional_module("numba")
+from ..utils.sh_basis import real_sh_tournier, symmetric_sphere
 
 from ..core.constants import DIFFUSIVITY_SCALING, DIAMETER_SCALING, A_SCALING
 
@@ -131,21 +129,17 @@ class C1Stick(ModelProperties, AnisotropicSignalModelProperties):
         lambda_par_ = kwargs.get('lambda_par', self.lambda_par)
         mu = kwargs.get('mu', self.mu)
         if use_jax:
+            from dmipy_analytic.jax import gaussian as jgaussian
             from ..jax.jax_compat import scheme_to_jax, unitsphere2cart_1d_jax
-            from ..jax.signal_models_jax import c1stick_signal
             import jax.numpy as jnp
             scheme_jax = scheme_to_jax(acquisition_scheme)
             mu_cart = unitsphere2cart_1d_jax(jnp.array(mu))
-            return np.array(c1stick_signal(
+            return np.array(jgaussian.stick(
                 scheme_jax['bvalues'], scheme_jax['gradient_directions'],
                 mu_cart, float(lambda_par_)))
         mu_cart = utils.unitsphere2cart_1d(mu)
-        # B-tensor path: E = exp(-λ_par · uᵀBu)  (λ_perp = 0 for stick)
-        # Correct for PGSE (rank-1 B = b·n⊗n) and tensor-valued encoding.
-        B = acquisition_scheme.btensor()                              # (n_m, 3, 3)
-        u_dot_B_u = np.einsum('i,mij,j->m', mu_cart, B, mu_cart)     # (n_m,)
-        E_stick = np.exp(-lambda_par_ * u_dot_B_u)
-        return E_stick
+        # the b-tensor form is exact for a pulsed gradient (rank-1 B = b n n^T) and for tensor-valued encodings
+        return gaussian.stick_btensor(acquisition_scheme.btensor(), mu_cart, lambda_par_)
 
     def rotational_harmonics_representation(self, acquisition_scheme, **kwargs):
         r"""Analytical RH coefficients for the Stick kernel.
@@ -186,18 +180,8 @@ class C1Stick(ModelProperties, AnisotropicSignalModelProperties):
         E_mean : array of size (Nshells)
             spherical mean of the Stick model for every acquisition shell.
         """
-        bvals = acquisition_scheme.shell_bvalues
-        bvals_ = bvals[~acquisition_scheme.shell_b0_mask]
-
         lambda_par = kwargs.get('lambda_par', self.lambda_par)
-
-        E_mean = np.ones_like(bvals)
-        bval_indices_above0 = bvals > 0
-        bvals_ = bvals[bval_indices_above0]
-        E_mean_ = ((np.sqrt(np.pi) * erf(np.sqrt(bvals_ * lambda_par))) /
-                   (2 * np.sqrt(bvals_ * lambda_par)))
-        E_mean[bval_indices_above0] = E_mean_
-        return E_mean
+        return gaussian.stick_powder_average(acquisition_scheme.shell_bvalues, lambda_par)
 
     def signal_lm(self, acquisition_scheme, **kwargs):
         """SH coefficients E_lm of the Stick signal as a function of fiber direction.
@@ -325,16 +309,6 @@ class C2CylinderStejskalTannerApproximation(
         self.lambda_par = lambda_par
         self.diameter = diameter
 
-    def perpendicular_attenuation(
-        self, q, diameter
-    ):
-        "Returns the cylinder's perpendicular signal attenuation."
-        radius = diameter / 2
-        # Eq. [6] in the paper
-        E = ((2 * special.jn(1, 2 * np.pi * q * radius)) ** 2 /
-             (2 * np.pi * q * radius) ** 2)
-        return E
-
     def __call__(self, acquisition_scheme, use_jax=False, **kwargs):
         r'''
         Estimates the signal attenuation.
@@ -375,13 +349,9 @@ class C2CylinderStejskalTannerApproximation(
             np.dot(mu_perpendicular_plane, n.T),
             axis=0
         )
-        E_parallel = _attenuation_parallel_stick(bvals, lambda_par, n, mu)
-        E_perpendicular = np.ones_like(q)
+        E_parallel = gaussian.stick(bvals, n, mu, lambda_par)
         q_perp = q * magnitude_perpendicular
-        q_nonzero = q_perp > 0  # only q>0 attenuate
-        E_perpendicular[q_nonzero] = self.perpendicular_attenuation(
-            q_perp[q_nonzero], diameter
-        )
+        E_perpendicular = cylinder.sgp_long_time(q_perp, diameter)  # only q>0 attenuate
         E = E_parallel * E_perpendicular
         return E
 
@@ -468,47 +438,8 @@ class C3CylinderCallaghanApproximation(
         self.lambda_par = lambda_par
         self.diffusion_perpendicular = diffusion_perpendicular
         self.diameter = diameter
-
-        self.alpha = np.empty((number_of_roots, number_of_functions))
-        self.alpha[0, 0] = 0
-        if number_of_roots > 1:
-            self.alpha[1:, 0] = special.jnp_zeros(0, number_of_roots - 1)
-        for m in range(1, number_of_functions):
-            self.alpha[:, m] = special.jnp_zeros(m, number_of_roots)
-
-    def perpendicular_attenuation(self, q, tau, diameter):
-        "Implements the finite time Callaghan model for cylinders"
-        radius = diameter / 2.
-        alpha = self.alpha
-        q_argument = 2 * np.pi * q * radius
-        q_argument_2 = q_argument ** 2
-        res = np.zeros_like(q)
-
-        J = special.j1(q_argument) ** 2
-        for k in range(0, self.alpha.shape[0]):
-            alpha2 = alpha[k, 0] ** 2
-            update = (
-                4 * np.exp(-alpha2 * self.diffusion_perpendicular *
-                           tau / radius ** 2) *
-                q_argument_2 /
-                (q_argument_2 - alpha2) ** 2 * J
-            )
-            res += update
-
-        for m in range(1, self.alpha.shape[1]):
-            J = special.jvp(m, q_argument, 1)
-            q_argument_J = (q_argument * J) ** 2
-            for k in range(self.alpha.shape[0]):
-                alpha2 = self.alpha[k, m] ** 2
-                update = (
-                    8 * np.exp(-alpha2 * self.diffusion_perpendicular *
-                               tau / radius ** 2) *
-                    alpha2 / (alpha2 - m ** 2) *
-                    q_argument_J /
-                    (q_argument_2 - alpha2) ** 2
-                )
-                res += update
-        return res
+        self.number_of_roots = number_of_roots
+        self.number_of_functions = number_of_functions
 
     def __call__(self, acquisition_scheme, use_jax=False, **kwargs):
         r'''
@@ -537,7 +468,8 @@ class C3CylinderCallaghanApproximation(
             import jax.numpy as jnp
             scheme_jax = scheme_to_jax(acquisition_scheme)
             mu_cart = unitsphere2cart_1d_jax(jnp.array(mu))
-            fn = build_c3cylinder_jax_fn(self.alpha, self.diffusion_perpendicular)
+            fn = build_c3cylinder_jax_fn(self.number_of_roots, self.number_of_functions,
+                                         self.diffusion_perpendicular)
             return np.array(fn(
                 scheme_jax['bvalues'], scheme_jax['gradient_directions'],
                 scheme_jax['qvalues'], scheme_jax['tau'],
@@ -552,14 +484,10 @@ class C3CylinderCallaghanApproximation(
             np.dot(mu_perpendicular_plane, n.T),
             axis=0
         )
-        E_parallel = _attenuation_parallel_stick(bvals, lambda_par, n, mu)
-        E_perpendicular = np.ones_like(q)
+        E_parallel = gaussian.stick(bvals, n, mu, lambda_par)
         q_perp = q * magnitude_perpendicular
-
-        q_nonzero = q_perp > 0
-        E_perpendicular[q_nonzero] = self.perpendicular_attenuation(
-            q_perp[q_nonzero], tau[q_nonzero], diameter
-        )
+        E_perpendicular = cylinder.sgp(q_perp, tau, diameter, self.diffusion_perpendicular,
+                                       self.number_of_roots, self.number_of_functions)
         E = E_parallel * E_perpendicular
         return E
 
@@ -630,7 +558,6 @@ class C4CylinderGaussianPhaseApproximation(
         'diameter': 'cylinder',
     }
     _model_type = 'CompartmentModel'
-    _CYLINDER_TRASCENDENTAL_ROOTS = np.sort(special.jnp_zeros(1, 100))
 
     def __init__(
         self,
@@ -643,16 +570,6 @@ class C4CylinderGaussianPhaseApproximation(
         self.diffusion_perpendicular = diffusion_perpendicular
         self.gyromagnetic_ratio = GAMMA
         self.diameter = diameter
-
-    def perpendicular_attenuation(
-        self, gradient_strength, delta, Delta, diameter
-    ):
-        "Calculates the cylinder's perpendicular signal attenuation."
-        D = self.diffusion_perpendicular
-        gamma = self.gyromagnetic_ratio
-        return _attenuation_perpendicular_gaussian_phase(
-            diameter, gradient_strength, delta, Delta,
-            D, gamma, self._CYLINDER_TRASCENDENTAL_ROOTS)
 
     def __call__(self, acquisition_scheme, use_jax=False, **kwargs):
         r'''
@@ -690,13 +607,11 @@ class C4CylinderGaussianPhaseApproximation(
             import jax.numpy as jnp
             scheme_jax = scheme_to_jax(acquisition_scheme)
             mu_cart = unitsphere2cart_1d_jax(jnp.array(mu))
-            roots_jax = jnp.array(self._CYLINDER_TRASCENDENTAL_ROOTS)
             return np.array(c4cylinder_signal(
                 scheme_jax['bvalues'], scheme_jax['gradient_directions'],
                 scheme_jax['gradient_strengths'], scheme_jax['delta'],
                 scheme_jax['Delta'], mu_cart, float(lambda_par), float(diameter),
-                float(self.diffusion_perpendicular), float(self.gyromagnetic_ratio),
-                roots_jax))
+                float(self.diffusion_perpendicular), float(self.gyromagnetic_ratio)))
 
         D = self.diffusion_perpendicular
         R = diameter / 2.0
@@ -718,11 +633,9 @@ class C4CylinderGaussianPhaseApproximation(
         if (_G is not None and R < 1e-3
                 and _waveform_directions_rotate(_G)):
             gamma_lm = acquisition_scheme.gamma_lm(l_max=4)
-            C_geom = _compute_C_geom(R, D, self._CYLINDER_TRASCENDENTAL_ROOTS)
             b_par = bvals * np.dot(n, mu_cart) ** 2
-            E = _cylinder_signal_from_gamma_lm(
-                gamma_lm, b_par, C_geom, mu_cart, lambda_par)
-            return E
+            return cylinder.gaussian_phase_gamma_lm(
+                gamma_lm, b_par, mu_cart, diameter, D, lambda_par)
 
         g = acquisition_scheme.gradient_strengths
         delta = acquisition_scheme.delta
@@ -732,23 +645,17 @@ class C4CylinderGaussianPhaseApproximation(
             np.dot(mu_perpendicular_plane, n.T),
             axis=0
         )
-        E_parallel = _attenuation_parallel_stick(bvals, lambda_par, n, mu_cart)
+        E_parallel = gaussian.stick(bvals, n, mu_cart, lambda_par)
         n_m = acquisition_scheme.number_of_measurements
         E_perpendicular = np.ones(n_m, dtype=float)
 
         if osc_freq is None or np.all(osc_freq == 0):
             # ----------------------------------------------------------------
-            # Pure PGSE path — original Van Gelderen GPA (unchanged)
+            # Pure PGSE path: the Van Gelderen Gaussian phase of the perpendicular gradient
             # ----------------------------------------------------------------
             g_perp = g * magnitude_perpendicular
-            g_nonzero = g_perp > 0
-            unique_deltas = np.unique([delta, Delta], axis=1)
-            for delta_, Delta_ in zip(*unique_deltas):
-                mask = np.all([g_nonzero, delta == delta_, Delta == Delta_],
-                              axis=0)
-                E_perpendicular[mask] = self.perpendicular_attenuation(
-                    g_perp[mask], delta_, Delta_, diameter
-                )
+            E_perpendicular = cylinder.gaussian_phase(
+                g_perp, delta, Delta, diameter, D, gamma=self.gyromagnetic_ratio)
         else:
             # ----------------------------------------------------------------
             # Mixed or pure OGSE path — dispatch per measurement
@@ -763,26 +670,24 @@ class C4CylinderGaussianPhaseApproximation(
                 if freq_m == 0:
                     # PGSE measurement inside a mixed scheme
                     E_perpendicular[m] = float(np.asarray(
-                        _attenuation_perpendicular_gaussian_phase(
-                            diameter,
+                        cylinder.gaussian_phase(
                             np.atleast_1d(G_perp_m),
                             float(delta[m]),
                             float(Delta[m]),
+                            diameter,
                             D,
-                            self.gyromagnetic_ratio,
-                            self._CYLINDER_TRASCENDENTAL_ROOTS,
+                            gamma=self.gyromagnetic_ratio,
                         )).reshape(-1)[0])
                 else:
                     # OGSE (cosine or trapezoid train, whatever the ramps and the gap around the 180): the
                     # Stepisnik GPA integral of the played effective gradient, projected on the perpendicular
-                    # plane. The closed form ``_ogse_cosine_cylinder_signal`` is its contiguous-cosine limit.
+                    # plane. The closed form ``cylinder.gaussian_phase_cosine`` is its contiguous-cosine limit.
                     G_t_vec = acquisition_scheme._G[m].astype(np.float64)          # (n_t, 3)
                     n_perp = np.dot(mu_perpendicular_plane, n[m])                  # the encoding's perpendicular
                     n_perp = n_perp / np.linalg.norm(n_perp)                       # direction (unit)
                     G_t = G_t_vec @ n_perp                                         # (n_t,) signed projection
-                    E_perpendicular[m] = _ogse_numerical_cylinder_signal(
-                        G_t, acquisition_scheme._dt, D, R,
-                        self._CYLINDER_TRASCENDENTAL_ROOTS)
+                    E_perpendicular[m] = cylinder.gaussian_phase_waveform(
+                        G_t, acquisition_scheme._dt, diameter, D)
 
         E = E_parallel * E_perpendicular
         return E
@@ -828,7 +733,6 @@ class C4CylinderGaussianPhaseApproximation(
         lambda_par = kwargs.get('lambda_par', self.lambda_par)
         mu = kwargs.get('mu', self.mu)
 
-        R = diameter / 2.0
         D = self.diffusion_perpendicular
 
         bvals = acquisition_scheme.bvalues
@@ -836,11 +740,8 @@ class C4CylinderGaussianPhaseApproximation(
         mu_cart = utils.unitsphere2cart_1d(mu)
 
         gamma_lm = acquisition_scheme.gamma_lm(l_max=4)
-        C_geom = _compute_C_geom(R, D, self._CYLINDER_TRASCENDENTAL_ROOTS)
         b_par = bvals * np.dot(n, mu_cart) ** 2
-        E = _cylinder_signal_from_gamma_lm(gamma_lm, b_par, C_geom, mu_cart, lambda_par)
-
-        return E
+        return cylinder.gaussian_phase_gamma_lm(gamma_lm, b_par, mu_cart, diameter, D, lambda_par)
 
     def signal_lm(self, acquisition_scheme, **kwargs):
         """Compute SH coefficients E_lm of the per-fiber cylinder GPA signal.
@@ -884,18 +785,11 @@ class C4CylinderGaussianPhaseApproximation(
         diameter = kwargs.get('diameter', self.diameter)
         lambda_par = float(kwargs.get('lambda_par', self.lambda_par))
 
-        R = diameter / 2.0
         D = self.diffusion_perpendicular
 
         gamma_lm = acquisition_scheme.gamma_lm(l_max=4)
-        C_geom = _compute_C_geom(R, D, self._CYLINDER_TRASCENDENTAL_ROOTS)
-
-        Gamma00 = gamma_lm[:, 0]
-        int_G2_dt = Gamma00 * np.sqrt(4.0 * np.pi)
-        Gamma2m = gamma_lm[:, 1:]          # (n_m, 5)
-
-        c0_perp = C_geom * (2.0 / 3.0) * int_G2_dt        # (n_m,)
-        c2m_perp = -C_geom * (8.0 * np.pi / 15.0) * Gamma2m  # (n_m, 5)
+        # the perpendicular exponent in the harmonics of the axis direction: c0 (n_m,) and c2m (n_m, 5)
+        c0_perp, c2m_perp = cylinder.gaussian_phase_exponent_coefficients(gamma_lm, diameter, D)
 
         B = acquisition_scheme.btensor()              # (n_m, 3, 3)
         n_m = B.shape[0]
@@ -935,253 +829,6 @@ def _waveform_directions_rotate(G):
     ref = G_hat[:, 0:1, :]                              # (n_m, 1, 3)
     cross = np.cross(G_hat, ref)                        # (n_m, n_t, 3)
     return bool(np.any(np.linalg.norm(cross, axis=-1) > 1e-6))
-
-
-def _compute_C_geom(R, D, roots):
-    """Scalar geometry factor for the fast-eigenmode Gamma_lm cylinder GPA path.
-
-    C_geom = gamma^2 * sum_k B_k / alpha_k
-
-    where B_k = 2*(R/mu_k)^2 / (mu_k^2 - 1) are the cylinder eigenmode
-    amplitude weights, alpha_k = (mu_k/R)^2 * D are the eigenmode decay rates,
-    and mu_k are the transcendental roots (zeros of J1').
-
-    This is valid in the fast-eigenmode limit: alpha_1 * sigma >> 1, where
-    sigma is the effective waveform duration (PGSE: delta; OGSE: 1/(2*f)).
-    For R=2 um, D=1.7e-9: tau_1 = 1/alpha_1 = R^2/(mu_1^2*D) ~ 0.7 ms.
-    Equivalently: f << alpha_1/(2*pi) ~ 230 Hz for R=2 um.
-    Breaks for high-frequency OGSE (f > ~alpha_1/(2*pi)) or ultra-short
-    PGSE pulses (delta < ~tau_1). The exact result requires the spectral
-    factorisation c_2m = integral a_2m(omega) * L(omega, alpha_1) domega.
-
-    Parameters
-    ----------
-    R : float
-        Cylinder radius in metres.
-    D : float
-        Perpendicular diffusivity in m^2/s.
-    roots : ndarray (n_roots,)
-        Transcendental roots mu_k (J1' zeros = _CYLINDER_TRASCENDENTAL_ROOTS).
-
-    Returns
-    -------
-    C_geom : float
-        Scalar geometry factor in SI units (s/m^2 per (T/m)^2 = s^3/(kg^2*m)).
-    """
-    gamma = GAMMA
-    mu_n = roots
-    B_k = 2.0 * (R / mu_n) ** 2 / (mu_n ** 2 - 1.0)
-    alpha_k = (mu_n / R) ** 2 * D
-    return gamma ** 2 * np.sum(B_k / alpha_k)
-
-
-def _eval_Y2m_at_direction(mu_cart):
-    """Evaluate the five l=2 real spherical harmonics at a Cartesian direction.
-
-    Parameters
-    ----------
-    mu_cart : (3,) array
-        Unit vector (cylinder axis direction).
-
-    Returns
-    -------
-    Y2m : (5,) array, float64
-        Values [Y2-2, Y2-1, Y20, Y21, Y22] at mu_cart.
-    """
-    x, y, z = mu_cart[0], mu_cart[1], mu_cart[2]
-    Y2m2 = np.sqrt(15.0 / (4.0 * np.pi)) * x * y
-    Y2m1 = np.sqrt(15.0 / (4.0 * np.pi)) * y * z
-    Y20  = np.sqrt(5.0 / (16.0 * np.pi)) * (2.0 * z**2 - x**2 - y**2)
-    Y21  = np.sqrt(15.0 / (4.0 * np.pi)) * x * z
-    Y22  = np.sqrt(15.0 / (16.0 * np.pi)) * (x**2 - y**2)
-    return np.array([Y2m2, Y2m1, Y20, Y21, Y22], dtype=np.float64)
-
-
-def _cylinder_signal_from_gamma_lm(gamma_lm, b_par, C_geom, mu_cart, lambda_par):
-    """Compute cylinder GPA signal from precomputed Gamma_lm coefficients.
-
-    Uses the fast-eigenmode factorisation of the GPA phase variance:
-
-        phi(mu) = C_geom * [2/3 * int|G|^2 dt - (8*pi/15) * sum_m Gamma_2m * Y2m(mu)]
-                + b_par * lambda_par
-
-    where int|G|^2 dt = Gamma_00 * sqrt(4*pi)  (inverse of Y00 normalisation).
-
-    This path is valid when the eigenmode decay time (~0.7 us for R < 10 um,
-    D ~ 1.7e-9) is far shorter than the gradient rotation period (~ms). The
-    cylinder geometry acts as an l=2 low-pass filter on the encoding, so only
-    l=0 and l=2 Gamma_lm contribute.
-
-    Parameters
-    ----------
-    gamma_lm : (n_m, 6) array
-        Columns: [Gamma_00, Gamma_2-2, Gamma_2-1, Gamma_20, Gamma_21, Gamma_22].
-    b_par : (n_m,) array
-        Parallel b-value for each measurement: bvalues * dot(n, mu)^2.
-    C_geom : float
-        Geometry factor from _compute_C_geom(R, D, roots).
-    mu_cart : (3,) array
-        Cylinder axis in Cartesian coordinates.
-    lambda_par : float
-        Parallel diffusivity in m^2/s.
-
-    Returns
-    -------
-    E : (n_m,) array
-        Signal attenuation in [0, 1].
-    """
-    # Gamma_00 column; recover int|G|^2 dt by inverting Y00 normalisation
-    Gamma00 = gamma_lm[:, 0]           # (n_m,)
-    int_G2_dt = Gamma00 * np.sqrt(4.0 * np.pi)   # = int |G(t)|^2 dt
-
-    # l=2 Gamma coefficients: columns 1-5
-    Gamma2m = gamma_lm[:, 1:]          # (n_m, 5)
-
-    # Y2m evaluated at cylinder axis mu
-    Y2m_mu = _eval_Y2m_at_direction(mu_cart)   # (5,)
-
-    # Perpendicular phase exponent (fast-eigenmode)
-    phi_perp = C_geom * (
-        (2.0 / 3.0) * int_G2_dt
-        - (8.0 * np.pi / 15.0) * Gamma2m.dot(Y2m_mu)
-    )
-
-    # Parallel phase exponent (Gaussian diffusion along axis)
-    phi_par = b_par * lambda_par
-
-    E = np.exp(-(phi_perp + phi_par))
-    return E
-
-
-def _attenuation_parallel_stick(bvals, lambda_par, n, mu):
-    "Free gaussian diffusion for parallel cylinder direction."
-    return np.exp(-bvals * lambda_par * np.dot(n, mu) ** 2)
-
-
-def _attenuation_perpendicular_gaussian_phase(
-        diameter, gradient_strength, delta, Delta,
-        D, gamma, CYLINDER_TRASCENDENTAL_ROOTS):
-    "Perpendicular Gaussian Phase signal attenuation."
-    radius = diameter / 2.
-    first_factor = -2 * (gradient_strength * gamma) ** 2
-    alpha = CYLINDER_TRASCENDENTAL_ROOTS / radius
-    alpha2 = alpha ** 2
-    alpha2D = alpha2 * D
-
-    summands = (
-        2 * alpha2D * delta - 2 +
-        2 * np.exp(-alpha2D * delta) +
-        2 * np.exp(-alpha2D * Delta) -
-        np.exp(-alpha2D * (Delta - delta)) -
-        np.exp(-alpha2D * (Delta + delta))
-    ) / (D ** 2 * alpha ** 6 * (radius ** 2 * alpha2 - 1))
-
-    E = np.exp(first_factor * summands.sum())
-    return E
-
-
-def _ogse_cosine_cylinder_signal(G, omega, sigma, D, R, roots):
-    """Evaluate GPA cylinder attenuation for pure cosine OGSE.
-
-    Uses the Stepisnik GPA formula:
-        φ = (γ²/2) Σ_n B_n ∫₀^σ ∫₀^σ G(t)G(t') exp(-λ_n D|t-t'|) dt dt'
-        E = exp(-φ)
-
-    where B_n = 2(R/μ_n)²/(μ_n²-1) and λ_n = (μ_n/R)² are the cylinder
-    eigenvalues (J₁' zeros: μ₁=1.8412, ...).
-
-    The double integral for G(t) = G₀ cos(ωt) on [0,σ] evaluates to:
-        I_n = (2/d) * [α*(σ/2 + s*c/(2ω)) - α*F_s + s²/2]
-    where α = λ_n D, d = α²+ω², c = cos(ωσ), s = sin(ωσ),
-    and F_s = (α(1-c·e^{-ασ}) + ω·s·e^{-ασ})/d is the one-sided integral.
-
-    Parameters
-    ----------
-    G : float, gradient amplitude (T/m) — perpendicular component
-    omega : float, angular frequency 2πf (rad/s)
-    sigma : float, total gradient duration (s)
-    D : float, perpendicular diffusion coefficient (m²/s)
-    R : float, cylinder radius (m)
-    roots : ndarray (n_roots,), _CYLINDER_TRASCENDENTAL_ROOTS (μ_n, J1' zeros)
-
-    Returns
-    -------
-    E_perp : float, perpendicular signal attenuation ∈ (0, 1]
-    """
-    gamma = GAMMA
-    mu_n = roots                        # shape (n_roots,)
-    lam_n = (mu_n / R) ** 2            # eigenvalues (m⁻²)
-    B_n = 2.0 * (R / mu_n) ** 2 / (mu_n ** 2 - 1.0)  # cylinder coefficients
-
-    alpha = lam_n * D                   # α_n = λ_n D  (s⁻¹)
-    denom = alpha ** 2 + omega ** 2     # (n_roots,)
-
-    c = np.cos(omega * sigma)
-    s = np.sin(omega * sigma)
-    e_asm = np.exp(-alpha * sigma)
-
-    # One-sided Laplace integral: F_s = ∫₀^σ cos(ωt) exp(-αt) dt
-    F_s = (alpha * (1.0 - c * e_asm) + omega * s * e_asm) / denom  # (n_roots,)
-
-    # Full symmetric double integral:
-    # I_n = ∫₀^σ ∫₀^σ cos(ωt) cos(ωt') exp(-α|t-t'|) dt dt'
-    #      = (2/d) * [α*(σ/2 + s*c/(2ω)) - α*F_s + s²/2]
-    I_n = (2.0 / denom) * (
-        alpha * (sigma / 2.0 + s * c / (2.0 * omega))
-        - alpha * F_s
-        + s ** 2 / 2.0
-    )
-
-    phi = 0.5 * gamma ** 2 * G ** 2 * np.sum(B_n * I_n)
-    return np.exp(-phi)
-
-
-def _ogse_numerical_cylinder_signal(G_t, dt, D, R, roots):
-    """Evaluate GPA cylinder attenuation numerically from G(t) waveform.
-
-    Uses the Stepisnik GPA formula:
-        φ = (γ²/2) Σ_n B_n ∫₀^σ ∫₀^σ G(t)G(t') exp(-λ_n D|t-t'|) dt dt'
-        E = exp(-φ)
-
-    The double integral is evaluated via the causal IIR factorisation:
-        I_n = 2·∫G(t)·H_n(t)·dt  where H_n(t) = ∫₀^t G(t')exp(-λ_nD(t-t'))dt'
-    with a diagonal correction to avoid double-counting:
-        I_n = 2·dot(G·dt, H_n) − dot(G,G)·dt²
-
-    Parameters
-    ----------
-    G_t : ndarray (n_t,), scalar gradient projection along perpendicular axis (T/m)
-    dt : float, timestep (s)
-    D : float, diffusion coefficient (m²/s)
-    R : float, cylinder radius (m)
-    roots : ndarray (n_roots,), _CYLINDER_TRASCENDENTAL_ROOTS
-
-    Returns
-    -------
-    E_perp : float
-    """
-    gamma = GAMMA
-    n_t = len(G_t)
-    G_f64 = G_t.astype(np.float64)
-
-    mu_n = roots
-    lam_n = (mu_n / R) ** 2             # (n_roots,)
-    B_n = 2.0 * (R / mu_n) ** 2 / (mu_n ** 2 - 1.0)
-
-    phi = 0.0
-    for k in range(len(mu_n)):
-        lk_D = lam_n[k] * D
-        decay_step = np.exp(-lk_D * dt)
-        H = np.zeros(n_t, dtype=np.float64)
-        H[0] = G_f64[0] * dt
-        for i in range(1, n_t):
-            H[i] = H[i - 1] * decay_step + G_f64[i] * dt
-        # I_k = ∫∫ G(t)G(t') e^{-lkD|t-t'|} dt dt'  (diagonal-corrected)
-        I_k = 2.0 * np.dot(G_f64 * dt, H) - np.dot(G_f64, G_f64) * dt ** 2
-        phi += B_n[k] * I_k
-
-    phi *= 0.5 * gamma ** 2
-    return np.exp(-phi)
 
 
 def E_lm_from_exponent_coeffs(c0, c2m, l_max=4):
@@ -1280,42 +927,9 @@ def dispersed_signal_from_E_lm(E_lm, odf_lm):
     return E_lm @ odf_lm
 
 
-def watson_odf_lm(mu_cart, kappa, l_max=4):
-    """Compute SH coefficients of the Watson ODF for given axis and concentration.
-
-    Uses the exact analytical erfi-based recurrence (no grid approximation).
-    The l=0 coefficient is exactly 1/(2*sqrt(pi)) for all kappa.
-
-    Parameters
-    ----------
-    mu_cart : (3,) ndarray
-        Mean orientation as a Cartesian unit vector.
-    kappa : float
-        Watson concentration parameter.  kappa=0 → isotropic; large kappa →
-        delta function at mu_cart.
-    l_max : int, optional
-        Maximum SH order.  Must be even.  Default 4.
-
-    Returns
-    -------
-    odf_lm : (n_lm,) ndarray, float64
-        SH coefficients (Tournier real SH half-shell ordering).
-        odf_lm[0] = 1/(2*sqrt(pi)) for any normalized Watson ODF.
-    """
-    from dmipy_replay.math.sh_analytical import watson_sh as _watson_sh
-    mu_cart = np.asarray(mu_cart, dtype=np.float64)
-    return _watson_sh(mu_cart, float(kappa), l_max=l_max)
-
-
-if have_numba:
-    _attenuation_parallel_stick = numba.njit()(_attenuation_parallel_stick)
-    _attenuation_perpendicular_gaussian_phase = numba.njit()(
-        _attenuation_perpendicular_gaussian_phase)
-
-
 class C5CylinderMatrixMethod(ModelProperties, AnisotropicSignalModelProperties):
     r"""Finite-radius cylinder whose perpendicular restriction is the Bloch-Torrey eigenmode propagator
-    of ``dmipy_sim.math.matrix_method`` (Callaghan 1997; Barzykin 1999; Grebenkov 2007): exact for a
+    of ``dmipy_analytic.restricted.matrix_method`` (Callaghan 1997; Barzykin 1999; Grebenkov 2007): exact for a
     piecewise-constant gradient waveform (one matrix exponential per run of constant amplitude), a
     Strang split of diffusion and precession otherwise, of which the Gaussian-phase model
     :class:`C4CylinderGaussianPhaseApproximation` is the low-b limit. Parallel diffusion is free
@@ -1335,7 +949,7 @@ class C5CylinderMatrixMethod(ModelProperties, AnisotropicSignalModelProperties):
     n_modes : int, optional
         Laplacian eigenmodes kept (accuracy knob; default 16 is converged well below 1e-4 for typical
         b). Increase for very high q or short gradient pulses. Mapped onto
-        ``dmipy_sim.math.matrix_method``'s ``(angular, radial)`` pair as
+        ``dmipy_analytic.restricted.matrix_method``'s ``(angular, radial)`` pair as
         ``(n_modes, max(4, n_modes // 2 + 2))``.
 
     See ``examples/02_signal_models/exact_matrix_method.md`` for a worked comparison against the

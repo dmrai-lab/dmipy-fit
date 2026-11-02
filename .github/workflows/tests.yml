@@ -8,26 +8,50 @@ on:
   workflow_dispatch:
 
 env:
-  # The 3.0 line is not on PyPI yet (dmipy-sim 3.0, dmipy-replay 0.2): CI installs each from the commit this
-  # revision was tested against (dmipy-sim: the head of dmipy-sim#883; dmipy-replay: the head of dmipy-replay#25, with
-  # `PoolSpec` and a sequence's b spelled `seq.b()`; a merge commit keeps each reachable on main). Drop both when the
-  # releases land and `pip install` resolves them from PyPI instead.
-  DMIPY_SIM_REF: 21753a2375780b2e53c651198be607f7c852c257
-  DMIPY_REPLAY_REF: 9594afe66251f29db707b63a0d826a375b0a250f
+  # The 3.0 line is not on PyPI yet (dmipy-sim 3.0, dmipy-replay 0.2, dmipy-analytic 3.0): CI installs each from the
+  # commit this revision was tested against (dmipy-sim: the head of dmipy-sim#884; dmipy-replay: the head of
+  # dmipy-replay#26, the siblings that import the moved forms from dmipy-analytic; dmipy-analytic: the head of
+  # dmipy-analytic#6, on top of the merged forms of dmipy-fit; a merge commit keeps each reachable on main). Drop all
+  # three when the releases land and `pip install` resolves them from PyPI instead.
+  DMIPY_SIM_REF: bdca10812227a1cb16da8c37ae8fc19e826a4131
+  DMIPY_REPLAY_REF: 6bf71fcdf693e9033935f9f459e125e97ef8cb17
+  DMIPY_ANALYTIC_REF: 9f9c8ca810e8e94c3076021269b3a4bbf5eafbba
 
 jobs:
   parity:
     # The signal forms bit for bit: every model's output on fixed acquisition grids (NumPy, and JAX in float32 and float64
-    # on the CPU) against tests/parity_analytic/record, in one pinned environment (tests/parity_analytic/constraints.txt,
-    # one BLAS thread, no numba). A change of a form's arithmetic fails here; a deliberate one regenerates the record.
+    # on the CPU), in one pinned environment (tests/parity_analytic/constraints.txt, one BLAS thread, no numba). The base
+    # revision of the change is recorded on this runner first, in the environment that revision pins, and the revision
+    # under test is compared with that: a change of a form's arithmetic fails here unless it re-baselines the case in
+    # tests/parity_analytic/record. (The committed record is bit for bit on the machine that made it; a runner of another
+    # CPU differs from it in the last bits of the libm and XLA routines the forms call.)
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check out the base revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.before }}
+          path: base
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: The machine
+        run: |
+          grep -m 1 "model name" /proc/cpuinfo
+          grep -m 1 "^flags" /proc/cpuinfo | tr ' ' '\n' | grep -E "^(avx|fma|bmi|f16c|sse4)" | sort | tr '\n' ' '
+          echo
+          ldd --version | head -n 1
+
+      - name: Record the base revision on this machine
+        run: |
+          cp base/tests/parity_analytic/record/manifest.json "$RUNNER_TEMP/base_manifest.json"
+          tests/parity_analytic/record_base.sh base "$RUNNER_TEMP/venv-base"
 
       - name: Install dependencies
         run: |
@@ -35,11 +59,17 @@ jobs:
           pip install -c tests/parity_analytic/constraints.txt \
                       "dmipy-sim @ git+https://github.com/dmrai-lab/dmipy-sim@${DMIPY_SIM_REF}" \
                       "dmipy-replay @ git+https://github.com/dmrai-lab/dmipy-replay@${DMIPY_REPLAY_REF}" \
+                      "dmipy-analytic[special,jax] @ git+https://github.com/dmrai-lab/dmipy-analytic@${DMIPY_ANALYTIC_REF}" \
                       "jax[cpu]" jaxopt scipy packaging
           pip install --no-deps -e .
 
-      - name: Compare with the parity record
-        run: python tests/parity_analytic/harness.py check
+      - name: The CPU features numpy dispatches on
+        run: python -c "import numpy; numpy.show_config()" | sed -n '/SIMD/,$p'
+
+      - name: Compare with the base revision
+        run: |
+          python tests/parity_analytic/harness.py check --reference base/tests/parity_analytic/record \
+                 --base-manifest "$RUNNER_TEMP/base_manifest.json"
 
   test:
     runs-on: ubuntu-latest
@@ -63,9 +93,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install "dmipy-sim @ git+https://github.com/dmrai-lab/dmipy-sim@${DMIPY_SIM_REF}" \
-                      "dmipy-replay @ git+https://github.com/dmrai-lab/dmipy-replay@${DMIPY_REPLAY_REF}"
-          # dmipy-fit's own bounds (dmipy-sim>=3,<4, dmipy-replay>=0.2,<0.3) name the releases above, so the package is
-          # installed without resolving them and its extras are listed here.
+                      "dmipy-replay @ git+https://github.com/dmrai-lab/dmipy-replay@${DMIPY_REPLAY_REF}" \
+                      "dmipy-analytic[special,jax] @ git+https://github.com/dmrai-lab/dmipy-analytic@${DMIPY_ANALYTIC_REF}"
+          # dmipy-fit's own bounds (dmipy-sim>=3,<4, dmipy-replay>=0.2,<0.3, dmipy-analytic>=3,<4) name the releases
+          # above, so the package is installed without resolving them and its extras are listed here.
           # dipy is the test oracle only (the `oracle` extra); the package never imports it
           pip install --no-deps -e .
           pip install "jax[cpu]>=0.6.2" "jaxopt>=0.8" "numba>=0.57" "nibabel>=5.0" "matplotlib>=3.5" "cvxpy>=1.3" \

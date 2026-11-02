@@ -7,12 +7,12 @@ jax = pytest.importorskip('jax')
 import jax.numpy as jnp
 
 from dmipy_fit.jax.jax_compat import scheme_to_jax, unitsphere2cart_1d_jax
-from dmipy_fit.jax.signal_models_jax import (
-    g1ball_signal,
-    c1stick_signal,
-    c1stick_spherical_mean,
-    g2zeppelin_signal,
-    g2zeppelin_spherical_mean,
+from dmipy_analytic.jax.gaussian import (
+    ball as g1ball_signal,
+    stick as c1stick_signal,
+    stick_powder_average as c1stick_spherical_mean,
+    zeppelin as g2zeppelin_signal,
+    zeppelin_powder_average as g2zeppelin_spherical_mean,
 )
 from dmipy_fit.signal_models.gaussian_models import G1Ball, G2Zeppelin
 from dmipy_fit.signal_models.cylinder_models import C1Stick

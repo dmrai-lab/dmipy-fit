@@ -16,7 +16,7 @@ from dmipy_replay.math.gradient_conversions import (
     g_from_b, g_from_q,
     q_from_b, q_from_g,
 )
-from dmipy_replay.constants import GAMMA
+from dmipy_analytic.constants import GAMMA
 
 
 # Typical HCP-style pulse parameters

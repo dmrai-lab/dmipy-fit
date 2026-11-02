@@ -252,7 +252,7 @@ def test_to_gradient_array_shape():
 
 def test_to_gradient_array_b_roundtrip():
     """b-values computed from to_gradient_array() match scheme.bvalues within 1%."""
-    from dmipy_replay.constants import GAMMA
+    from dmipy_analytic.constants import GAMMA
 
     scheme, _ = _make_pgse_scheme()
     G_arr, dt = scheme.to_gradient_array(n_t=1000)

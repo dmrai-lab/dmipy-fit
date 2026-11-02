@@ -27,7 +27,8 @@ os.environ.setdefault('XLA_PYTHON_CLIENT_PREALLOCATE', 'false')
 
 from dmipy_sim import simulate, Sphere
 from dmipy_replay.sequences import pgse
-from dmipy_replay.constants import GAMMA
+from dmipy_analytic.constants import GAMMA
+from dmipy_analytic.restricted import sphere
 from dmipy_fit.signal_models.sphere_models import S3SphereCallaghanApproximation
 
 # --- physics (kept in sync with TestS3SphereCallaghan) -----------------------
@@ -48,7 +49,8 @@ OUT = os.path.abspath(os.path.join(
 
 def main():
     s3 = S3SphereCallaghanApproximation(diffusion_constant=D)
-    E_s3 = s3.sphere_attenuation(Q_TARGETS, np.full_like(Q_TARGETS, TAU), DIAMETER)
+    E_s3 = sphere.sgp(Q_TARGETS, np.full_like(Q_TARGETS, TAU), DIAMETER, s3.Dintra, s3.number_of_roots,
+                      s3.number_of_functions)
     bvecs = np.tile([1., 0., 0.], (len(Q_TARGETS), 1))
 
     E_mc = np.zeros((len(DELTAS), len(Q_TARGETS)))

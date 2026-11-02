@@ -35,6 +35,8 @@ Normalization (SH path):
 import numpy as np
 import jax
 import jax.numpy as jnp
+from dmipy_analytic.jax import gaussian as jgaussian
+from dmipy_analytic.jax import relaxation as jrelaxation
 
 from .jax_compat import unitsphere2cart_1d_jax
 
@@ -132,18 +134,18 @@ def _build_sh_conv_arrays(max_sh_order):
 
 def _c1stick_rh_fn(b_shell, cos_sq_rh, _sin_sq_rh, params):
     """C1Stick at z-axis: exp(-b * lambda_par * cos²θ)."""
-    return jnp.exp(-b_shell * params['lambda_par'] * cos_sq_rh)
+    return jgaussian.stick_squared_cosine(b_shell, cos_sq_rh, params['lambda_par'])
 
 
 def _g2zeppelin_rh_fn(b_shell, cos_sq_rh, sin_sq_rh, params):
     """G2Zeppelin at z-axis: exp(-b*(lambda_par*cos²θ + lambda_perp*sin²θ))."""
-    return jnp.exp(-b_shell * (params['lambda_par'] * cos_sq_rh +
-                                params['lambda_perp'] * sin_sq_rh))
+    return jgaussian.zeppelin_squared_cosines(b_shell, cos_sq_rh, sin_sq_rh,
+                                              params['lambda_par'], params['lambda_perp'])
 
 
 def _g1ball_rh_fn(b_shell, cos_sq_rh, _sin_sq_rh, params):
     """G1Ball: isotropic → constant across angles."""
-    return jnp.exp(-b_shell * params['lambda_iso']) * jnp.ones_like(cos_sq_rh)
+    return jgaussian.ball(b_shell, params['lambda_iso']) * jnp.ones_like(cos_sq_rh)
 
 
 # Map from model class to RH function
@@ -292,7 +294,7 @@ def build_watson_sh_jax_fn(model_obj, acquisition_scheme):
                 if T2_val is not None and TE_arr is not None:
                     TE_shell = TE_arr[entry['indices']]
                     t2_factor = jnp.where(
-                        jnp.isfinite(T2_val), jnp.exp(-TE_shell / T2_val), 1.0)
+                        jnp.isfinite(T2_val), jrelaxation.transverse_decay(TE_shell, T2_val), 1.0)
                     E_inner_shell = E_inner_shell * t2_factor
 
                 E_shell = E_shell + vf * E_inner_shell
@@ -429,7 +431,7 @@ def build_bingham_sh_jax_fn(model_obj, acquisition_scheme):
                 if T2_val is not None and TE_arr is not None:
                     TE_shell = TE_arr[entry['indices']]
                     t2_factor = jnp.where(
-                        jnp.isfinite(T2_val), jnp.exp(-TE_shell / T2_val), 1.0)
+                        jnp.isfinite(T2_val), jrelaxation.transverse_decay(TE_shell, T2_val), 1.0)
                     E_inner_shell = E_inner_shell * t2_factor
 
                 E_shell = E_shell + vf * E_inner_shell

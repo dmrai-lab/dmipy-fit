@@ -1,8 +1,8 @@
 from ..core.modeling_framework import ModelProperties
 from ..core.signal_model_properties import IsotropicSignalModelProperties
 from ..core.constants import CONSTANTS
-from dmipy_replay.constants import GAMMA
-from scipy import special
+from dmipy_analytic.constants import GAMMA
+from dmipy_analytic.restricted import sphere
 import numpy as np
 
 from ..core.constants import DIAMETER_SCALING
@@ -16,105 +16,6 @@ __all__ = [
     'S5SphereMatrixMethod',
     'S6MonteCarloReplaySphere',
 ]
-
-
-# ---------------------------------------------------------------------------
-# Module-level free functions (used by both S4 numpy __call__ and Phase 3/4)
-# ---------------------------------------------------------------------------
-
-
-def _ogse_numerical_sphere_signal(G_t, dt, D, R, roots):
-    """Evaluate GPA sphere attenuation numerically from G(t) waveform.
-
-    Uses the general GPA formula (Xu 2009 Eq. 3 / Murday-Cotts generalization):
-
-        φ = (γ²/2) Σ_k B_k ∫∫ G(t₁) G(t₂) exp(-a_k D |t₁-t₂|) dt₁ dt₂
-        E = exp(-φ)
-
-    where B_k = 2(R/μ_k)²/(μ_k²-2) and a_k = (μ_k/R)².
-
-    The double integral is evaluated efficiently as:
-        I_k = Σ_{i,j} G(tᵢ) G(tⱼ) exp(-a_k D |tᵢ-tⱼ|) dt²
-            = || G_t ⊗ exp(-a_k D t) ||² * dt² (one-sided decomposition)
-
-    To avoid the O(n_t²) cost, we use the one-sided formulation:
-        For each k: A_k(t) = ∫₀^t G(t') exp(-a_k D t') dt'
-        Then:       I_k = 2 * ∫ G(t) * A_k(t) * exp(a_k D t) * dt * exp(-a_k D ... )
-    which factorises into a convolution and is O(n_t) per eigenmode.
-
-    More concretely: I_k = Σ_t Σ_t' G(t)G(t') exp(-a_k D|t-t'|) dt²
-    We compute this via the identity:
-        I_k = (||forward_k||² + ||backward_k||²) * dt²
-    where:
-        forward_k[n]  = Σ_{j≤n} G(tⱼ) exp(-a_k D (t_n - t_j)) dt
-        backward_k[n] = Σ_{j≥n} G(tⱼ) exp(-a_k D (t_j - t_n)) dt
-    but these require O(n_t²) memory for the outer product. Instead we use:
-        I_k = 2 * real(F_+_k² - diagonal correction) approach,
-    but the simplest numerically stable O(n_t log n_t) approach is via FFT.
-
-    For simplicity and correctness at n_t~1000-2000, we implement the O(n_t²)
-    double sum directly using broadcasting, but limit the number of roots
-    to avoid excessive memory use. At n_t=1000, n_roots=100: memory is
-    100 * 1000² * 8 bytes = 800 MB, too large. So we loop over roots.
-
-    Parameters
-    ----------
-    G_t : ndarray (n_t,), scalar gradient projection along diffusion axis (T/m)
-    dt : float, timestep (s)
-    D : float, diffusion coefficient (m²/s)
-    R : float, sphere radius (m)
-    roots : ndarray (n_roots,), SPHERE_TRASCENDENTAL_ROOTS
-
-    Returns
-    -------
-    E : float
-    """
-    gamma = GAMMA
-    n_t = len(G_t)
-    t = np.arange(n_t, dtype=np.float64) * dt
-    G_t = np.asarray(G_t, dtype=np.float64)
-
-    mu_k = np.asarray(roots, dtype=np.float64)
-    lam_k = (mu_k / R) ** 2             # (n_roots,)
-    B_k = 2.0 * (R / mu_k) ** 2 / (mu_k ** 2 - 2.0)
-
-    # Use the causal factorisation to compute the double integral efficiently.
-    # I_k = ∫∫ G(t₁)G(t₂) exp(-lkD*|t₁-t₂|) dt₁ dt₂
-    #     = 2 ∫₀^T G(t₁) [∫₀^{t₁} G(t₂) exp(-lkD*(t₁-t₂)) dt₂] dt₁   (by symmetry)
-    #     = 2 ∫₀^T G(t₁) exp(-lkD*t₁) * [∫₀^{t₁} G(t₂) exp(lkD*t₂) dt₂] dt₁
-    # Let H(t) = ∫₀^t G(t') exp(lkD*t') dt'  (causal integral)
-    # Then I_k = 2 * ∫₀^T G(t) exp(-lkD*t) * H(t) dt
-    # H(t) is computed via cumulative trapezoidal sum.
-    # This is O(n_t) per eigenmode — no memory issue.
-
-    phi = 0.0
-    G_f64 = G_t.astype(np.float64)
-    for k in range(len(mu_k)):
-        lkd = lam_k[k] * D             # scalar
-
-        # Numerically stable cumulative integral:
-        # H_n = Σ_{j=0}^{n} G(t_j) exp(lkd*(t_j - t_n)) * dt
-        #     = Σ_{j=0}^{n} G(t_j) exp(-lkd*(t_n - t_j)) * dt
-        # This is the causal convolution with exp(-lkd*t) kernel.
-        # We compute it by noting:
-        #   H_n = H_{n-1} * exp(-lkd*dt) + G(t_n)*dt
-        # (first-order IIR filter with decay exp(-lkd*dt))
-        decay_step = np.exp(-lkd * dt)  # scalar
-
-        H = np.zeros(n_t)
-        H[0] = G_f64[0] * dt
-        for n in range(1, n_t):
-            H[n] = H[n - 1] * decay_step + G_f64[n] * dt
-
-        # I_k = 2 * Σ_n G(t_n) * H(t_n) * dt
-        # (H_n already contains exp(-lkd*(t_n - t_j)) factors)
-        # Caution: the causal sum 2*Σ_{n≥j} counts the diagonal (n=j) twice.
-        # The correct double integral counts it once, so subtract Σ G[n]² dt².
-        I_k = 2.0 * np.dot(G_f64 * dt, H) - np.dot(G_f64, G_f64) * dt ** 2
-        phi += B_k[k] * I_k
-
-    phi *= 0.5 * gamma ** 2  # phi = (γ²/2) * Σ B_k * I_k
-    return np.exp(-phi)
 
 
 class S1Dot(ModelProperties, IsotropicSignalModelProperties):
@@ -217,19 +118,6 @@ class S2SphereStejskalTannerApproximation(
     def __init__(self, diameter=None):
         self.diameter = diameter
 
-    def sphere_attenuation(self, q, diameter):
-        "The signal attenuation for the sphere model."
-        radius = diameter / 2
-        factor = 2 * np.pi * q * radius
-        E = (
-            3 / (factor ** 2) *
-            (
-                np.sin(factor) / factor -
-                np.cos(factor)
-            )
-        ) ** 2
-        return E
-
     def __call__(self, acquisition_scheme, use_jax=False, **kwargs):
         r'''
         Calculates the signal attenation.
@@ -250,42 +138,12 @@ class S2SphereStejskalTannerApproximation(
         '''
         diameter = kwargs.get('diameter', self.diameter)
         if use_jax:
+            from dmipy_analytic.jax.restricted import sphere as jsphere
             from ..jax.jax_compat import scheme_to_jax
-            from ..jax.signal_models_jax import s2sphere_signal
-            import jax.numpy as jnp
             scheme_jax = scheme_to_jax(acquisition_scheme)
-            return np.array(s2sphere_signal(scheme_jax['qvalues'],
-                                            float(diameter)))
+            return np.array(jsphere.sgp_long_time(scheme_jax['qvalues'], float(diameter)))
         q = acquisition_scheme.qvalues
-        E_sphere = np.ones_like(q)
-        q_nonzero = q > 0  # only q>0 attenuate
-        E_sphere[q_nonzero] = self.sphere_attenuation(
-            q[q_nonzero], diameter)
-        return E_sphere
-
-
-def _spherical_jn_prime_roots(n, n_roots):
-    """First ``n_roots`` positive roots of d/dx[j_n(x)] = 0.
-
-    These are the reflecting (Neumann) boundary-condition eigenvalues for a sphere,
-    one set per spherical-harmonic order ``n``. (Contrast with ``special.jnp_zeros``,
-    which returns *cylinder* Bessel-derivative roots — the bug this replaced.)
-    """
-    from scipy.optimize import brentq
-    xmax = (n_roots + n + 2) * np.pi
-    xs = np.linspace(1e-6, xmax, int(xmax * 6) + 2)
-    f = special.spherical_jn(n, xs, derivative=True)
-    roots = []
-    for i in range(len(xs) - 1):
-        if f[i] == 0.0:
-            roots.append(xs[i])
-        elif f[i] * f[i + 1] < 0:
-            roots.append(brentq(
-                lambda x: special.spherical_jn(n, x, derivative=True),
-                xs[i], xs[i + 1]))
-        if len(roots) >= n_roots:
-            break
-    return np.array(roots[:n_roots])
+        return sphere.sgp_long_time(q, diameter)  # only q>0 attenuate
 
 
 class S3SphereCallaghanApproximation(
@@ -350,65 +208,8 @@ class S3SphereCallaghanApproximation(
 
         self.diameter = diameter
         self.Dintra = diffusion_constant
-        # Neumann-BC eigenvalues alpha[n, k]: the k-th positive root of j_n'(x) = 0,
-        # one set of roots per spherical-harmonic order n. The n=0 order carries the
-        # alpha = 0 ground state (uniform mode) as its first entry — that term is the
-        # SGP long-time structure factor.
-        self.alpha = np.zeros((number_of_functions, number_of_roots))
-        for n in range(number_of_functions):
-            if n == 0:
-                self.alpha[0, 1:] = _spherical_jn_prime_roots(
-                    0, number_of_roots - 1)
-            else:
-                self.alpha[n, :] = _spherical_jn_prime_roots(n, number_of_roots)
-
-    def sphere_attenuation(self, q, tau, diameter):
-        r"""Finite-time Callaghan (1995) restricted-sphere echo attenuation (SGP).
-
-        .. math::
-            E(q,\tau) = |F(x)|^2 + 6 \sum_{n,k:\,\alpha_{nk}>0} (2n+1)
-            \frac{\alpha_{nk}^2}{\alpha_{nk}^2 - n(n+1)}
-            \left[\frac{x\,j_n'(x)}{x^2 - \alpha_{nk}^2}\right]^2
-            e^{-\alpha_{nk}^2 D \tau / R^2},
-
-        with :math:`x = 2\pi q R`, :math:`F(x) = 3(\sin x - x\cos x)/x^3` the
-        uniform-sphere structure factor (the :math:`\alpha=0` ground state, i.e. the
-        SGP long-time limit), :math:`\alpha_{nk}` the Neumann-BC roots of
-        :math:`j_n'`, and :math:`j_n` the spherical Bessel function. The prefactor 6
-        and the ground state together satisfy completeness: :math:`E(\tau\to 0)=1`.
-        """
-        radius = diameter / 2.0
-        radius2 = radius ** 2
-        D = self.Dintra
-        x = 2 * np.pi * q * radius
-        x2 = x ** 2
-
-        # ground state (alpha = 0): uniform-sphere structure factor, no decay
-        with np.errstate(divide='ignore', invalid='ignore'):
-            struct = np.where(x > 0,
-                              3.0 * (np.sin(x) - x * np.cos(x)) / x ** 3,
-                              1.0)
-        E = struct ** 2
-
-        for n in range(self.alpha.shape[0]):
-            jn = special.spherical_jn(n, x)
-            jn_prime = special.spherical_jn(n, x, derivative=True)
-            for k in range(self.alpha.shape[1]):
-                a = self.alpha[n, k]
-                if a == 0.0:
-                    continue
-                a2 = a * a
-                Cn = a2 / (a2 - n * (n + 1))
-                denom = x2 - a2
-                # x j_n'(x)/(x^2 - alpha^2) is 0/0 at the resonance x = alpha
-                # (alpha is a root of j_n'); use the L'Hopital limit there.
-                near = np.abs(denom) < 1e-9 * (1.0 + a2)
-                M_reg = x * jn_prime / np.where(near, 1.0, denom)
-                M_lim = -(a2 - n * (n + 1)) * jn / (2.0 * a2)
-                M = np.where(near, M_lim, M_reg)
-                E = E + 6.0 * (2 * n + 1) * Cn * M ** 2 * \
-                    np.exp(-a2 * D * tau / radius2)
-        return E
+        self.number_of_roots = number_of_roots
+        self.number_of_functions = number_of_functions
 
     def __call__(self, acquisition_scheme, **kwargs):
         r'''
@@ -430,12 +231,7 @@ class S3SphereCallaghanApproximation(
         tau = acquisition_scheme.tau
         diameter = kwargs.get('diameter', self.diameter)
 
-        E_sphere = np.ones_like(q)
-        q_nonzero = q > 0
-        E_sphere[q_nonzero] = self.sphere_attenuation(
-            q[q_nonzero], tau[q_nonzero], diameter
-        )
-        return E_sphere
+        return sphere.sgp(q, tau, diameter, self.Dintra, self.number_of_roots, self.number_of_functions)
 
 
 class S4SphereGaussianPhaseApproximation(
@@ -481,39 +277,6 @@ class S4SphereGaussianPhaseApproximation(
     }
     _model_type = 'CompartmentModel'
 
-    # According to Balinov et al., solutions of
-    # 1/(alpha * R) * J(3/2,alpha * R) = J(5/2, alpha * R)
-    # with R = 1 with alpha * R < 100 * pi
-    SPHERE_TRASCENDENTAL_ROOTS = np.r_[
-        # 0.,
-        2.081575978, 5.940369990, 9.205840145,
-        12.40444502, 15.57923641, 18.74264558, 21.89969648,
-        25.05282528, 28.20336100, 31.35209173, 34.49951492,
-        37.64596032, 40.79165523, 43.93676147, 47.08139741,
-        50.22565165, 53.36959180, 56.51327045, 59.65672900,
-        62.80000055, 65.94311190, 69.08608495, 72.22893775,
-        75.37168540, 78.51434055, 81.65691380, 84.79941440,
-        87.94185005, 91.08422750, 94.22655255, 97.36883035,
-        100.5110653, 103.6532613, 106.7954217, 109.9375497,
-        113.0796480, 116.2217188, 119.3637645, 122.5057870,
-        125.6477880, 128.7897690, 131.9317315, 135.0736768,
-        138.2156061, 141.3575204, 144.4994207, 147.6413080,
-        150.7831829, 153.9250463, 157.0668989, 160.2087413,
-        163.3505741, 166.4923978, 169.6342129, 172.7760200,
-        175.9178194, 179.0596116, 182.2013968, 185.3431756,
-        188.4849481, 191.6267147, 194.7684757, 197.9102314,
-        201.0519820, 204.1937277, 207.3354688, 210.4772054,
-        213.6189378, 216.7606662, 219.9023907, 223.0441114,
-        226.1858287, 229.3275425, 232.4692530, 235.6109603,
-        238.7526647, 241.8943662, 245.0360648, 248.1777608,
-        251.3194542, 254.4611451, 257.6028336, 260.7445198,
-        263.8862038, 267.0278856, 270.1695654, 273.3112431,
-        276.4529189, 279.5945929, 282.7362650, 285.8779354,
-        289.0196041, 292.1612712, 295.3029367, 298.4446006,
-        301.5862631, 304.7279241, 307.8695837, 311.0112420,
-        314.1528990
-    ]
-
     def __init__(
         self, diameter=None,
         diffusion_constant=CONSTANTS['water_in_axons_diffusion_constant'],
@@ -521,38 +284,6 @@ class S4SphereGaussianPhaseApproximation(
         self.diffusion_constant = diffusion_constant
         self.gyromagnetic_ratio = GAMMA
         self.diameter = diameter
-
-    def sphere_attenuation(
-        self, gradient_strength, delta, Delta, diameter
-    ):
-        "Calculates the sphere signal attenuation."
-
-        D = self.diffusion_constant
-        gamma = self.gyromagnetic_ratio
-        radius = diameter / 2
-
-        alpha = self.SPHERE_TRASCENDENTAL_ROOTS / radius
-        alpha2 = alpha ** 2
-        alpha2D = alpha2 * D
-
-        first_factor = -2 * (gamma * gradient_strength) ** 2 / D
-        summands = (
-            alpha ** (-4) / (alpha2 * radius ** 2 - 2) *
-            (
-                2 * delta - (
-                    2 +
-                    np.exp(-alpha2D * (Delta - delta)) -
-                    2 * np.exp(-alpha2D * delta) -
-                    2 * np.exp(-alpha2D * Delta) +
-                    np.exp(-alpha2D * (Delta + delta))
-                ) / (alpha2D)
-            )
-        )
-        E = np.exp(
-            first_factor *
-            summands.sum()
-        )
-        return E
 
     def __call__(self, acquisition_scheme, **kwargs):
         r'''
@@ -613,9 +344,8 @@ class S4SphereGaussianPhaseApproximation(
                     continue
                 Em = 1.0
                 for i in range(3):
-                    Em *= _ogse_numerical_sphere_signal(
-                        G_vec[:, i], dt, D, R,
-                        self.SPHERE_TRASCENDENTAL_ROOTS)
+                    Em *= sphere.gaussian_phase_waveform(
+                        G_vec[:, i], dt, diameter, D)
                 E[m] = Em
             return E
 
@@ -639,13 +369,9 @@ class S4SphereGaussianPhaseApproximation(
             delta = acquisition_scheme.delta
             Delta = acquisition_scheme.Delta
             g_nonzero = g > 0
-            unique_deltas = np.unique([delta, Delta], axis=1)
-            for delta_, Delta_ in zip(*unique_deltas):
-                mask = np.all([g_nonzero, delta == delta_, Delta == Delta_],
-                              axis=0)
-                E_sphere[mask] = self.sphere_attenuation(
-                    g[mask], delta_, Delta_, diameter
-                )
+            E_sphere[g_nonzero] = sphere.gaussian_phase(
+                g[g_nonzero], delta[g_nonzero], Delta[g_nonzero], diameter, D,
+                gamma=self.gyromagnetic_ratio)
         else:
             # ----------------------------------------------------------------
             # Mixed or pure OGSE path — dispatch per measurement
@@ -659,11 +385,13 @@ class S4SphereGaussianPhaseApproximation(
                 if freq_m == 0:
                     # PGSE measurement inside a mixed scheme
                     if g is not None and g[m] > 0:
-                        E_sphere[m] = float(np.asarray(self.sphere_attenuation(
+                        E_sphere[m] = float(np.asarray(sphere.gaussian_phase(
                             np.atleast_1d(g[m]),
                             float(delta[m]),
                             float(Delta[m]),
                             diameter,
+                            D,
+                            gamma=self.gyromagnetic_ratio,
                         )).reshape(-1)[0])
                 else:
                     # OGSE measurement
@@ -688,9 +416,8 @@ class S4SphereGaussianPhaseApproximation(
                         else:
                             g_hat = np.r_[1., 0., 0.]
                         G_t = G_t_vec @ g_hat  # (n_t,) signed projection
-                        E_sphere[m] = _ogse_numerical_sphere_signal(
-                            G_t, acquisition_scheme._dt, D, R,
-                            self.SPHERE_TRASCENDENTAL_ROOTS)
+                        E_sphere[m] = sphere.gaussian_phase_waveform(
+                            G_t, acquisition_scheme._dt, diameter, D)
                     else:
                         # Pure cosine OGSE: numerical path from stored waveform
                         # (same as trapezoidal but uses pure cosine G(t))
@@ -703,16 +430,15 @@ class S4SphereGaussianPhaseApproximation(
                         else:
                             g_hat = np.r_[1., 0., 0.]
                         G_t = G_t_vec @ g_hat  # (n_t,) signed projection
-                        E_sphere[m] = _ogse_numerical_sphere_signal(
-                            G_t, acquisition_scheme._dt, D, R,
-                            self.SPHERE_TRASCENDENTAL_ROOTS)
+                        E_sphere[m] = sphere.gaussian_phase_waveform(
+                            G_t, acquisition_scheme._dt, diameter, D)
 
         return E_sphere
 
 
 class S5SphereMatrixMethod(ModelProperties, IsotropicSignalModelProperties):
     r"""Sphere whose restricted signal is the Bloch-Torrey eigenmode propagator of
-    ``dmipy_sim.math.matrix_method`` (Callaghan 1997; Grebenkov 2007): exact for a piecewise-constant
+    ``dmipy_analytic.restricted.matrix_method`` (Callaghan 1997; Grebenkov 2007): exact for a piecewise-constant
     gradient waveform (one matrix exponential per run of constant amplitude), a Strang split of
     diffusion and precession otherwise, of which the Gaussian-phase model
     :class:`S4SphereGaussianPhaseApproximation` is the low-b limit. Consumes the stored gradient
@@ -727,7 +453,7 @@ class S5SphereMatrixMethod(ModelProperties, IsotropicSignalModelProperties):
     n_modes : int, optional
         Laplacian eigenmodes kept (accuracy knob; default 16 is converged well below 1e-4 for typical
         b). Increase for very high q or short gradient pulses. Mapped onto
-        ``dmipy_sim.math.matrix_method``'s ``(angular, radial)`` pair as
+        ``dmipy_analytic.restricted.matrix_method``'s ``(angular, radial)`` pair as
         ``(n_modes, max(4, n_modes // 2 + 2))``.
 
     See ``examples/02_signal_models/exact_matrix_method.md`` for a worked comparison against the

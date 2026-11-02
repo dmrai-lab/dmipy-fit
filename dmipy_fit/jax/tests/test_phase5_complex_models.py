@@ -16,8 +16,8 @@ from dmipy_fit.signal_models.cylinder_models import (
     C3CylinderCallaghanApproximation,
     C4CylinderGaussianPhaseApproximation,
 )
+from dmipy_analytic.jax.restricted.sphere import sgp_long_time as s2sphere_signal
 from dmipy_fit.jax.signal_models_jax import (
-    s2sphere_signal,
     c2cylinder_signal,
     c4cylinder_signal,
     build_c3cylinder_jax_fn,
@@ -131,16 +131,15 @@ class TestC4CylinderJax:
     def _get_jax_params(self, hcp_scheme):
         model = C4CylinderGaussianPhaseApproximation()
         scheme_jax = scheme_to_jax(hcp_scheme)
-        roots_jax = jnp.array(model._CYLINDER_TRASCENDENTAL_ROOTS)
         D = float(model.diffusion_perpendicular)
         gamma = float(model.gyromagnetic_ratio)
-        return scheme_jax, roots_jax, D, gamma
+        return scheme_jax, D, gamma
 
     def test_matches_numpy(self, hcp_scheme, mu_cart):
         model = C4CylinderGaussianPhaseApproximation()
         E_np = model(hcp_scheme, mu=MU, lambda_par=LAMBDA_PAR, diameter=DIAMETER)
 
-        scheme_jax, roots_jax, D, gamma = self._get_jax_params(hcp_scheme)
+        scheme_jax, D, gamma = self._get_jax_params(hcp_scheme)
         E_jax = c4cylinder_signal(
             scheme_jax['bvalues'],
             scheme_jax['gradient_directions'],
@@ -150,28 +149,28 @@ class TestC4CylinderJax:
             mu_cart,
             jnp.array(LAMBDA_PAR),
             jnp.array(DIAMETER),
-            D, gamma, roots_jax,
+            D, gamma,
         )
         assert_allclose(np.array(E_jax), E_np, rtol=1e-5, atol=1e-8)
 
     def test_jit_compiles(self, hcp_scheme, mu_cart):
-        scheme_jax, roots_jax, D, gamma = self._get_jax_params(hcp_scheme)
+        scheme_jax, D, gamma = self._get_jax_params(hcp_scheme)
         fn = jax.jit(c4cylinder_signal, static_argnums=())
         E = fn(scheme_jax['bvalues'], scheme_jax['gradient_directions'],
                scheme_jax['gradient_strengths'], scheme_jax['delta'],
                scheme_jax['Delta'], mu_cart,
-               jnp.array(LAMBDA_PAR), jnp.array(DIAMETER), D, gamma, roots_jax)
+               jnp.array(LAMBDA_PAR), jnp.array(DIAMETER), D, gamma)
         assert jnp.isfinite(E).all()
 
     def test_grad_finite(self, hcp_scheme, mu_cart):
-        scheme_jax, roots_jax, D, gamma = self._get_jax_params(hcp_scheme)
+        scheme_jax, D, gamma = self._get_jax_params(hcp_scheme)
 
         def loss(d):
             return jnp.sum(c4cylinder_signal(
                 scheme_jax['bvalues'], scheme_jax['gradient_directions'],
                 scheme_jax['gradient_strengths'], scheme_jax['delta'],
                 scheme_jax['Delta'], mu_cart,
-                jnp.array(LAMBDA_PAR), d, D, gamma, roots_jax))
+                jnp.array(LAMBDA_PAR), d, D, gamma))
         g = jax.grad(loss)(jnp.array(DIAMETER))
         assert jnp.isfinite(g)
 
@@ -186,7 +185,8 @@ class TestC3CylinderJax:
         E_np = model(hcp_scheme, mu=MU, lambda_par=LAMBDA_PAR, diameter=DIAMETER)
 
         scheme_jax = scheme_to_jax(hcp_scheme)
-        fn = build_c3cylinder_jax_fn(model.alpha, model.diffusion_perpendicular)
+        fn = build_c3cylinder_jax_fn(
+            model.number_of_roots, model.number_of_functions, model.diffusion_perpendicular)
         E_jax = fn(
             scheme_jax['bvalues'],
             scheme_jax['gradient_directions'],
@@ -202,7 +202,8 @@ class TestC3CylinderJax:
         model = C3CylinderCallaghanApproximation()
         scheme_jax = scheme_to_jax(hcp_scheme)
         fn = jax.jit(
-            build_c3cylinder_jax_fn(model.alpha, model.diffusion_perpendicular)
+            build_c3cylinder_jax_fn(
+            model.number_of_roots, model.number_of_functions, model.diffusion_perpendicular)
         )
         E = fn(
             scheme_jax['bvalues'],
@@ -218,7 +219,8 @@ class TestC3CylinderJax:
     def test_grad_finite(self, hcp_scheme, mu_cart):
         model = C3CylinderCallaghanApproximation()
         scheme_jax = scheme_to_jax(hcp_scheme)
-        inner_fn = build_c3cylinder_jax_fn(model.alpha, model.diffusion_perpendicular)
+        inner_fn = build_c3cylinder_jax_fn(
+            model.number_of_roots, model.number_of_functions, model.diffusion_perpendicular)
 
         def loss(d):
             return jnp.sum(inner_fn(
