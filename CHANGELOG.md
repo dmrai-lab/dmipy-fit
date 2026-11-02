@@ -52,7 +52,7 @@ microstructure maps. It is the analytical inverse of the dmipy ecosystem: the eq
 - **Acquisition.** `AcquisitionScheme` reads a `ScannerSequence` (dmipy-replay's acquisition object, built by the
   `pgse`, `pgste`, `ogse`, `cpmg`, `ste` and `pte` builders) or a `Protocol` of them.
 - **Pairs with** dmipy-analytic `>=3,<4` (`[special]`, and `[jax]` in the `jax` and `jax-gpu` extras), dmipy-sim `>=3,<4` and
-  dmipy-replay `>=0.2,<0.3`. Python >= 3.10, NumPy >= 2.0, SciPy >= 1.10;
+  dmipy-replay `>=0.2,<0.3`. Python >= 3.10, NumPy >= 2.0, SciPy >= 1.11;
   extras `jax`, `jax-gpu`, `torch`, `speed`, `data`, `hub`, `viz`, `legacy`, `oracle` and `all`.
 - **Licence** AGPL-3.0-only or commercial.
 
