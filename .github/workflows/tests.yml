@@ -9,12 +9,11 @@ on:
 
 env:
   # The 3.0 line is not on PyPI yet (dmipy-sim 3.0, dmipy-replay 0.2): CI installs each from the commit this
-  # revision was tested against (dmipy-sim: the head of dmipy-sim#873, the replay move's S3b, after which dmipy-sim has
-  # no ReplayPack; dmipy-replay: the merge of dmipy-replay#20, R6, on its main, which holds the pose replay, the study
-  # and the phantoms). Move the dmipy-sim ref to its merge on main when it merges, and drop both when the releases land
-  # and `pip install` resolves them from PyPI instead.
-  DMIPY_SIM_REF: 87618f8984747e127a8ff4f929d60eb148a1ecda
-  DMIPY_REPLAY_REF: 85da6252d57b31dd55aaeb1038acea5856630a8d
+  # revision was tested against (dmipy-sim: the head of dmipy-sim#883; dmipy-replay: the head of dmipy-replay#25, with
+  # `PoolSpec` and a sequence's b spelled `seq.b()`; a merge commit keeps each reachable on main). Drop both when the
+  # releases land and `pip install` resolves them from PyPI instead.
+  DMIPY_SIM_REF: 21753a2375780b2e53c651198be607f7c852c257
+  DMIPY_REPLAY_REF: 9594afe66251f29db707b63a0d826a375b0a250f
 
 jobs:
   test:
