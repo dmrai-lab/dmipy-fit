@@ -73,7 +73,7 @@ def test_exterior_sv_derived_from_gamma():
     """S_ext/V of the extra compartment is derived from the Gamma diameter distribution
     (the sim-consistent closed form), not hand-set, and is overridable."""
     from dmipy_fit.white_matter.composition import white_matter_compartments, DEFAULTS
-    from dmipy_fit.white_matter.surface import exterior_surface_to_volume
+    from dmipy_analytic.relaxation import exterior_surface_to_volume
     comps = white_matter_compartments()
     sv = comps[1].factors[0].S_ext_over_V           # extra Zeppelin, ExteriorSurfaceRelaxivity
     expected = exterior_surface_to_volume(
