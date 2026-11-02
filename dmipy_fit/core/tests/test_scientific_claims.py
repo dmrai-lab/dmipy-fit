@@ -3,7 +3,7 @@ Validation tests for scientific ledger hypotheses.
 
 SC-010  τ = Δ−δ/3 PGSE b-value formula
 SC-012  SH convolution eigenvalue √(4π/(2L+1))
-SC-013  calc_b() (dmipy-sim) vs b_from_g() (dmipy-core) agree within 0.1%
+SC-013  seq.b() vs b_from_g() (both dmipy-replay) agree within 0.1%
 SC-014  Watson at κ→0 (odi→1) equals spherical mean of kernel
 SC-016  water_diffusion_constant default is 37°C (in-vivo human)
 """
@@ -120,25 +120,23 @@ class TestSHConvolutionEigenvalue:
 
 
 # ---------------------------------------------------------------------------
-# SC-013  calc_b (dmipy-sim) vs b_from_g (dmipy-core) agree within 0.1%
+# SC-013  seq.b() vs b_from_g (both dmipy-replay) agree within 0.1%
 # ---------------------------------------------------------------------------
 
-class TestCalcBBridge:
-    """dmipy-sim calc_b() vs dmipy-core b_from_g() for PGSE waveforms."""
+class TestSequenceBBridge:
+    """A sequence's b, ``seq.b()``, vs the closed form ``b_from_g()`` for PGSE waveforms."""
 
     @pytest.fixture(autouse=True)
-    def _import_sim(self):
-        from dmipy_replay.acquisition.waveforms import calc_b
+    def _import_builders(self):
         from dmipy_replay.sequences import pgse
         self.pgse = pgse
-        self.calc_b = calc_b
 
     @pytest.mark.parametrize("delta,Delta,G_mag,n_t", [
         (10e-3, 40e-3, 0.04, 2000),
         (5e-3,  20e-3, 0.08, 2000),
         (20e-3, 60e-3, 0.02, 2000),
     ])
-    def test_calc_b_vs_b_from_g(self, delta, Delta, G_mag, n_t):
+    def test_the_sequences_b_vs_b_from_g(self, delta, Delta, G_mag, n_t):
         """the played b matches the square-lobe formula to the grid's own resolution on every measurement."""
         # pgse() takes scalar delta/Delta; bvecs sets n_measurements
         bvecs = np.array([[1., 0., 0.],
@@ -149,13 +147,13 @@ class TestCalcBBridge:
         # compare against the SQUARE-lobe analytic b formula, so build the square
         # (instantaneous) waveform explicitly (sim now defaults to slew-limited)
         wf = self.pgse(bvecs, delta, Delta, gradient_strengths=G_mags, n_t=n_t, slew_rate=np.inf)
-        b_sim = self.calc_b(wf)
+        b_played = wf.b()
         b_core = b_from_g(G_mag, delta, Delta)
 
         # the lobe edges land inside a grid step (samples are mid-step), so the played q is within dt/delta of
         # the square lobe's and b within 2 dt/delta: the bound shrinks with the grid, not a fixed percentage
         tol = 2.0 * wf.dt / delta
-        rel_err = np.abs(b_sim - b_core) / b_core
+        rel_err = np.abs(b_played - b_core) / b_core
         assert np.all(rel_err < tol), (
             f"max relative error {rel_err.max():.4%} exceeds the grid bound {tol:.4%} "
             f"(delta={delta*1e3:.0f}ms Delta={Delta*1e3:.0f}ms G={G_mag}T/m "
