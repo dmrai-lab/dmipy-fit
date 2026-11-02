@@ -12,7 +12,7 @@ microstructure maps. It is the analytical inverse of the dmipy ecosystem: the eq
   dispersion and gamma diameter distributions.
 - **The equations are dmipy-analytic's.** The signal models keep their parameters, ranges, orientation handling and
   composition and call dmipy-analytic's forms (`gaussian`, `restricted`, `exchange`, `relaxation`, `orientation`,
-  `constants`); the JAX optimisers call its twins. No equation is left in dmipy-fit, and no re-export stands in for one.
+  `harmonics`, `constants`); the JAX optimisers call its twins. No equation is left in dmipy-fit, and no re-export stands in for one.
 - **Restricted diffusion for any waveform.** The exact matrix-method compartments `P5PlaneMatrixMethod`,
   `C5CylinderMatrixMethod` and `S5SphereMatrixMethod` (the Callaghan 1997 / Grebenkov 2007 multiple-correlation-function
   solution) are exact for an arbitrary gradient waveform (PGSE, OGSE, fixed direction) up to eigenmode truncation; the
@@ -45,7 +45,8 @@ microstructure maps. It is the analytical inverse of the dmipy ecosystem: the eq
   Neumann roots, with no private copy of a root left (their values move by at most 2e-10). The JAX spherical-mean fit
   refuses, at setup and naming the zeppelin and its ranges, a zeppelin whose range admits an oblate tensor, where the twin
   returns NaN.
-- **Deleted.** `white_matter.surface.b_hat_ea_short`: its exponent was not dimensionless and nothing called it.
+- **Deleted.** `white_matter.surface.b_hat_ea_short`, whose exponent was not dimensionless and which nothing called, and
+  with it the module `white_matter.surface`, which held nothing else.
 - **Fitting on the device.** `solver="jax"` fits a whole slice on the GPU; batched DTI, Tournier 2007 CSD and
   multi-shell multi-tissue CSD run on JAX or PyTorch. dipy is not a runtime dependency (the `oracle` extra only).
 - **Acquisition.** `AcquisitionScheme` reads a `ScannerSequence` (dmipy-replay's acquisition object, built by the
