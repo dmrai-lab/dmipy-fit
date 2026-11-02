@@ -9,6 +9,7 @@
   "jaxlib": "0.12.0.1",
   "dmipy-sim": "2.2.0@21753a2375780b2e53c651198be607f7c852c257",
   "dmipy-replay": "0.1.0@9594afe66251f29db707b63a0d826a375b0a250f",
+  "dmipy-analytic": "3.0.0",
   "pinned_env": {
    "OPENBLAS_NUM_THREADS": "1",
    "OMP_NUM_THREADS": "1",
@@ -2952,14 +2953,6 @@
     "shape": [
      4,
      4
-    ],
-    "dtype": "<f8",
-    "bitwise": true
-   },
-   "numpy/surface.b_hat_ea_short": {
-    "sha256": "72b2dc7424ac82f2b85c69256eed9a66b53f12ebb0c6e76b49078d7aa69ad5e7",
-    "shape": [
-     8
     ],
     "dtype": "<f8",
     "bitwise": true
