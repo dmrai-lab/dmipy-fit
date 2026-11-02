@@ -1,26 +1,27 @@
 # Changelog
 
-## Unreleased
-
-### 3.0.0
+## 3.0.0 - 2026-11-02
 
 dmipy-fit fits multi-compartment diffusion-MRI models to data, voxel by voxel, and returns interpretable
-microstructure maps.
+microstructure maps. It is the analytical inverse of the dmipy ecosystem: the signal side is
+[dmipy-replay](https://github.com/dmrai-lab/dmipy-replay), the forward engine
+[dmipy-sim](https://github.com/dmrai-lab/dmipy-sim).
 
 - **Models.** Sticks, cylinders, spheres, planes, Gaussian compartments and tissue responses, with Watson and Bingham
   dispersion and gamma diameter distributions. Gaussian-phase and exact matrix-method restricted-diffusion
   compartments (`P4`/`C4`/`S4`, `P5`/`C5`/`S5`) take arbitrary gradient waveforms.
 - **Relaxation.** T2, T1 (PGSTE mixing time) and surface relaxivity are occupancy-gated factors that attach to any
   compartment.
-- **Replay compartments.** `C6`, `S6`, `P6` and `MonteCarloReplay(pack)` fit through a stored Monte-Carlo walk
-  (replay packs from SubstrateCommons), exact to the walk's floor for any waveform; a signal look-up form makes them
-  fast.
+- **Replay compartments.** `C6MonteCarloReplayCylinder`, `S6MonteCarloReplaySphere`, `P6MonteCarloReplayPlane` and
+  `MonteCarloReplay(pack)` fit through a stored Monte-Carlo walk (replay packs from
+  [SubstrateCommons](https://huggingface.co/SubstrateCommons)), exact to the walk's floor for any waveform; a signal
+  look-up form makes them fast. A pack written by an older producer is refused by name: re-walk it.
 - **Fitting on the device.** `solver="jax"` fits a whole slice on the GPU; batched DTI, Tournier 2007 CSD and
   multi-shell multi-tissue CSD run on JAX or PyTorch. dipy is not a runtime dependency (the `oracle` extra only).
 - **Acquisition.** `AcquisitionScheme` reads a `ScannerSequence` (dmipy-replay's acquisition object, built by the
   `pgse`, `pgste`, `ogse`, `cpmg`, `ste` and `pte` builders) or a `Protocol` of them.
 - **Pairs with** dmipy-sim `>=3,<4` and dmipy-replay `>=0.2,<0.3`. Python >= 3.10, NumPy >= 2.0, SciPy >= 1.10;
-  extras `jax`, `torch`, `hub`.
+  extras `jax`, `jax-gpu`, `torch`, `speed`, `data`, `hub`, `viz`, `legacy`, `oracle` and `all`.
 - **Licence** AGPL-3.0-only or commercial.
 
 ## 2.3.0
