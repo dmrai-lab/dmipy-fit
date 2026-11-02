@@ -3,7 +3,7 @@
 Exact analytical spherical harmonics of the Gaussian (Zeppelin/Stick) diffusion kernels.
 
 The Watson and Bingham orientation distributions' coefficients and the harmonic rotation blocks are
-``dmipy_sim.math.sh_analytical`` and ``dmipy_sim.replay.so3.wigner_blocks``, the ecosystem's one implementation.
+``dmipy_replay.math.sh_analytical`` and ``dmipy_replay.replay.so3.wigner_blocks``, the ecosystem's one implementation.
 
 Gaussian kernel (Zeppelin / Stick)
 -----------------------------------
@@ -33,7 +33,7 @@ import math
 
 import numpy as np
 from scipy.special import erfi, erf
-from dmipy_sim.replay.so3 import wigner_blocks
+from dmipy_replay.replay.so3 import wigner_blocks
 
 __all__ = [
     'gaussian_signal_sh',
@@ -46,7 +46,7 @@ __all__ = [
 def gaussian_signal_sh(kappa, beta, l_max=8):
     r"""Unnormalized SH coefficients of exp(kappa·n_x² + beta·n_y²).
 
-    The canonical Bingham coefficients of ``dmipy_sim.math.sh_analytical.bingham_canonical_sh``, not divided by
+    The canonical Bingham coefficients of ``dmipy_replay.math.sh_analytical.bingham_canonical_sh``, not divided by
     the partition function Z.  Used to represent the angular factor of a Gaussian
     diffusion kernel (Zeppelin, Stick, or B-tensor with traceless l=2 part) as
     a set of SH coefficients before rotating to the lab frame.

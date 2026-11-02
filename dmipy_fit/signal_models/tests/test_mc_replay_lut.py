@@ -5,7 +5,7 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-from dmipy_sim.replay import write_rpk   # noqa: E402
+from dmipy_sim.replay.container import write_rpk  # noqa: E402
 from ._replay_packs import build_public_pack   # noqa: E402
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme   # noqa: E402
 from dmipy_fit.data import mc_replay                    # noqa: E402

@@ -102,6 +102,7 @@ NNLS T2-spectrum estimator:
 
 ```python
 import numpy as np
+import dmipy_replay as dr
 import dmipy_sim as ds
 from dmipy_fit.white_matter.mwf import t2_spectrum_mwf
 
@@ -110,7 +111,7 @@ geom = ds.MyelinatedCylinder(inner_radius=2.5e-6, outer_radius=3.57e-6, orientat
                                  extra=ds.Pool(D=1.7e-9, T2=0.080)))
 
 TE, n_echoes = 8e-3, 32
-wf = ds.cpmg(n_echoes, TE, n_t_per_echo=60)                           # a T2 train: no gradient
+wf = dr.cpmg(n_echoes, TE, n_t_per_echo=60)                           # a T2 train: no gradient
 S = np.asarray(ds.simulate_cpmg(40000, None, wf, geom)).ravel()      # (n_echoes,), one walk
 echo_times = np.arange(1, n_echoes + 1) * TE
 mwf, T2_grid, spectrum = t2_spectrum_mwf(S / S[0], echo_times)
