@@ -8,14 +8,32 @@ microstructure maps. It is the analytical inverse of the dmipy ecosystem: the si
 [dmipy-sim](https://github.com/dmrai-lab/dmipy-sim).
 
 - **Models.** Sticks, cylinders, spheres, planes, Gaussian compartments and tissue responses, with Watson and Bingham
-  dispersion and gamma diameter distributions. Gaussian-phase and exact matrix-method restricted-diffusion
-  compartments (`P4`/`C4`/`S4`, `P5`/`C5`/`S5`) take arbitrary gradient waveforms.
+  dispersion and gamma diameter distributions.
+- **Restricted diffusion for any waveform.** The exact matrix-method compartments `P5PlaneMatrixMethod`,
+  `C5CylinderMatrixMethod` and `S5SphereMatrixMethod` (the Callaghan 1997 / Grebenkov 2007 multiple-correlation-function
+  solution) are exact for an arbitrary gradient waveform (PGSE, OGSE, fixed direction) up to eigenmode truncation; the
+  eigenmode solver is dmipy-sim's (`dmipy_sim.math.matrix_method`), once. The Gaussian-phase compartments
+  `P4PlaneGaussianPhaseApproximation` (the finite-pulse approximation for a 1-D slab, Balinov et al. 1993), `C4`
+  (Van Gelderen) and `S4` (Murday-Cotts) are their approximations where the Gaussian-phase assumption holds, and depart
+  at high b and short pulses. `use_jax=True` on `C5`/`S5`/`P5` evaluates a differentiable `jax.lax.scan` Strang
+  propagator, so gradients flow with respect to diameter, orientation and diffusivity and a whole slice fits with
+  `solver="jax"` (it needs the `jax` extra and a stored waveform; a scalar-timing scheme falls back to NumPy).
 - **Relaxation.** T2, T1 (PGSTE mixing time) and surface relaxivity are occupancy-gated factors that attach to any
   compartment.
-- **Replay compartments.** `C6MonteCarloReplayCylinder`, `S6MonteCarloReplaySphere`, `P6MonteCarloReplayPlane` and
-  `MonteCarloReplay(pack)` fit through a stored Monte-Carlo walk (replay packs from
-  [SubstrateCommons](https://huggingface.co/SubstrateCommons)), exact to the walk's floor for any waveform; a signal
-  look-up form makes them fast. A pack written by an older producer is refused by name: re-walk it.
+- **Replay compartments.** `C6MonteCarloReplayCylinder`, `S6MonteCarloReplaySphere` and `P6MonteCarloReplayPlane` are
+  the generalized pore: the signal is the replay of a stored Monte-Carlo walk (a replay pack from
+  [SubstrateCommons](https://huggingface.co/SubstrateCommons)), exact to the walk's floor for any gradient waveform,
+  with the fit parameters of the analytic cylinders and spheres (`mu`, `diameter`; `diameter` interpolates across the
+  family's packs). `MonteCarloReplay(pack)` poses any one pack as a compartment by the lab direction of its axis. A pack
+  is its walk as bands on one basis (continuous sines over each storage window); the acquisition is compiled onto the
+  bands once, with dmipy-replay's kernel, so each replay is a single matmul. A pack written on a save grid or by an older
+  producer is refused by name: re-walk it. Surface relaxivity is exact, not an `exp(-TE rho S/V)` tag-on: a
+  `surface_relaxivity` factor activates the pack's boundary-local-time replay knob, optionally gated by a transverse
+  gate on the acquisition's own grid.
+- **Signal look-up form.** For single-diffusion-encoding PGSE at fixed timing, `build_pgse_kernel` lowers a replay family
+  once to a KB-scale kernel of `E(diameter, b, cos_theta[, rho])` (`ReplayKernel`), and fitting interpolates it per
+  measurement. It is a fit accelerator, interpolation-grade (the signed signal is interpolated so that diffraction zeros
+  do not inflate); the replay compartments stay exact, and other waveforms use them.
 - **Fitting on the device.** `solver="jax"` fits a whole slice on the GPU; batched DTI, Tournier 2007 CSD and
   multi-shell multi-tissue CSD run on JAX or PyTorch. dipy is not a runtime dependency (the `oracle` extra only).
 - **Acquisition.** `AcquisitionScheme` reads a `ScannerSequence` (dmipy-replay's acquisition object, built by the
@@ -32,46 +50,6 @@ compatibility test.** Relaxation and surface relaxivity are now consistently opt
 exercises every compartment × scheme × framework × wrapper combination.
 
 ### Added
-- **Signal-LUT fit form for the replay compartments** (Tier 3) — `data/mc_replay_lut.py`
-  `build_pgse_kernel` / `ReplayKernel`: for single-diffusion-encoding PGSE at fixed timing a pore's
-  signal factorises as `E(diameter, b, cos_theta[, rho])`, so the family is lowered once (via the exact
-  Tier-1 engine) to a KB-scale kernel; fitting then interpolates per measurement — measured ~65x faster
-  per forward and ~900-5000x leaner than the walker packs. Interpolation-grade (fit accelerator; Tier 1/2
-  stay exact); signed-signal interpolation so diffraction zeros do not inflate.
-- **JAX/GPU forward for the replay compartments** (Tier 2) — `replay_complex_jax` / `replay_batch_jax`
-  in `_replay_fit.py`: the compiled-scheme `C@W` matmul + weighted complex mean as a jittable,
-  differentiable kernel, `vmap`-batched over a grid of compiled schemes so a whole set of forward
-  evaluations (e.g. candidate orientations in a fit) is one GPU call. Parity with the NumPy engine to
-  ~1e-5 (complex64) / ~1e-7 (x64), diffusion and the exact surface path.
-- **Monte-Carlo replay compartments** `C6MonteCarloReplayCylinder`, `S6MonteCarloReplaySphere`, `P6MonteCarloReplayPlane` — the
-  *generalized pore*: the signal is computed by replaying a stored Monte-Carlo reference walk (Substrate
-  Commons canonical replay-pack dataset), exact to the MC floor for any gradient waveform. Same fit
-  parameters as the analytic cylinders/spheres (`mu`, `diameter`). Forward evaluation uses a
-  compiled-scheme engine (`signal_models/_replay_fit.py`): the waveform is projected onto the pack's DCT
-  temporal basis once, then each replay is a single matmul — identical to `dmipy_sim` `pack.replay`
-  (verified ~1e-6) but fast enough to fit. Surface relaxivity is exact, not analytic: a
-  `surface_relaxivity` factor activates the pack's boundary-local-time replay knob (optionally
-  coherence-gated), not an `exp(-TE rho S/V)` tag-on. Loader `data/mc_replay.py`; tests build a tiny CPU
-  pack fixture (`tests/test_mc_replay.py`).
-- **JAX / GPU path for the matrix-method compartments** — `use_jax=True` on `C5`/`S5`/`P5` evaluates a
-  differentiable `jax.lax.scan` Strang propagator (`jax/signal_models_jax.py:matrix_restricted_signal_jax`
-  + batched twin), with the geometry-fixed eigenmodes precomputed once on the host. Gradients flow w.r.t.
-  diameter/orientation/diffusivity, enabling whole-slice `solver="jax"` fitting; matches the NumPy path to
-  the MC/float precision. Requires the `[jax]` extra and a stored waveform (`_G`); scalar-timing schemes
-  fall back to NumPy.
-- **Gaussian-phase plane model** `P4PlaneGaussianPhaseApproximation` — the finite-pulse GPA for a 1-D
-  slab (`ln E = -gamma^2 G^2 sum_odd |<k|x|0>|^2 I(D(k pi/L)^2)`), completing the plane series alongside
-  the cylinder `C4` (Van Gelderen) and sphere `S4` (Murday-Cotts). It is the low-b / small-pore limit of
-  the exact `P5PlaneMatrixMethod`; validated to match P5 where the GPA holds and to depart only at high
-  b / short pulses (`tests/test_plane_gpa.py`). Ref: Balinov et al. 1993.
-- **Exact matrix-method restricted-diffusion compartments** `P5PlaneMatrixMethod`,
-  `C5CylinderMatrixMethod`, `S5SphereMatrixMethod` — the Callaghan (1997) / Grebenkov (2007)
-  multiple-correlation-function (MCF) solution, exact for an *arbitrary* gradient waveform (PGSE, OGSE,
-  fixed-direction) up to eigenmode truncation; the Gaussian-phase models (`C4`/`S4`) are their low-b
-  limit. They consume the stored gradient waveform `_G` directly (`_supports_waveform_scheme`), with a
-  reconstructed-PGSE fallback from scalar timing. Shared kernel in
-  `signal_models/_restricted_matrix.py`; validated against the GPA at low b, free diffusion on
-  unrestricted axes, restriction monotonicity, and mode convergence in `tests/test_matrix_method.py`.
 - **Coupled compartment-wise T2/T1 relaxation–exchange** in `X0GeneralizedKarger` on the JAX
   backend — a dimension-agnostic (N-pool-ready) matrix-exponential SE/STE propagator; relaxation is
   supplied per compartment via `OccupancyGatedModel`. Fast scalar path retained for the
@@ -100,14 +78,6 @@ exercises every compartment × scheme × framework × wrapper combination.
   O(1/n_t) quadrature error that mis-scaled anisotropic Gaussian models).
 
 ### Changed (breaking)
-- **Replay compartments read coefficient-form packs** (dmipy-sim#740). A pack is its walk as bands on one
-  basis (continuous sines over each storage window, RPK.md 9.5); there is no save grid. `data/mc_replay.py`
-  compiles an acquisition onto the pack's bands per window (`PackCoefficients`), carries `K` / `block` /
-  `windows` per pack (`PackGrid`) in place of `n_t`, and refuses by name a pack or manifest row written on a
-  save grid, through dmipy-sim's own reader (`fetch_pack_prefix` applies the same refusal before any tensor
-  bytes move). The coherence gate of a replay compartment is the gate on the acquisition's own grid. The
-  `ReplayFamily` attributes `n_t`, `dt`, `n_t_all`, `dt_all` are gone; the test packs are walked with
-  `simulate_trajectories` + `build_replay_pack` (the band deriving the block).
 - **Relaxation/relaxivity are opt-in factors only.** `surface_relaxivity` (and `T2`/`T1`) are no longer
   baked into bare compartments (`S2/S3/S4`, `C2/C3/C4`) or `X0GeneralizedKarger`; add them via
   `OccupancyGatedModel([... , TransverseRelaxation()/SurfaceRelaxivity()])`.
