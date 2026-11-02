@@ -16,6 +16,31 @@ env:
   DMIPY_REPLAY_REF: 9594afe66251f29db707b63a0d826a375b0a250f
 
 jobs:
+  parity:
+    # The signal forms bit for bit: every model's output on fixed acquisition grids (NumPy, and JAX in float32 and float64
+    # on the CPU) against tests/parity_analytic/record, in one pinned environment (tests/parity_analytic/constraints.txt,
+    # one BLAS thread, no numba). A change of a form's arithmetic fails here; a deliberate one regenerates the record.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -c tests/parity_analytic/constraints.txt \
+                      "dmipy-sim @ git+https://github.com/dmrai-lab/dmipy-sim@${DMIPY_SIM_REF}" \
+                      "dmipy-replay @ git+https://github.com/dmrai-lab/dmipy-replay@${DMIPY_REPLAY_REF}" \
+                      "jax[cpu]" jaxopt scipy packaging
+          pip install --no-deps -e .
+
+      - name: Compare with the parity record
+        run: python tests/parity_analytic/harness.py check
+
   test:
     runs-on: ubuntu-latest
     strategy:

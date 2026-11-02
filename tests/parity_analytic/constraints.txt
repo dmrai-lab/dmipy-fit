@@ -1,0 +1,10 @@
+numpy==2.5.4
+scipy==1.18.1
+jax==0.12.0.1
+jaxlib==0.12.0.1
+ml-dtypes==0.6.0
+opt-einsum==3.4.0
+safetensors==0.8.0
+threadpoolctl==3.7.0
+jaxopt==0.8.5
+packaging==26.3
