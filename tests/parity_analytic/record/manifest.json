@@ -3736,6 +3736,22 @@
     ],
     "dtype": "<f4",
     "bitwise": true
+   },
+   "jax_f32/sm_forward/stick_zeppelin_oblate/meas": {
+    "sha256": "e429ec2025ddca394ed11e4c2ecbd9940b6a947c09f8d535b96e0dbad0da1c1b",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/sm_forward/stick_zeppelin_oblate/shell": {
+    "sha256": "7cc4117f9c1d3c26cc1b2e2d33dad01f98744c2c137bf10b12ba48bd2234ff72",
+    "shape": [
+     6
+    ],
+    "dtype": "<f4",
+    "bitwise": true
    }
   },
   "jax_f64": {
@@ -5003,6 +5019,22 @@
    },
    "jax_f64/sm_forward/stick_zeppelin/shell": {
     "sha256": "d1edb03ae969ab0c2f352f7ca39a21e9acef35612efb2daaaac14b5dbbd9e417",
+    "shape": [
+     6
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/sm_forward/stick_zeppelin_oblate/meas": {
+    "sha256": "619c3764491f9fb6845d2adf36a933d14a0cefb5f2fec3430264eccd187ffd0c",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/sm_forward/stick_zeppelin_oblate/shell": {
+    "sha256": "5b7785452b94b40f92baf8f43a8d990a6a8c45991911795dd0733af7e58c3dd4",
     "shape": [
      6
     ],
