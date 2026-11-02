@@ -703,8 +703,20 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
             return E
         return _sphere_ball_jax_fn
 
-    # ── Variant 3: Oriented anisotropic (legacy C1Stick/G2Zeppelin) ─────────
+    # ── Variant 3: oriented Stick + Zeppelin (NEXI) ─────────────────────────
+    if not (intra_type is C1Stick and extra_type is G2Zeppelin):
+        raise NotImplementedError(
+            f"No JAX route for X0GeneralizedKarger of {intra_type.__name__} and {extra_type.__name__}: the closed "
+            "Karger form is wired for G1Ball with G1Ball, S4SphereGaussianPhaseApproximation with G1Ball, and "
+            "C1Stick with G2Zeppelin.")
+    names = model_obj._inverted_parameter_map          # (sub-model, name) -> the name X0 exposes it under
+    stick_parallel = names[(model_obj.model_intra, 'lambda_par')]
+    zeppelin_parallel = names[(model_obj.model_extra, 'lambda_par')]
+    zeppelin_perpendicular = names[(model_obj.model_extra, 'lambda_perp')]
+
     def _anisotropic_jax_fn(scheme_jax, params):
+        # the links X0 holds: the tortuosity of NEXI sets the zeppelin's perpendicular diffusivity from its parallel one
+        params = model_obj.add_linked_parameters_to_parameters(params)
         mu_cart = unitsphere2cart_1d_jax(params['mu'])
         E = karger_signal(
             scheme_jax['bvalues'],
@@ -712,9 +724,9 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
             scheme_jax['Delta'],
             scheme_jax['gradient_directions'],
             mu_cart,
-            params['Di'],
-            params['De_par'],
-            params['De_perp'],
+            params[stick_parallel],
+            params[zeppelin_parallel],
+            params[zeppelin_perpendicular],
             params['f'],
             params['kappa'],
         )

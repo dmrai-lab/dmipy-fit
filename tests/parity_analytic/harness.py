@@ -595,11 +595,9 @@ def _jax_direct_cases():
                         ops=N_T * (2 * n_modes + 4) if matrix else 8, host_dependent=matrix)
 
 
-# The composites build_mc_forward_fn refuses or cannot evaluate on main, by id: the forward factories have no twin
-# for them (a refusal is the behaviour that is held), and the oriented Stick-Zeppelin Karger dispatch reads parameter
-# names ('Di', 'De_par', 'De_perp') that no model exposes.
+# The composites build_mc_forward_fn refuses, by id: the forward factories have no twin for them (a refusal is the
+# behaviour that is held).
 JAX_UNSUPPORTED = {
-    "ref.nexi": "the oriented Karger dispatch reads parameter names that the model does not expose (KeyError 'Di')",
     "dist.sh_stick": "no JAX forward for the spherical-harmonic distribution",
     "dist.gamma_s4": "the diameter integral has C3 and C4 cylinders only",
     "dist.gamma_c2": "the diameter integral has C3 and C4 cylinders only",

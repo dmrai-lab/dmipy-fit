@@ -3425,6 +3425,22 @@
     "dtype": "<f4",
     "bitwise": true
    },
+   "jax_f32/forward/ref.nexi/legacy2": {
+    "sha256": "3a7cbb640e2c4f4403f2daf29d80115c269d9aa2a20228c250760bbb89f16828",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/forward/ref.nexi/pgse2": {
+    "sha256": "3a7cbb640e2c4f4403f2daf29d80115c269d9aa2a20228c250760bbb89f16828",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
    "jax_f32/forward/ref.noddi/legacy": {
     "sha256": "251202b2511934a947b859d4d3332c92334b98bbbbec4604a7ff9f4b1381f6ee",
     "shape": [
@@ -4611,6 +4627,22 @@
    },
    "jax_f64/forward/ref.karger_two_compartment/pgse2": {
     "sha256": "613e12d4bd9e737e8a1a8d0f8855a1018b295fe4c33c1ae0196a61f90fe5eaf7",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/ref.nexi/legacy2": {
+    "sha256": "d4b432ec5bbf827b9e7f16f13418faf131cf4e79965a0897dfdf8b8496233a4d",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/ref.nexi/pgse2": {
+    "sha256": "d4b432ec5bbf827b9e7f16f13418faf131cf4e79965a0897dfdf8b8496233a4d",
     "shape": [
      32
     ],
