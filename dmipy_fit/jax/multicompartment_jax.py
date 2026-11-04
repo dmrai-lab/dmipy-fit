@@ -641,6 +641,43 @@ def _make_karger_matrix_jax_fn(model_obj, acquisition_scheme):
     return fn
 
 
+def _make_karger_waveform_jax_fn(model_obj, acquisition_scheme, double):
+    """The JAX twin of the NumPy model's filter-exchange route (``exchange_models._waveform_signal``): each row of each
+    filter-exchange sequence by :func:`dmipy_analytic.jax.exchange.karger_waveform` along the row's effective gradient,
+    the pools' diffusivities along the row's direction from the sub-models' dephasing exponents, any per-pool T2 / T1
+    from the namespace, the pathway amplitude left out."""
+    intra_fn, intra_T2k, intra_T1k = _resolve_karger_diffusion_fn(model_obj.model_intra, model_obj, acquisition_scheme)
+    extra_fn, extra_T2k, extra_T1k = _resolve_karger_diffusion_fn(model_obj.model_extra, model_obj, acquisition_scheme)
+    blocks = []
+    for seq, rows in double:
+        stored = ~np.asarray(seq.rf.transverse_gate(seq.n_t, seq.dt), dtype=bool)
+        blocks.append((jnp.asarray(np.asarray(seq.G_eff, np.float64)), float(seq.dt), stored, np.asarray(rows)))
+
+    def _T(params, key):
+        v = None if key is None else params.get(key)
+        return jnp.inf if v is None else v
+
+    def fn(scheme_jax, params):
+        params = model_obj.add_linked_parameters_to_parameters(params)
+        b = scheme_jax['bvalues']
+        f = params['f']
+        K = jexchange.exchange_matrix(params['kappa'], f)
+        M0 = jnp.stack([f, 1.0 - f])
+        EPS = 1e-10
+        Ri = -jnp.log(jnp.maximum(intra_fn(scheme_jax, params), EPS))
+        Re = -jnp.log(jnp.maximum(extra_fn(scheme_jax, params), EPS))
+        D = jnp.where((b > 0)[:, None], jnp.stack([Ri, Re], axis=-1) / jnp.maximum(b, 1e-300)[:, None], 0.0)
+        T2 = jnp.stack([_T(params, intra_T2k), _T(params, extra_T2k)])
+        T1 = jnp.stack([_T(params, intra_T1k), _T(params, extra_T1k)])
+        E = jnp.zeros(b.shape[0], dtype=D.dtype)
+        for G, dt, stored, rows in blocks:
+            sig = jax.vmap(lambda g, d: jexchange.karger_waveform(g, dt, d, K, M0, stored=stored, T2=T2, T1=T1))(
+                G, D[rows])
+            E = E.at[rows].set(sig)
+        return E
+    return fn
+
+
 def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
     """Factory for X0GeneralizedKarger.
 
@@ -652,6 +689,11 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
     handles arbitrary JAX-supported sub-models. See issue #7.
     """
     from ..signal_models.attenuation import OccupancyGatedModel
+    from ..signal_models.exchange_models import _double_encodings
+
+    double = _double_encodings(acquisition_scheme) if acquisition_scheme is not None else []
+    if double:
+        return _make_karger_waveform_jax_fn(model_obj, acquisition_scheme, double)
 
     has_relaxation_addon = (
         isinstance(model_obj.model_intra, OccupancyGatedModel)
