@@ -304,6 +304,29 @@ class Brute2FineOptimizer:
         objective = np.dot(E_diff, E_diff) / len(data)
         return objective
 
+    def _refine(self, x0, fit_args, bounds):
+        """The local L-BFGS-B stage, run on the objective in units of its value at ``x0``.
+
+        L-BFGS-B stops when the decrease of the objective, ``(f_k - f_{k+1}) / max(|f_k|, |f_{k+1}|, 1)``, or the
+        largest projected gradient component falls below a threshold. Both measures are absolute for an objective
+        below one, and the mean squared residual of a signal attenuation is of order ``1e-3``, with a gradient in a
+        parameter whose range is large (an exchange rate in s^-1) smaller still: the solver then stops at the
+        first iterate, wherever the coarse stage left it. Dividing the objective by its value at ``x0`` makes the
+        objective of order one and both measures relative to the residual the coarse stage left; both thresholds
+        are set to the double-precision epsilon, i.e. the solver runs until no further representable decrease
+        remains. An objective that is zero at ``x0`` is already at its minimum.
+        """
+        f0 = self.obj_func(x0, *fit_args)
+        if f0 == 0.0:
+            return np.asarray(x0, dtype=float)
+        eps = np.finfo(float).eps
+
+        def relative_objective(x, *args):
+            return self.obj_func(x, *args) / f0
+
+        return minimize(relative_objective, x0, args=fit_args, bounds=bounds, method='L-BFGS-B',
+                        options={'ftol': eps, 'gtol': eps}).x
+
     def __call__(self, data, x0_vector):
         """
         Estimates the model parameters given the measured signal attenuation
@@ -365,9 +388,7 @@ class Brute2FineOptimizer:
         else:
             x0_brute = x0_vector
 
-        x_fine_nested = minimize(self.obj_func, x0_brute,
-                                 args=fit_args, bounds=bounds_fine,
-                                 method='L-BFGS-B').x
+        x_fine_nested = self._refine(x0_brute, fit_args, bounds_fine)
         if self.model.N_models > 1 and not self.model.volume_fractions_fixed:
             nested_fractions = x_fine_nested[-(self.model.N_models - 1):]
             normalized_fractions = nested_to_normalized_fractions(

@@ -159,19 +159,22 @@ def _multi_delta_scheme():
                                           for Delta in (0.015, 0.025, 0.04)]))
 
 
-def test_nexi_fits_on_a_protocol_of_multi_delta_pgse_sequences():
-    """Three PGSE sequences of one ``delta`` and three ``Delta`` (one echo time each) in one Protocol: every row reads
-    its own sequence's diffusion time, and the MIX fit of the noise-free NEXI signal returns the generating parameters
-    (the axis up to its sign) to what its residual allows: in the linear regime a parameter's error is at most
-    ``sqrt(rss (J^T J)^-1_ii)``, ``J`` the model's Jacobian at the solution."""
+def _assert_nexi_recovers_truth(kappa, **fit_kwargs):
+    """The noise-free NEXI signal on the multi-Delta protocol, fitted with ``fit_kwargs``, returns the generating
+    parameters (the axis up to its sign) to what its residual allows: in the linear regime a parameter's error is at
+    most ``sqrt(rss (J^T J)^-1_ii)``, ``J`` the model's Jacobian at the solution."""
     sch = _multi_delta_scheme()
     assert sorted(set(np.round(sch.Delta, 6))) == [0.015, 0.025, 0.04]
     model, pre = nexi(), "X0GeneralizedKarger_1_"
     truth = {pre + "C1Stick_1_lambda_par": 2.2e-9, pre + "G2Zeppelin_1_lambda_par": 1.6e-9, pre + "mu": [0.6, 1.0],
-             pre + "f": 0.55, pre + "kappa": 20.0}
+             pre + "f": 0.55, pre + "kappa": kappa}
     E = model(sch, **truth)
-    fit = {k: np.squeeze(v) for k, v in model.fit(sch, E, solver="mix").fitted_parameters.items()}
+    fit = {k: np.squeeze(v) for k, v in model.fit(sch, E, **fit_kwargs).fitted_parameters.items()}
     rss = float(np.sum((model(sch, **fit) - E) ** 2))
+    # The global minimum of a noise-free signal has a residual at the floating-point floor; a residual of order
+    # ``r`` (relative to the signal energy) fixes a parameter to ``sqrt(r)`` relative, so ``r <= 1e-12`` is a
+    # parameter precision of 1e-6, and a local minimum (residual ~1e-3) fails it.
+    assert rss <= 1e-12 * float(np.sum(E ** 2)), rss / float(np.sum(E ** 2))
     names = [pre + "C1Stick_1_lambda_par", pre + "G2Zeppelin_1_lambda_par", pre + "f", pre + "kappa", "theta", "phi"]
     scale = np.array([1e-9, 1e-9, 1.0, 1.0, 1.0, 1.0])
     theta, phi = fit[pre + "mu"]
@@ -195,3 +198,19 @@ def test_nexi_fits_on_a_protocol_of_multi_delta_pgse_sequences():
     bound = np.sqrt(rss * np.diag(np.linalg.inv(J.T @ J))) * scale
     for k, g, w, bnd in zip(names, got, want, bound):
         assert abs(g - w) <= max(bnd, 4 * np.finfo(float).eps * abs(w)), (k, g, w, bnd)
+
+
+def test_nexi_fits_on_a_protocol_of_multi_delta_pgse_sequences():
+    """Three PGSE sequences of one ``delta`` and three ``Delta`` (one echo time each) in one Protocol: every row reads
+    its own sequence's diffusion time, and the MIX fit of the noise-free NEXI signal returns the generating
+    parameters."""
+    _assert_nexi_recovers_truth(20.0, solver="mix")
+
+
+@pytest.mark.parametrize("kappa", [5.0, 20.0, 40.0, 77.0, 150.0])
+def test_nexi_default_solver_reaches_the_global_minimum_on_multi_delta_pgse(kappa):
+    """The default solver recovers the generating NEXI parameters of a noise-free multi-Delta protocol at exchange
+    rates from below ``1 / (Delta_max - delta / 3)`` = 26 s^-1 to above ``1 / (Delta_min - delta / 3)`` = 77 s^-1: its
+    local stage runs until the residual stops decreasing, wherever the coarse grid (spacing 40 s^-1 in ``kappa``)
+    left it."""
+    _assert_nexi_recovers_truth(kappa)
