@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **`brute2fine` local stage runs to convergence.** `Brute2FineOptimizer` refines the coarse stage's best grid point
+  with L-BFGS-B on the objective divided by its value there, with both stopping thresholds at the double-precision
+  epsilon. L-BFGS-B's thresholds are absolute for an objective below one, so on the mean squared residual of a signal
+  attenuation (order 1e-3) with an exchange rate in s^-1 the refinement stopped at the first iterate: NEXI on a
+  multi-Delta PGSE protocol returned the nearest grid rate (kappa 50 for a true 20) instead of the global minimum.
+
 - **Filter-exchange imaging.** `AcquisitionScheme.from_fexi` (dmipy-replay's `fexi_protocol`: filter off/on x mixing
   times x detection b-values, one sequence per mixing time); `signal_models.filter_exchange.FEXIApparentExchange`, the
   AXR analysis (`ADC_eq`, `sigma`, `AXR`, one unweighted signal per series, the series eliminated in closed form) whose
