@@ -488,9 +488,13 @@ def karger_two_compartment():
 def fexi():
     """FEXI: Filter EXchange Imaging — two isotropic pools with exchange.
 
-    Measures apparent exchange rate (AXR) between slow (intra) and fast
-    (extra) diffusion pools.  Requires a diffusion-weighting filter block
-    followed by an exchange delay and diffusion readout.
+    The two-site Kärger model of a filter-exchange acquisition: a slow and a
+    fast (``D = 2e-9`` m²/s) isotropic pool exchanging at ``kappa``. On a FEXI
+    scheme (``AcquisitionScheme.from_fexi``) it is the generalised Kärger
+    equation along each sequence's own filter, mixing time and detection
+    (``dmipy_analytic.exchange.karger_waveform``). The apparent-exchange-rate
+    analysis of the same scheme (``ADC_eq``, ``sigma``, ``AXR``) is
+    :class:`dmipy_fit.signal_models.filter_exchange.FEXIApparentExchange`.
 
     Lasič, Nilsson, Lätt, Ståhlberg & Topgaard 2011, Magnetic Resonance in Medicine 66
     doi:10.1002/mrm.22782

@@ -585,8 +585,8 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
 
     Build one from a dmipy-replay sequence (``AcquisitionScheme(seq)``) or through the constructors, which are
     dmipy-replay's builders with the shell parameters added:
-    ``from_pgse``, ``from_pgste``, ``from_cpmg``, ``from_ogse``, ``from_btensor_ste``, ``from_btensor_pte``,
-    ``from_waveform``, ``from_btensor_waveform``. The waveform-free factories (``acquisition_scheme_from_bvalues`` ...)
+    ``from_pgse``, ``from_pgste``, ``from_fexi``, ``from_cpmg``, ``from_ogse``, ``from_btensor_ste``,
+    ``from_btensor_pte``, ``from_waveform``, ``from_btensor_waveform``. The waveform-free factories (``acquisition_scheme_from_bvalues`` ...)
     return the waveform-free :class:`PGSEAcquisitionScheme`.
 
     Monte Carlo: ``dmipy_sim.simulate(n, D, scheme, geometry)`` reads ``scheme.waveform`` -- the object itself --
@@ -781,6 +781,19 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
             dirs[rows], _rows_of(delta, rows, n_m), TM, bvalues=bvalues[rows], TE=te, n_t=n_t,
             slew_rate=slew_rate, timing=timing, ste_flip_angles=ste_flip_angles))
         return cls(seq, min_b_shell_distance, b0_threshold)
+
+    @classmethod
+    def from_fexi(cls, gradient_directions, delta, Delta, t_m, *, b_f, bvalues, dt, min_b_shell_distance=50e6,
+                  b0_threshold=10e6, **kwargs):
+        """FEXI through :func:`dmipy_replay.sequences.fexi_protocol`: the filter off and on (at ``b_f``) at every mixing
+        time ``t_m``, every detection b-value and every direction, one sequence per mixing time; ``kwargs`` are
+        :func:`dmipy_replay.sequences.fexi`'s other keywords. ``bvalues`` is a row's whole b (its filter's and its
+        detection's), and each sequence's unweighted row is its filter-off, detection-off row.
+        :func:`dmipy_fit.signal_models.filter_exchange.fexi_measurements` reads each row's two b-values and mixing time
+        back off the sequences."""
+        from dmipy_replay.sequences import fexi_protocol
+        P = fexi_protocol(gradient_directions, delta, Delta, t_m, b_f=b_f, bvalues=bvalues, dt=dt, **kwargs)
+        return cls(P, min_b_shell_distance, b0_threshold)
 
     @classmethod
     def from_cpmg(cls, n_echoes, TE, bvalues=None, gradient_directions=None, beta_deg=180.0, n_t_per_echo=100,

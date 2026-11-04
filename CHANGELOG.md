@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **Filter-exchange imaging.** `AcquisitionScheme.from_fexi` (dmipy-replay's `fexi_protocol`: filter off/on x mixing
+  times x detection b-values, one sequence per mixing time); `signal_models.filter_exchange.FEXIApparentExchange`, the
+  AXR analysis (`ADC_eq`, `sigma`, `AXR`, one unweighted signal per series, the series eliminated in closed form) whose
+  equation is `dmipy_analytic.exchange.fexi_signal`, every row's filter and detection b-value and mixing time read off
+  the sequences (`fexi_measurements`). The Kärger models (`X0GeneralizedKarger`, `nexi`, `fexi`) evaluate a FEXI
+  sequence by the generalised Kärger equation along its own effective gradient
+  (`dmipy_analytic.exchange.karger_waveform`), each pool's diffusivity along the row's direction; a scheme mixing FEXI
+  sequences with others is refused. On the two-site signal the AXR fit converges to `k_12 + k_21` at first order in the
+  detection b.
+
 ## 3.0.0 - 2026-11-02
 
 dmipy-fit fits multi-compartment diffusion-MRI models to data, voxel by voxel, and returns interpretable

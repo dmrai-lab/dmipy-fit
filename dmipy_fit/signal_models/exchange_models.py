@@ -313,6 +313,13 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
         R1 = -np.log(np.maximum(E1, EPS))   # effective dephasing exponent
         R2 = -np.log(np.maximum(E2, EPS))
 
+        double = _double_encodings(acquisition_scheme)
+        if double:
+            # a filter-exchange (double-encoding) sequence: the generalised Karger equation along its own effective
+            # gradient, the pools' diffusivities along each row's direction, exchange and relaxation throughout
+            return _waveform_signal(acquisition_scheme, double, R1, R2, f, kappa,
+                                    np.array([T2_1, T2_2]), np.array([T1_1, T1_2]), _INF)
+
         # RF pulse durations (0 = instantaneous; backward compatible)
         tau_exc  = getattr(acquisition_scheme, 'tau_exc', 0.0)
         tau_180  = getattr(acquisition_scheme, 'tau_180', 0.0)
@@ -460,3 +467,49 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
                 )
 
         return rh_array
+
+
+def _double_encodings(acquisition_scheme):
+    """The ``(sequence, rows)`` of a scheme's filter-exchange sequences -- stimulated echoes whose encoding before the
+    store refocuses on its own (:func:`dmipy_replay.sequences.fexi_bvalues` reads them) -- or ``[]``. Their signal is
+    not the narrow-pulse Karger form of one diffusion time: the filter, the stored mixing time and the detection each
+    act in turn."""
+    protocol = getattr(acquisition_scheme, "protocol", None)
+    if protocol is None:
+        return []
+    from dmipy_replay.sequences import fexi_bvalues
+    out = []
+    for seq, rows in zip(protocol, protocol.rows):
+        if not seq.stimulated_echo:
+            continue
+        try:
+            fexi_bvalues(seq)
+        except ValueError:
+            continue
+        out.append((seq, rows))
+    if out and len(out) != len(protocol):
+        raise ValueError("a scheme mixes filter-exchange sequences with others; the Karger model evaluates one kind "
+                         "per scheme: split it into two schemes")
+    return out
+
+
+def _waveform_signal(acquisition_scheme, double, R1, R2, f, kappa, T2, T1, inf):
+    """The two-pool signal of each row of each filter-exchange sequence: :func:`dmipy_analytic.exchange.karger_waveform`
+    along the row's effective gradient, the store-to-recall span stored (``T1``), the rest transverse (``T2``), from
+    the equilibrium ``(f, 1 - f)``. A pool's diffusivity along the row's direction is its dephasing exponent over the
+    row's b-value, exact for a Gaussian pool under a colinear encoding (the two blocks share their direction) and the
+    effective-medium reading for a restricted one. The stimulated echo's pathway amplitude is common to every row of a
+    sequence and left out, so the unweighted row of a sequence is its relaxation alone (1 without relaxation)."""
+    K = exchange.exchange_matrix(kappa, f)
+    M0 = np.array([f, 1.0 - f])
+    T2 = np.where(T2 < inf, T2, np.inf)
+    T1 = np.where(T1 < inf, T1, np.inf)
+    b = np.asarray(acquisition_scheme.bvalues, dtype=float)
+    E = np.empty(b.shape[0])
+    for seq, rows in double:
+        stored = ~np.asarray(seq.rf.transverse_gate(seq.n_t, seq.dt), dtype=bool)
+        G = np.asarray(seq.G_eff, dtype=float)
+        for k, m in enumerate(rows):
+            D = np.where(b[m] > 0, np.array([R1[m], R2[m]]) / max(b[m], 1e-300), 0.0)
+            E[m] = exchange.karger_waveform(G[k], seq.dt, D, K, M0, stored=stored, T2=T2, T1=T1)
+    return E
