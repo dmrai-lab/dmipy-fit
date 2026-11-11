@@ -10,6 +10,21 @@ import jax.numpy as jnp
 from dmipy_analytic.jax import exchange as jexchange
 
 
+def nexi_spherical_mean(bvalues, delta, Delta, di, de, f, t_ex,
+                        cos_theta, weights):
+    """Published NEXI twin: exchange each Stick+Ball kernel, then average.
+
+    bvalues are s/m², diffusivities m²/s and t_ex seconds. The quadrature
+    nodes and weights come from X1NEXI. The PGSE effective time and the
+    general Karger compartment-signal floor match the NumPy composition.
+    """
+    ri = -jnp.log(jnp.maximum(jnp.exp(-bvalues[:, None] * di * cos_theta**2), 1e-10))
+    re = -jnp.log(jnp.maximum(jnp.exp(-bvalues[:, None] * de), 1e-10))
+    time = jexchange.diffusion_time(delta, Delta)[:, None]
+    kernels = jexchange.karger(ri, re, (1. - f) / t_ex, f, time)
+    return kernels @ weights
+
+
 def karger_signal(bvalues, delta, Delta, gradient_directions,
                   mu_cart, Di, De_par, De_perp, f, kappa):
     """Signal attenuation for the Karger two-compartment exchange model.

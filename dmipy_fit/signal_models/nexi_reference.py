@@ -1,6 +1,6 @@
-"""Opt-in reference signal for Jelescu et al. (2022), NeuroImage 256:119277.
+"""Independent reference signal for Jelescu et al. (2022), NeuroImage 256:119277.
 
-This module does not replace the existing ``reference_models.nexi`` factory.
+This CPU oracle independently checks the fittable ``reference_models.nexi`` factory.
 """
 
 import numpy as np

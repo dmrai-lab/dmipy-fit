@@ -25,9 +25,9 @@ from .signal_models_jax import (
     c4cylinder_signal,
     build_c3cylinder_jax_fn,
 )
-from .exchange_models_jax import karger_signal, karger_isotropic_signal
+from .exchange_models_jax import karger_signal, karger_isotropic_signal, nexi_spherical_mean
 from ..signal_models.gaussian_models import G1Ball, G2Zeppelin, G3TemporalZeppelin
-from ..signal_models.exchange_models import X0GeneralizedKarger
+from ..signal_models.exchange_models import X0GeneralizedKarger, X1NEXI
 # Backward-compat alias: X1KargerModel was renamed to X0GeneralizedKarger
 X1KargerModel = X0GeneralizedKarger
 from ..signal_models.cylinder_models import (
@@ -745,19 +745,21 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
             return E
         return _sphere_ball_jax_fn
 
-    # ── Variant 3: oriented Stick + Zeppelin (NEXI) ─────────────────────────
+    # ── Variant 3: oriented Stick + Zeppelin ────────────────────────────────
     if not (intra_type is C1Stick and extra_type is G2Zeppelin):
         raise NotImplementedError(
             f"No JAX route for X0GeneralizedKarger of {intra_type.__name__} and {extra_type.__name__}: the closed "
             "Karger form is wired for G1Ball with G1Ball, S4SphereGaussianPhaseApproximation with G1Ball, and "
             "C1Stick with G2Zeppelin.")
-    names = model_obj._inverted_parameter_map          # (sub-model, name) -> the name X0 exposes it under
+    names = {(m, p): prefix + p
+             for prefix, m in zip(model_obj.model_names, model_obj.models)
+             for p in m.parameter_ranges}
     stick_parallel = names[(model_obj.model_intra, 'lambda_par')]
     zeppelin_parallel = names[(model_obj.model_extra, 'lambda_par')]
     zeppelin_perpendicular = names[(model_obj.model_extra, 'lambda_perp')]
 
     def _anisotropic_jax_fn(scheme_jax, params):
-        # the links X0 holds: the tortuosity of NEXI sets the zeppelin's perpendicular diffusivity from its parallel one
+        # The tortuosity link sets the zeppelin's perpendicular diffusivity from its parallel one.
         params = model_obj.add_linked_parameters_to_parameters(params)
         mu_cart = unitsphere2cart_1d_jax(params['mu'])
         E = karger_signal(
@@ -836,6 +838,26 @@ _JAX_SM_MODEL_FNS = {
 }
 
 
+def _make_nexi_sm_jax_fn(model, acquisition_scheme):
+    if acquisition_scheme.shell_delta is None or acquisition_scheme.shell_Delta is None:
+        raise ValueError('NEXI requires PGSE delta and Delta')
+    mask = ~acquisition_scheme.shell_b0_mask
+    delta = jnp.asarray(acquisition_scheme.shell_delta[mask])
+    big_delta = jnp.asarray(acquisition_scheme.shell_Delta[mask])
+    nodes = jnp.asarray(model.cos_theta)
+    weights = jnp.asarray(model.quadrature_weights)
+
+    def forward(bvalues, params):
+        return nexi_spherical_mean(bvalues, delta, big_delta,
+                                   params['D_i'], params['D_e'], params['f'],
+                                   params['t_ex'], nodes, weights)
+
+    return forward
+
+
+_JAX_SM_MODEL_FACTORIES = {X1NEXI: _make_nexi_sm_jax_fn}
+
+
 def build_mc_sm_forward_fn(model, acquisition_scheme, broadcast=True):
     """Build a jax.jit-compiled forward function for
     MultiCompartmentSphericalMeanModel.
@@ -859,14 +881,14 @@ def build_mc_sm_forward_fn(model, acquisition_scheme, broadcast=True):
         else (N_shells,).
     """
     for m in model.models:
-        if type(m) not in _JAX_SM_MODEL_FNS:
+        if type(m) not in set(_JAX_SM_MODEL_FNS) | set(_JAX_SM_MODEL_FACTORIES):
             raise NotImplementedError(
                 "No JAX spherical mean implementation for model {} ({}). "
-                "Add it to _JAX_SM_MODEL_FNS in "
+                "Add it to _JAX_SM_MODEL_FNS or _JAX_SM_MODEL_FACTORIES in "
                 "multicompartment_jax.py.".format(m.__class__.__name__, type(m))
             )
 
-    dispatch   = _build_dispatch(model)          # reuse same helper
+    dispatch = _build_dispatch(model, acquisition_scheme, spherical_mean=True)
     N_shells   = acquisition_scheme.N_shells
     b0_mask    = acquisition_scheme.shell_b0_mask
     non_b0_idx = np.where(~b0_mask)[0]           # static indices into shell array
@@ -881,8 +903,7 @@ def build_mc_sm_forward_fn(model, acquisition_scheme, broadcast=True):
         for entry in dispatch:
             model_params  = _extract_params_jax(params_scaled, entry['param_slices'])
             # Call the SM function (uses shell bvalues, no orientation)
-            compartment_sm = _JAX_SM_MODEL_FNS[entry['model_type']](
-                shell_bvals_non_b0, model_params)
+            compartment_sm = entry['jax_fn'](shell_bvals_non_b0, model_params)
             vf = params_scaled[entry['vf_idx']] if is_multi else jnp.array(1.0)
             non_b0_signal = non_b0_signal + vf * compartment_sm
 
@@ -1136,7 +1157,7 @@ def _build_link_resolvers(model, name_to_start):
     return resolvers
 
 
-def _build_dispatch(model, acquisition_scheme=None):
+def _build_dispatch(model, acquisition_scheme=None, *, spherical_mean=False):
     """Build the static per-compartment dispatch table.
 
     Returns a list of dicts, one per model, containing:
@@ -1149,6 +1170,8 @@ def _build_dispatch(model, acquisition_scheme=None):
 
     acquisition_scheme is forwarded to Watson/Bingham factories so they can
     use SH convolution instead of numerical integration.
+    spherical_mean selects the shell-level registry, including factories
+    that capture per-shell timing (NEXI).
     """
     # Walk parameter_cardinality (ordered) to compute flat vector indices
     name_to_start = {}
@@ -1188,7 +1211,11 @@ def _build_dispatch(model, acquisition_scheme=None):
 
         # Resolve per-instance JAX function (factory models take priority)
         model_type = type(model_obj)
-        if model_type in _JAX_MODEL_FACTORIES:
+        if spherical_mean and model_type in _JAX_SM_MODEL_FACTORIES:
+            jax_fn = _JAX_SM_MODEL_FACTORIES[model_type](model_obj, acquisition_scheme)
+        elif spherical_mean:
+            jax_fn = _JAX_SM_MODEL_FNS[model_type]
+        elif model_type in _JAX_MODEL_FACTORIES:
             jax_fn = _JAX_MODEL_FACTORIES[model_type](model_obj, acquisition_scheme)
         else:
             jax_fn = _JAX_MODEL_FNS[model_type]
