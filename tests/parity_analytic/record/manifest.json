@@ -2393,7 +2393,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.charmed/legacy2": {
-    "sha256": "4498560f7dab174cba73a1d81f59e3e6ca78706f984e9b4b2a48ea10ef73031e",
+    "sha256": "b3c8fadd53d43e88d31282684b5fbe4f12ddda1f4578ca18a7887a69ef668b58",
     "shape": [
      32
     ],
@@ -2401,7 +2401,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.charmed/pgse2": {
-    "sha256": "be86124c37dad53b8787c855a2d4bce5cb3673fe25f13c38b923833635dca134",
+    "sha256": "8f7e07b4cd03cc0f5d948c3fedd96399364fbab0a927a7aa751e672d42ed20c8",
     "shape": [
      32
     ],
@@ -2489,7 +2489,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.noddida/pgse": {
-    "sha256": "727d609b9bef46b592e0540b1206359dad8ecf81418e4a8902ce9fa6a119305f",
+    "sha256": "14078e6d1555a1c976abd49b913236c4edf0fce286d53b20b0b22813e9e1d85c",
     "shape": [
      32
     ],
@@ -2521,7 +2521,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.stick_tortuous_zeppelin/pgse": {
-    "sha256": "c6d021b33426e9431267e1177d5142e7e07d73a98ba553e9746e7115e076fe01",
+    "sha256": "30ca269bbfa33ad49ba84f735ccadebeee43ab3751027120f276561e49d6bd45",
     "shape": [
      32
     ],
@@ -2529,7 +2529,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.stick_tortuous_zeppelin/ste": {
-    "sha256": "dd26db66f93fbd95446b387276007a6cf2cdbab7b9422bc71d5a2424b39e3929",
+    "sha256": "6d8b6843f5cb903d40fab3f91dac6f5b2d677c13986b99690fbfdbd5242fe45b",
     "shape": [
      4
     ],
@@ -2984,7 +2984,7 @@
     "bitwise": true
    },
    "numpy/utils.T1_tortuosity": {
-    "sha256": "dab7c8d64783dc2e11208725d336fdda083b88e7582f2a1593436f775db52342",
+    "sha256": "8aa58cbc1c209485865297b630473ba4e7cb8af425d1649a8a1c9671321b9303",
     "shape": [
      12
     ],

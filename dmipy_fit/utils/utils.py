@@ -207,7 +207,10 @@ class T1_tortuosity:
         vf_intra + (1 - vf_intra) = 1.
         The volume fractions are scaled according to the passed S0 responses.
         If both vf_intra and vf_extra are given, then they have to be
-        normalized fractions, in the sense that vf_intra + vf_extra <= 1.
+        arbitrary non-negative fractions (their sum may be below 1 when a
+        third compartment is present); the tortuosity uses the intra-axonal
+        fraction of the intra+extra bundle, vf_intra / (vf_intra + vf_extra)
+        (Szafer et al. 1995).
 
         Parameters
         ----------
@@ -226,7 +229,9 @@ class T1_tortuosity:
         if vf_extra is None:
             vf_extra = 1. - vf_intra
         else:
-            vf_intra = vf_intra / (vf_intra + vf_extra)
+            vf_sum = vf_intra + vf_extra
+            vf_intra = vf_intra / vf_sum
+            vf_extra = vf_extra / vf_sum
 
         f = ((vf_intra * self.S0_extra) /
              (vf_intra * self.S0_extra + vf_extra * self.S0_intra))
