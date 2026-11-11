@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Parity harness: `rebaseline --only KEY...` and `rename-case OLD NEW`.** `rebaseline PREFIX...` refused whenever any
+  unnamed key differed, which on a machine with another Python, NumPy or JAX than the record's is dozens of keys of
+  environment drift. `rebaseline --only` takes case ids or `fnmatch` patterns (each must match a registered case),
+  evaluates and rewrites only those, ignores the drift of every other key, leaves the manifest's `environment` block
+  as it was and records the written keys under the environment they were written in (`rewrites`). `rename-case`
+  renames a case's keys in the manifest and the `.npz` files, array bytes untouched, and verifies each digest under
+  the new name. No effect on any model or recorded value.
+
 - **`T1_tortuosity` normalises both fractions (wrong lambda_perp with a third compartment).** Called with two
   explicit fractions, the link divided the intra fraction by `vf_intra + vf_extra` but used the raw extra fraction, so
   whenever the two did not sum to one it returned the wrong perpendicular diffusivity; it now uses the intra fraction of
