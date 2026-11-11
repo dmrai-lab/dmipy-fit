@@ -86,6 +86,39 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -c tests/parity_analytic/constraints.txt \
+                      "dmipy-sim @ git+https://github.com/dmrai-lab/dmipy-sim@${DMIPY_SIM_REF}" \
+                      "dmipy-replay @ git+https://github.com/dmrai-lab/dmipy-replay@${DMIPY_REPLAY_REF}" \
+                      "dmipy-analytic[special,jax] @ git+https://github.com/dmrai-lab/dmipy-analytic@${DMIPY_ANALYTIC_REF}" \
+                      "jax[cpu]" jaxopt scipy packaging
+          pip install --no-deps -e .
+
+      - name: The CPU features numpy dispatches on
+        run: python -c "import numpy; numpy.show_config()" | sed -n '/SIMD/,$p'
+
+      - name: Compare with the base revision
+        run: |
+          python tests/parity_analytic/harness.py check --reference base/tests/parity_analytic/record \
+                 --base-manifest "$RUNNER_TEMP/base_manifest.json"
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
       - name: Install system dependencies
         # Refresh the image's package index first; if Azure's Ubuntu mirror does not resolve, use the main archive.
         run: |
