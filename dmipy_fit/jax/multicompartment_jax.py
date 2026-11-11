@@ -25,7 +25,7 @@ from .signal_models_jax import (
     c4cylinder_signal,
     build_c3cylinder_jax_fn,
 )
-from .exchange_models_jax import karger_signal, karger_isotropic_signal, nexi_spherical_mean
+from .exchange_models_jax import nexi_spherical_mean
 from ..signal_models.gaussian_models import G1Ball, G2Zeppelin, G3TemporalZeppelin
 from ..signal_models.exchange_models import X0GeneralizedKarger, X1NEXI
 # Backward-compat alias: X1KargerModel was renamed to X0GeneralizedKarger
@@ -535,6 +535,24 @@ def _make_dd2poisson_jax_fn(model_obj, acquisition_scheme=None):
     return dd2poisson_jax_fn
 
 
+def checked_compartment_exponent(signal, name):
+    """Real effective-medium -log(E), checked also under JIT on CPU/GPU.
+
+    A runtime callback raises CompartmentSignalDomainError for underflowed,
+    negative or nonfinite restricted signals. Gaussian pools use exponents
+    directly, so valid high attenuation never enters this domain check.
+    """
+    from ..signal_models.exchange_models import CompartmentSignalDomainError
+    def raise_domain():
+        raise CompartmentSignalDomainError(
+            f'{name}: effective-medium -log(E) requires finite E > 0')
+    def fail(_):
+        jax.debug.callback(raise_domain)
+        return jnp.zeros_like(signal)
+    return jax.lax.cond(jnp.all(jnp.isfinite(signal) & (signal > 0)),
+                        lambda _: -jnp.log(signal), fail, operand=None)
+
+
 def _resolve_karger_diffusion_fn(sub_model, karger_model, acquisition_scheme):
     """Diffusion-only JAX fn + relaxation keys for one Karger sub-model.
 
@@ -542,15 +560,15 @@ def _resolve_karger_diffusion_fn(sub_model, karger_model, acquisition_scheme):
     is the sub-model's diffusion-only signal. Mirrors NumPy ``_sub_kwargs``: an
     OccupancyGatedModel is unwrapped to its *base* diffusion model (so no
     relaxation factor is applied), and the base's diffusion params are mapped
-    from the Karger combined namespace via ``_inverted_parameter_map``. The
+    from the public Karger ``compartment_parameter_names`` record. The
     per-pool ``…_T2`` / ``…_T1`` combined keys are returned for the propagator
     (None when the pool has no such parameter).
     """
     from ..signal_models.attenuation import OccupancyGatedModel
-    inv = karger_model._inverted_parameter_map
+    inv = karger_model.compartment_parameter_names
     if isinstance(sub_model, OccupancyGatedModel):
         base = sub_model.model
-        diff_param_names = list(sub_model._base_names)
+        diff_param_names = [p for p in base.parameter_ranges if p not in ('T2', 'T1')]
     else:
         base = sub_model
         diff_param_names = [p for p in sub_model.parameter_ranges
@@ -568,94 +586,40 @@ def _resolve_karger_diffusion_fn(sub_model, karger_model, acquisition_scheme):
     T2_key = inv.get((sub_model, 'T2'))
     T1_key = inv.get((sub_model, 'T1'))
 
-    def diff_fn(scheme_jax, params):
-        return base_fn(scheme_jax, {p: params[k] for p, k in key_map.items()})
-    return diff_fn, T2_key, T1_key
+    def exponent_fn(scheme_jax, params):
+        p = {name: params[key] for name, key in key_map.items()}
+        if base_type is G1Ball:
+            return scheme_jax['bvalues'] * p['lambda_iso']
+        if base_type in (C1Stick, G2Zeppelin):
+            axis = unitsphere2cart_1d_jax(p['mu'])
+            B = scheme_jax['btensor']
+            along = jnp.einsum('i,mij,j->m', axis, B, axis)
+            if base_type is C1Stick:
+                return p['lambda_par'] * along
+            return (p['lambda_perp'] * jnp.trace(B, axis1=-2, axis2=-1)
+                    + (p['lambda_par'] - p['lambda_perp']) * along)
+        return checked_compartment_exponent(base_fn(scheme_jax, p), base_type.__name__)
+    return exponent_fn, T2_key, T1_key
 
 
-def _make_karger_matrix_jax_fn(model_obj, acquisition_scheme):
-    """Relaxation-coupled (and finite-RF) Kärger via the dimension-agnostic
-    matrix-exponential propagator — the general path.
-
-    Model is two-pool (matching NumPy X0GeneralizedKarger); the propagator is
-    N-agnostic (issue #7 / the N-pool model issue). Each sub-model is evaluated
-    diffusion-only (R_i = -log E_i -> D_i_eff = R_i / b); per-compartment T2/T1
-    are read from the namespace and folded into the SE/STE propagator, which is
-    vmapped over measurements. b0 measurements are normalised to 1.
-    """
-    # Physics guard: the JAX propagator assumes instantaneous RF (tau=0). No
-    # standard scheme constructor sets finite RF durations, but if one is present
-    # the NumPy propagator models it and JAX would silently ignore it -> refuse
-    # rather than misrepresent. (See NumPy X0GeneralizedKarger.__call__.)
-    for _tau in ('tau_exc', 'tau_180', 'tau_90'):
-        _v = getattr(acquisition_scheme, _tau, None)
-        if _v is not None and np.any(np.asarray(_v, dtype=float) > 0):
-            raise NotImplementedError(
-                "solver='jax' Karger relaxation path assumes instantaneous RF, "
-                "but the scheme has finite {} > 0 (modelled only by the NumPy "
-                "propagator). Use solver='brute2fine'.".format(_tau))
-
-    intra_fn, intra_T2k, intra_T1k = _resolve_karger_diffusion_fn(
-        model_obj.model_intra, model_obj, acquisition_scheme)
-    extra_fn, extra_T2k, extra_T1k = _resolve_karger_diffusion_fn(
-        model_obj.model_extra, model_obj, acquisition_scheme)
-    has_TM = getattr(acquisition_scheme, 'TM', None) is not None
-    INF = 1e10
-    B0_THRESH = 1e3   # b < this -> b0, signal normalised to 1 (NumPy convention)
-
-    def _T(params, key):
-        if key is None:
-            return INF
-        v = params.get(key)
-        if v is None:
-            return INF
-        return jnp.where(jnp.isfinite(v), v, INF)
-
-    def fn(scheme_jax, params):
-        b = scheme_jax['bvalues']
-        Delta = scheme_jax['Delta']
-        f = params['f']
-        K = jexchange.exchange_matrix(params['kappa'], f)
-        M0 = jnp.array([f, 1.0 - f])
-
-        EPS = 1e-10
-        Ri = -jnp.log(jnp.maximum(intra_fn(scheme_jax, params), EPS))
-        Re = -jnp.log(jnp.maximum(extra_fn(scheme_jax, params), EPS))
-        bpos = jnp.maximum(b, 1.0)
-        D = jnp.stack([Ri / bpos, Re / bpos], axis=-1)         # (n_m, 2)
-        T2 = jnp.array([_T(params, intra_T2k), _T(params, extra_T2k)])
-        T1 = jnp.array([_T(params, intra_T1k), _T(params, extra_T1k)])
-
-        if has_TM:
-            TM = scheme_jax['tau_par']                          # per-measurement
-            delta = scheme_jax['delta']
-            E = jax.vmap(lambda Dm, bm, dm, tm: jexchange.stimulated_echo_signal(
-                K, M0, Dm, T2, T1, bm, dm, tm, dm))(D, b, delta, TM)
-        else:
-            te = scheme_jax.get('TE')
-            te = (2.0 * Delta) if te is None else te            # fallback 2*Delta
-            dt = te / 2.0                                       # instantaneous RF
-            E = jax.vmap(lambda Dm, bm, dtm: jexchange.spin_echo_signal(
-                K, M0, Dm, T2, T1, bm, dtm, dtm))(D, b, dt)
-        return jnp.where(b < B0_THRESH, 1.0, E)
-    return fn
-
-
-def _make_karger_waveform_jax_fn(model_obj, acquisition_scheme, double):
-    """The JAX twin of the NumPy model's filter-exchange route (``exchange_models._waveform_signal``): each row of each
+def _make_karger_waveform_jax_fn(model_obj, acquisition_scheme):
+    """The JAX twin of the NumPy model's filter-exchange route (``exchange_models.waveform_signal``): each row of each
     filter-exchange sequence by :func:`dmipy_analytic.jax.exchange.karger_waveform` along the row's effective gradient,
     the pools' diffusivities along the row's direction from the sub-models' dephasing exponents, any per-pool T2 / T1
     from the namespace, the pathway amplitude left out."""
     intra_fn, intra_T2k, intra_T1k = _resolve_karger_diffusion_fn(model_obj.model_intra, model_obj, acquisition_scheme)
     extra_fn, extra_T2k, extra_T1k = _resolve_karger_diffusion_fn(model_obj.model_extra, model_obj, acquisition_scheme)
-    blocks = []
-    for seq, rows in double:
-        stored = ~np.asarray(seq.rf.transverse_gate(seq.n_t, seq.dt), dtype=bool)
-        blocks.append((jnp.asarray(np.asarray(seq.G_eff, np.float64)), float(seq.dt), stored, np.asarray(rows)))
+    from ..core.waveform import acquisition_waveform_blocks
+    blocks = [(jnp.asarray(G), dt, stored, rows)
+              for G, dt, stored, rows in acquisition_waveform_blocks(acquisition_scheme)]
 
     def _T(params, key):
-        v = None if key is None else params.get(key)
-        return jnp.inf if v is None else v
+        return jnp.inf if key is None else params[key]
+
+    from ..signal_models.exchange_models import double_encodings
+    is_double = bool(double_encodings(acquisition_scheme))
+    has_relaxation = any(k is not None for k in (intra_T2k, extra_T2k, intra_T1k, extra_T1k))
+    is_stimulated = getattr(acquisition_scheme, 'TM', None) is not None
 
     def fn(scheme_jax, params):
         params = model_obj.add_linked_parameters_to_parameters(params)
@@ -663,17 +627,24 @@ def _make_karger_waveform_jax_fn(model_obj, acquisition_scheme, double):
         f = params['f']
         K = jexchange.exchange_matrix(params['kappa'], f)
         M0 = jnp.stack([f, 1.0 - f])
-        EPS = 1e-10
-        Ri = -jnp.log(jnp.maximum(intra_fn(scheme_jax, params), EPS))
-        Re = -jnp.log(jnp.maximum(extra_fn(scheme_jax, params), EPS))
-        D = jnp.where((b > 0)[:, None], jnp.stack([Ri, Re], axis=-1) / jnp.maximum(b, 1e-300)[:, None], 0.0)
+        Ri = intra_fn(scheme_jax, params)
+        Re = extra_fn(scheme_jax, params)
+        D = jnp.stack([Ri, Re], axis=-1) / jnp.where(b > 0, b, 1.)[:, None]
         T2 = jnp.stack([_T(params, intra_T2k), _T(params, extra_T2k)])
         T1 = jnp.stack([_T(params, intra_T1k), _T(params, extra_T1k)])
         E = jnp.zeros(b.shape[0], dtype=D.dtype)
         for G, dt, stored, rows in blocks:
-            sig = jax.vmap(lambda g, d: jexchange.karger_waveform(g, dt, d, K, M0, stored=stored, T2=T2, T1=T1))(
-                G, D[rows])
+            def propagate(sub_steps):
+                return jax.vmap(lambda g, d: jexchange.karger_waveform(
+                    g, dt, d, K, M0, stored=stored, T2=T2, T1=T1, sub_steps=sub_steps))(G, D[rows])
+            sig = jax.lax.cond(-jnp.trace(K)*dt > 1,
+                               lambda _: propagate(8), lambda _: propagate(1), operand=None)
             E = E.at[rows].set(sig)
+        if has_relaxation and not is_double:
+            active_relaxation = jnp.any(jnp.isfinite(T1)) | jnp.any(jnp.isfinite(T2))
+            if is_stimulated:
+                E = jnp.where(active_relaxation, E*.5, E)
+            E = jnp.where(active_relaxation & (b < 1e3), 1., E)
         return E
     return fn
 
@@ -681,101 +652,25 @@ def _make_karger_waveform_jax_fn(model_obj, acquisition_scheme, double):
 def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
     """Factory for X0GeneralizedKarger.
 
-    No relaxation / instantaneous RF -> fast scalar Kärger eigenvalue formula,
-    dispatched on the sub-model pair (Ball+Ball, S4Sphere+Ball, oriented
-    Stick/Zeppelin). With a compartment-wise T2/T1 add-on (via
-    OccupancyGatedModel), relaxation and exchange do not factor -> route to the
-    general matrix-exponential propagator (``_make_karger_matrix_jax_fn``), which
-    handles arbitrary JAX-supported sub-models. See issue #7.
+    PGSE and FEXI share the analytic held-waveform propagator, including
+    coupled T1/T2. Finite-duration RF outside FEXI remains unsupported.
     """
+    if acquisition_scheme is None:
+        raise ValueError('X0GeneralizedKarger JAX requires an acquisition scheme for its waveform')
     from ..signal_models.attenuation import OccupancyGatedModel
-    from ..signal_models.exchange_models import _double_encodings
-
-    double = _double_encodings(acquisition_scheme) if acquisition_scheme is not None else []
-    if double:
-        return _make_karger_waveform_jax_fn(model_obj, acquisition_scheme, double)
-
-    has_relaxation_addon = (
-        isinstance(model_obj.model_intra, OccupancyGatedModel)
-        or isinstance(model_obj.model_extra, OccupancyGatedModel)
-        or any(k == 'T2' or k == 'T1' or k.endswith('_T2') or k.endswith('_T1')
-               for k in model_obj.parameter_ranges)
-    )
-    if has_relaxation_addon:
-        return _make_karger_matrix_jax_fn(model_obj, acquisition_scheme)
-
-    intra_type = type(model_obj.model_intra)
-    extra_type = type(model_obj.model_extra)
-
-    # ── Variant 1: Ball + Ball ──────────────────────────────────────────────
-    if intra_type is G1Ball and extra_type is G1Ball:
-        def _ball_ball_jax_fn(scheme_jax, params):
-            E = karger_isotropic_signal(
-                scheme_jax['bvalues'],
-                scheme_jax['delta'],
-                scheme_jax['Delta'],
-                params['G1Ball_1_lambda_iso'],
-                params['G1Ball_2_lambda_iso'],
-                params['f'],
-                params['kappa'],
-            )
-            # Pure diffusion+exchange fast path (no relaxation). Coupled
-            # relaxation-exchange is only available on the NumPy propagator.
-            return E
-        return _ball_ball_jax_fn
-
-    # ── Variant 2: S4Sphere + G1Ball (SANDIX / EXCHANGE-IMPULSED) ──────────
-    if intra_type is S4SphereGaussianPhaseApproximation and extra_type is G1Ball:
-        # Build S4 closure with precomputed roots; T2 handled by parent.
-        s4_jax_fn = _make_s4sphere_ogse_jax_fn(model_obj.model_intra, acquisition_scheme)
-        sphere_param = [k for k in model_obj.parameter_ranges
-                        if 'diameter' in k][0]
-        ball_param   = [k for k in model_obj.parameter_ranges
-                        if 'lambda_iso' in k][0]
-
-        def _sphere_ball_jax_fn(scheme_jax, params):
-            # Sub-model signals (no T2 — parent applies it)
-            E_intra = s4_jax_fn(scheme_jax, {'diameter': params[sphere_param]})
-            E_extra = jgaussian.ball(scheme_jax['bvalues'], params[ball_param])
-            EPS = 1e-10
-            Ri = -jnp.log(jnp.maximum(E_intra, EPS))
-            Re = -jnp.log(jnp.maximum(E_extra, EPS))
-            t_d = jexchange.diffusion_time(scheme_jax['delta'], scheme_jax['Delta'])
-            E = jexchange.karger(Ri, Re, params['kappa'], params['f'], t_d)
-            return E
-        return _sphere_ball_jax_fn
-
-    # ── Variant 3: oriented Stick + Zeppelin ────────────────────────────────
-    if not (intra_type is C1Stick and extra_type is G2Zeppelin):
-        raise NotImplementedError(
-            f"No JAX route for X0GeneralizedKarger of {intra_type.__name__} and {extra_type.__name__}: the closed "
-            "Karger form is wired for G1Ball with G1Ball, S4SphereGaussianPhaseApproximation with G1Ball, and "
-            "C1Stick with G2Zeppelin.")
-    names = {(m, p): prefix + p
-             for prefix, m in zip(model_obj.model_names, model_obj.models)
-             for p in m.parameter_ranges}
-    stick_parallel = names[(model_obj.model_intra, 'lambda_par')]
-    zeppelin_parallel = names[(model_obj.model_extra, 'lambda_par')]
-    zeppelin_perpendicular = names[(model_obj.model_extra, 'lambda_perp')]
-
-    def _anisotropic_jax_fn(scheme_jax, params):
-        # The tortuosity link sets the zeppelin's perpendicular diffusivity from its parallel one.
-        params = model_obj.add_linked_parameters_to_parameters(params)
-        mu_cart = unitsphere2cart_1d_jax(params['mu'])
-        E = karger_signal(
-            scheme_jax['bvalues'],
-            scheme_jax['delta'],
-            scheme_jax['Delta'],
-            scheme_jax['gradient_directions'],
-            mu_cart,
-            params[stick_parallel],
-            params[zeppelin_parallel],
-            params[zeppelin_perpendicular],
-            params['f'],
-            params['kappa'],
-        )
-        return E
-    return _anisotropic_jax_fn
+    bases = [m.model if isinstance(m, OccupancyGatedModel) else m for m in model_obj.models]
+    types = tuple(type(m) for m in bases)
+    gated = any(isinstance(m, OccupancyGatedModel) for m in model_obj.models)
+    if not gated and types not in ((G1Ball, G1Ball), (S4SphereGaussianPhaseApproximation, G1Ball),
+                                   (C1Stick, G2Zeppelin)):
+        raise NotImplementedError(f'No JAX route for X0GeneralizedKarger of {types[0].__name__} and {types[1].__name__}')
+    for name in ('tau_exc', 'tau_180', 'tau_90'):
+        duration = getattr(acquisition_scheme, name, None)
+        if duration is not None and np.any(np.asarray(duration) > 0):
+            from ..signal_models.exchange_models import double_encodings
+            if not double_encodings(acquisition_scheme):
+                raise NotImplementedError('JAX Karger requires instantaneous RF outside FEXI')
+    return _make_karger_waveform_jax_fn(model_obj, acquisition_scheme)
 
 
 # Simple models: no per-instance constants needed

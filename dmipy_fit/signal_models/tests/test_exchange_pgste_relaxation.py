@@ -12,13 +12,14 @@ relaxation factors down to a hand computation:
   window carries the longitudinal ``exp(-TM/T1)`` weighting (and exchange) but no
   transverse relaxation -- T2 is gated to the encoding lobes.
 
-The hand computations below re-derive the model's documented propagators
-(eq. Karger SE / STE) from scratch in the idealised instantaneous-pulse limit
-(all RF durations zero) so that a match validates the wiring, not the algebra.
+The independent ODE below retains the finite gradient lobes with instantaneous
+RF. It replaces the former constant-weighting-rate oracle, the approximation
+that this follow-up removes, while retaining relaxation and pathway assertions.
 """
 import numpy as np
 import numpy.testing as npt
-from scipy.linalg import expm
+from scipy.integrate import solve_ivp
+from dmipy_analytic.constants import GAMMA
 
 from dmipy_fit.signal_models.exchange_models import X0GeneralizedKarger
 from dmipy_fit.signal_models.gaussian_models import G1Ball
@@ -62,53 +63,43 @@ def _Kmat():
     return np.array([[-KAPPA, kee], [KAPPA, -kee]], dtype=float)
 
 
-def _hand_se(b, dt1, dt2, T1_1_, T1_2_, T2_1_, T2_2_):
-    """Instantaneous-pulse SE Karger propagator, per measurement.
+def _hand_waveform(scheme, T1_1_, T1_2_, T2_1_, T2_2_, *, t2_in_mixing):
+    """Independent time-ordered ODE, including exchange during finite lobes.
 
-    Free precession splits into two intervals dt1, dt2 straddling the 180; each
-    carries transverse relaxation and half the b-weighting.  T1 is absent from a
-    spin echo (no storage window)."""
-    K = _Kmat()
-    RT2 = np.diag([1.0 / T2_1_, 1.0 / T2_2_])
-    RD = np.diag([D1, D2])
-    M0 = np.array([F, 1.0 - F])
-    out = []
-    for bv in b:
-        if bv < 1e3:
-            out.append(1.0)
-            continue
-        B1 = B2 = bv / 2.0
-        P1 = expm((K - RT2) * dt1 - B1 * RD)
-        P2 = expm((K - RT2) * dt2 - B2 * RD)
-        out.append(float(np.sum(P2 @ P1 @ M0)))
-    return np.array(out)
-
-
-def _hand_ste(b, delta, tm, dt6, T1_1_, T1_2_, T2_1_, T2_2_,
-              t2_in_mixing=False):
-    """Instantaneous-pulse STE Karger propagator, per measurement.
-
-    Chronology: encode (delta, transverse), store, mix (TM, longitudinal),
-    recall, encode (dt6, transverse).  The mixing window carries T1 and exchange
-    only; set ``t2_in_mixing=True`` to (incorrectly) let T2 accrue during TM, used
-    to show the model gates it out.  Includes the 0.5 stimulated-echo factor."""
-    K = _Kmat()
-    RT2 = np.diag([1.0 / T2_1_, 1.0 / T2_2_])
-    RT1 = np.diag([1.0 / T1_1_, 1.0 / T1_2_])
-    RD = np.diag([D1, D2])
-    M0 = np.array([F, 1.0 - F])
-    R_mix = (K - RT1 - RT2) if t2_in_mixing else (K - RT1)
-    out = []
-    for bv in b:
-        if bv < 1e3:
-            out.append(1.0)
-            continue
-        B1 = B2 = bv / 2.0
-        P_enc1 = expm((K - RT2) * delta - B1 * RD)
-        P_mix = expm(R_mix * tm)
-        P_enc2 = expm((K - RT2) * dt6 - B2 * RD)
-        out.append(float(0.5 * np.sum(P_enc2 @ P_mix @ P_enc1 @ M0)))
-    return np.array(out)
+    Constant b/2 per encoding interval was the old approximation under audit;
+    it cannot be an oracle for the finite-waveform model. No production
+    exchange function or waveform b-integral is used here.
+    """
+    out = np.empty(len(scheme.bvalues))
+    r1, r2 = np.array([1/T1_1_, 1/T1_2_]), np.array([1/T2_1_, 1/T2_2_])
+    for seq, rows in zip(scheme.protocol, scheme.protocol.rows):
+        from dmipy_replay.acquisition.rf import role_of
+        roles = {role_of(event): event.t_s for event in seq.rf}
+        for local, row in enumerate(rows):
+            if scheme.bvalues[row] < 1e3:
+                out[row] = 1.
+                continue
+            g = np.asarray(seq.G_eff[local], dtype=float)
+            changes = np.any(g[1:-1] != g[:-2], axis=1)
+            edges = np.r_[0., (np.flatnonzero(changes)+1)*seq.dt, seq.T]
+            if seq.stimulated_echo:
+                edges = np.unique(np.r_[edges, roles['store'], roles['recall']])
+            moment, magnetisation = np.zeros(3), np.array([F, 1-F])
+            for first, last in zip(edges[:-1], edges[1:]):
+                duration = last-first
+                midpoint = (first+last)/2
+                gradient = g[int(midpoint/seq.dt)]
+                stored = seq.stimulated_echo and roles['store'] <= midpoint < roles['recall']
+                rate = r1 + (r2 if t2_in_mixing else 0) if stored else r2
+                def rhs(t, M):
+                    q = GAMMA * (moment + gradient*t)
+                    return _Kmat() @ M - (rate + np.dot(q, q)*np.array([D1, D2]))*M
+                sol = solve_ivp(rhs, (0, duration), magnetisation, method='DOP853', rtol=1e-12, atol=1e-14)
+                assert sol.success
+                magnetisation = sol.y[:, -1]
+                moment += gradient*duration
+            out[row] = magnetisation.sum() * (.5 if seq.stimulated_echo else 1.)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -123,8 +114,7 @@ def test_pgse_karger_matches_hand_se_propagator():
         B, BVECS, delta=DELTA, Delta=DELTA + TM, TE=TE)
     E = np.asarray(_model()(scheme, **_kwargs()))
     # 180 sits at TE/2; instantaneous pulses -> dt1 = dt2 = TE/2.
-    expected = _hand_se(B, TE / 2.0, TE / 2.0,
-                        T1_1, T1_2, T2_1, T2_2)
+    expected = _hand_waveform(scheme, T1_1, T1_2, T2_1, T2_2, t2_in_mixing=False)
     npt.assert_allclose(E, expected, atol=1e-9)
 
 
@@ -155,7 +145,7 @@ def test_pgste_karger_matches_hand_ste_propagator():
     npt.assert_allclose(scheme.TM, TM)
     E = np.asarray(_model()(scheme, **_kwargs()))
     dt6 = DELTA                                 # second encoding lobe = delta
-    expected = _hand_ste(B, DELTA, TM, dt6, T1_1, T1_2, T2_1, T2_2)
+    expected = _hand_waveform(scheme, T1_1, T1_2, T2_1, T2_2, t2_in_mixing=False)
     npt.assert_allclose(E, expected, atol=1e-9)
 
 
@@ -169,7 +159,7 @@ def test_pgste_default_te_encodes_both_lobes():
     npt.assert_allclose(scheme.TE, 2.0 * DELTA + TM)
     npt.assert_allclose(scheme.tau_perp, 2.0 * DELTA)
     E = np.asarray(_model()(scheme, **_kwargs()))
-    expected = _hand_ste(B, DELTA, TM, DELTA, T1_1, T1_2, T2_1, T2_2)
+    expected = _hand_waveform(scheme, T1_1, T1_2, T2_1, T2_2, t2_in_mixing=False)
     npt.assert_allclose(E, expected, atol=1e-9)
 
 
@@ -201,9 +191,9 @@ def test_pgste_transverse_relaxation_gated_to_encoding():
     # T1 -> inf isolates the transverse behaviour of the mixing window.
     E = np.asarray(_model()(scheme, **_kwargs(T1_1_=INF, T1_2_=INF)))
     dt6 = DELTA                                 # second encoding lobe = delta
-    gated = _hand_ste(B, DELTA, TM, dt6, INF, INF, T2_1, T2_2,
+    gated = _hand_waveform(scheme, INF, INF, T2_1, T2_2,
                       t2_in_mixing=False)
-    ungated = _hand_ste(B, DELTA, TM, dt6, INF, INF, T2_1, T2_2,
+    ungated = _hand_waveform(scheme, INF, INF, T2_1, T2_2,
                         t2_in_mixing=True)
     npt.assert_allclose(E, gated, atol=1e-9)
     dw = B > 1e3
@@ -242,7 +232,7 @@ def test_karger_relaxation_via_occupancy_gated_addon():
     common = dict(OccupancyGatedModel_1_lambda_iso=D1, G1Ball_1_lambda_iso=D2,
                   f=F, kappa=KAPPA)
     E_relax = np.asarray(gated(scheme, OccupancyGatedModel_1_T2=T2_1, **common))
-    E_norelax = np.asarray(gated(scheme, **common))  # T2 unset -> no relaxation
+    E_norelax = np.asarray(gated(scheme, OccupancyGatedModel_1_T2=np.inf, **common))
 
     dw = B > 1e3
     assert np.all(E_relax[dw] < E_norelax[dw])   # T2 add-on attenuates the signal
@@ -285,4 +275,4 @@ def test_jax_karger_builds_relaxation_path_and_matches_numpy():
 
     # Relaxation-free Karger still builds the scalar fast path.
     plain = X0GeneralizedKarger(G1Ball(), G1Ball())
-    assert _make_x1karger_jax_fn(plain) is not None
+    assert _make_x1karger_jax_fn(plain, scheme) is not None

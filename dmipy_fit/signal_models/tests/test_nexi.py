@@ -7,8 +7,7 @@ from numpy.testing import assert_allclose
 from dmipy_fit.core.acquisition_scheme import acquisition_scheme_from_bvalues
 from dmipy_fit.core.modeling_framework import MultiCompartmentSphericalMeanModel
 from dmipy_fit.custom_optimizers.reference_models import nexi
-from dmipy_fit.signal_models.cylinder_models import C1Stick
-from dmipy_fit.signal_models.gaussian_models import G1Ball
+from dmipy_fit.signal_models.exchange_models import X1NEXI
 from dmipy_fit.signal_models.nexi_reference import nexi_jelescu2022
 
 
@@ -26,10 +25,10 @@ def test_nexi_composition_and_parameters():
     assert set(model.parameter_names) == {
         'X1NEXI_1_f', 'X1NEXI_1_D_i', 'X1NEXI_1_D_e', 'X1NEXI_1_t_ex'}
     assert set(model.parameter_types.values()) == {'normal'}
-    pair = model.models[0].exchange_model
-    assert isinstance(pair.model_intra, C1Stick)
-    assert isinstance(pair.model_extra, G1Ball)
-    assert pair.parameter_links == []
+    kernel = model.models[0]
+    assert isinstance(kernel, X1NEXI)
+    assert np.all((kernel.cos_theta > 0) & (kernel.cos_theta < 1))
+    assert_allclose(kernel.quadrature_weights.sum(), 1., rtol=0, atol=2e-15)
     assert model.parameter_scales['X1NEXI_1_t_ex'] == 1e-3
     assert_allclose(np.array(model.parameter_ranges['X1NEXI_1_t_ex']) * 1e-3,
                     [0.001, 0.5])
@@ -43,7 +42,7 @@ def test_nexi_matches_independent_reference(scheme, f, di, de, t_ex, record_prop
     """36 tissue combinations x 15 b/Delta pairs: rtol=2e-12, atol=2e-14.
 
     b=0--6e9 s/m², Delta=15--80 ms, delta=4 ms. These kernels remain
-    above the known Karger floor; the finite-pulse approximation is unchanged.
+    in the published narrow-pulse regime; no signal floor is imposed.
     """
     model = nexi()
     sm = scheme.spherical_mean_scheme

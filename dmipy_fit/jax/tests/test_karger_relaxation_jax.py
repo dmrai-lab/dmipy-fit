@@ -8,7 +8,7 @@ both PGSE and PGSTE, and check the no-relaxation fast path still matches.
 import numpy as np
 import pytest
 
-pytest.importorskip("jax")
+jax = pytest.importorskip("jax")
 import jax.numpy as jnp
 
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
@@ -25,6 +25,12 @@ BVECS = np.array([[1., 0, 0], [1, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1.]])
 DELTA, TM = 6e-3, 40e-3
 
 
+@pytest.fixture(autouse=True, params=[True, False])
+def precision(request):
+    with jax.enable_x64(request.param):
+        yield
+
+
 def _gated(base, factors=(TransverseRelaxation, LongitudinalRelaxation)):
     return OccupancyGatedModel(base, [f() for f in factors])
 
@@ -34,6 +40,8 @@ def _eval_np_jax(karger, scheme, params):
     fn = _make_x1karger_jax_fn(karger, scheme)
     E_jax = np.asarray(fn(scheme_to_jax(scheme),
                           {k: jnp.asarray(v) for k, v in params.items()}))
+    if jax.config.jax_enable_x64:
+        np.testing.assert_allclose(E_jax, E_np, rtol=3e-11, atol=2e-13)
     return E_np, E_jax
 
 
@@ -67,7 +75,8 @@ def test_jax_matches_numpy_pgste_gated_ball_ball():
     # gated ball+ball is isotropic -> no 'mu'; all keys carry the
     # OccupancyGatedModel_i_ prefix (base lambda_iso + factor T1/T2).
     E_np, E_jax = _eval_np_jax(karger, scheme, params)
-    np.testing.assert_allclose(E_jax, E_np, rtol=2e-4, atol=2e-5)
+    # The storage-aligned grid has 25975 intervals; float32 accumulates 5e-4 over it (float64: 3e-11, above).
+    np.testing.assert_allclose(E_jax, E_np, rtol=1e-4 if jax.config.jax_enable_x64 else 1e-3, atol=2e-5)
 
 
 def test_jax_pgse_independent_of_T1():

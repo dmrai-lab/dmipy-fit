@@ -44,6 +44,7 @@ def scheme_to_jax(acquisition_scheme):
     out = {
         'bvalues': jnp.array(s.bvalues),
         'gradient_directions': jnp.array(s.gradient_directions),
+        'btensor': jnp.array(s.btensor()),
     }
     if s.qvalues is not None:
         out['qvalues'] = jnp.array(s.qvalues)

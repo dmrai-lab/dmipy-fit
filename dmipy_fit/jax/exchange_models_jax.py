@@ -16,67 +16,10 @@ def nexi_spherical_mean(bvalues, delta, Delta, di, de, f, t_ex,
 
     bvalues are s/m², diffusivities m²/s and t_ex seconds. The quadrature
     nodes and weights come from X1NEXI. The PGSE effective time and the
-    general Karger compartment-signal floor match the NumPy composition.
+    narrow-pulse kernel match NumPy; Gaussian exponents never need a signal floor.
     """
-    ri = -jnp.log(jnp.maximum(jnp.exp(-bvalues[:, None] * di * cos_theta**2), 1e-10))
-    re = -jnp.log(jnp.maximum(jnp.exp(-bvalues[:, None] * de), 1e-10))
+    ri = bvalues[:, None] * di * cos_theta**2
+    re = bvalues[:, None] * de
     time = jexchange.diffusion_time(delta, Delta)[:, None]
     kernels = jexchange.karger(ri, re, (1. - f) / t_ex, f, time)
     return kernels @ weights
-
-
-def karger_signal(bvalues, delta, Delta, gradient_directions,
-                  mu_cart, Di, De_par, De_perp, f, kappa):
-    """Signal attenuation for the Karger two-compartment exchange model.
-
-    Parameters
-    ----------
-    bvalues : jnp.array, shape (N,), s/m^2
-    delta : jnp.array, shape (N,), pulse length in s
-    Delta : jnp.array, shape (N,), pulse separation in s
-    gradient_directions : jnp.array, shape (N, 3)
-    mu_cart : jnp.array, shape (3,), Cartesian unit vector
-    Di : scalar, intra-neurite parallel diffusivity in m^2/s
-    De_par : scalar, extra-neurite parallel diffusivity in m^2/s
-    De_perp : scalar, extra-neurite perpendicular diffusivity in m^2/s
-    f : scalar, intra-neurite volume fraction
-    kappa : scalar, exchange rate in s^-1
-
-    Returns
-    -------
-    jnp.array, shape (N,)
-    """
-    t_d = jexchange.diffusion_time(delta, Delta)          # (N,)
-
-    cos_theta = jnp.sum(gradient_directions * mu_cart, axis=-1)   # (N,)
-    cos2 = cos_theta ** 2
-    sin2 = 1.0 - cos2
-
-    Di_n = Di * cos2                          # (N,)
-    De_n = De_par * cos2 + De_perp * sin2    # (N,)
-
-    Ri = bvalues * Di_n       # (N,)
-    Re = bvalues * De_n       # (N,)
-
-    return jexchange.karger(Ri, Re, kappa, f, t_d)
-
-
-def karger_isotropic_signal(bvalues, delta, Delta, D1, D2, f, kappa):
-    """Signal attenuation for isotropic two-compartment Karger exchange.
-
-    Both compartments are isotropic (G1Ball x G1Ball). No orientation needed.
-
-    Parameters
-    ----------
-    bvalues : jnp.array, shape (N,), s/m^2
-    delta   : jnp.array, shape (N,), pulse length in s
-    Delta   : jnp.array, shape (N,), pulse separation in s
-    D1      : scalar, intra-compartment diffusivity in m^2/s
-    D2      : scalar, extra-compartment diffusivity in m^2/s
-    f       : scalar, intra-compartment volume fraction
-    kappa   : scalar, exchange rate in s^-1
-    """
-    t_d = jexchange.diffusion_time(delta, Delta)
-    Ri = bvalues * D1
-    Re = bvalues * D2
-    return jexchange.karger(Ri, Re, kappa, f, t_d)

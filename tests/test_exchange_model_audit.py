@@ -2,8 +2,8 @@
 
 No network, external files, optional accelerators, or reference checkouts are
 used by these tests. Predictions and tolerances are stated on each test.
-Known failures retain the physical assertions (strict xfail); the audit IDs
-are defined in docs/exchange_model_audit.md.
+The original physical assertions now pass; the audit IDs and resolutions
+are documented in docs/exchange_model_audit.md.
 """
 
 import numpy as np
@@ -182,13 +182,12 @@ def test_factories_against_finite_pgse_in_narrow_pulse_limit(name):
     assert_allclose(model(scheme, **p)[1], expected, rtol=1e-5, atol=1e-10)
 
 
-@pytest.mark.xfail(strict=True, reason="EXCHANGE-AUDIT-2: finite PGSE uses a constant-q effective-time approximation")
 @pytest.mark.parametrize("name", ["stick_zeppelin_karger", "fexi"])
 def test_factories_against_finite_pgse_ode(name):
     """For delta=18 ms, Delta=40 ms, a claimed exact Gaussian PGSE model must match
     the time-ordered Bloch-Torrey solution to rtol=1e-5, atol=1e-10. The oracle's
-    256/512-step convergence must itself be <2e-7 absolute. The physical assertion
-    is retained as strict xfail until finite-pulse exchange is implemented here.
+    256/512-step convergence must itself be <2e-7 absolute. This assertion
+    checks the finite-waveform exchange route.
     """
     f, kappa, delta, big_delta = 0.35, 17., 0.018, 0.04
     model, scheme, p, d = _factory_case(name, [0., 2.4e9], [[0, 0, 1]]*2, delta, big_delta, f, kappa)
@@ -230,7 +229,6 @@ def test_nexi_factory_matches_published_nexi():
     assert_allclose(got, expected, rtol=2e-6, atol=1e-9)
 
 
-@pytest.mark.xfail(strict=True, reason="EXCHANGE-AUDIT-3: compartment signals are clipped at 1e-10 before taking logs")
 @pytest.mark.parametrize("name", ["stick_zeppelin_karger", "fexi"])
 def test_factories_no_exchange_at_high_attenuation(name):
     """Even below 1e-10, no exchange must give f E1+(1-f) E2 to rtol=2e-12,
@@ -250,7 +248,6 @@ def _fexi_scheme():
     )
 
 
-@pytest.mark.xfail(strict=True, reason="EXCHANGE-AUDIT-4: reported FEXI b and continuous waveform integral disagree")
 def test_fexi_filter_and_no_exchange_limit():
     """A filter actually attenuates each pool: at kappa=0 the forward factory signal
     is f exp[-(bf+bd)Ds]+(1-f) exp[-(bf+bd)Df], to rtol=2e-6, atol=1e-9.
@@ -269,7 +266,6 @@ def test_fexi_filter_and_no_exchange_limit():
     assert weights @ [ds, df] / weights.sum() < f*ds+(1-f)*df
 
 
-@pytest.mark.xfail(strict=True, reason="EXCHANGE-AUDIT-4: reported FEXI b and continuous waveform integral disagree")
 def test_fexi_filter_fast_exchange_limit():
     """At kappa=1e6/s the two-pool FEXI waveform is the single averaged Gaussian
     exp[-(bf+bd)(f Ds+(1-f)Df)] to rtol=2e-4, atol=1e-8. Mixing time adds no
