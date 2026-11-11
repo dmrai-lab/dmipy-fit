@@ -15,10 +15,21 @@ import pytest
 import dmipy_replay as dr
 from dmipy_analytic import exchange
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
-from dmipy_fit.custom_optimizers.reference_models import stick_zeppelin_karger
+from dmipy_fit.core.modeling_framework import MultiCompartmentModel
+from dmipy_fit.signal_models.cylinder_models import C1Stick
 from dmipy_fit.signal_models.exchange_models import X0GeneralizedKarger
 from dmipy_fit.signal_models.filter_exchange import FEXIApparentExchange, fexi_measurements
-from dmipy_fit.signal_models.gaussian_models import G1Ball
+from dmipy_fit.signal_models.gaussian_models import G1Ball, G2Zeppelin
+from dmipy_fit.utils.utils import T1_tortuosity
+
+def _stick_zeppelin_karger():
+    """Stick + Zeppelin exchanging at the Karger rate, with the tortuosity link De_perp = (1 - f) De_par."""
+    stick, zeppelin = C1Stick(), G2Zeppelin()
+    return MultiCompartmentModel([X0GeneralizedKarger(
+        stick, zeppelin,
+        parameter_links=[(zeppelin, 'lambda_perp', T1_tortuosity(),
+                          [(zeppelin, 'lambda_par'), (None, 'f')])])])
+
 
 F, D1, D2, B_F = 0.5, 0.2e-9, 1.5e-9, 1.0e9
 DELTA, BIG_DELTA, DT = 4e-3, 10e-3, 1e-4
@@ -77,7 +88,7 @@ def test_stick_zeppelin_karger_on_a_fexi_protocol_reads_each_pool_along_the_row_
                                       slew_rate=np.inf)
     pre = "X0GeneralizedKarger_1_"
     Di, De, f, kappa, mu = 2.1e-9, 1.7e-9, 0.6, 8.0, np.array([0.5, 0.3])
-    E = stick_zeppelin_karger()(sch, **{pre + "C1Stick_1_lambda_par": Di, pre + "G2Zeppelin_1_lambda_par": De, pre + "mu": mu,
+    E = _stick_zeppelin_karger()(sch, **{pre + "C1Stick_1_lambda_par": Di, pre + "G2Zeppelin_1_lambda_par": De, pre + "mu": mu,
                        pre + "f": f, pre + "kappa": kappa})
     axis = np.array([np.sin(mu[0]) * np.cos(mu[1]), np.sin(mu[0]) * np.sin(mu[1]), np.cos(mu[0])])
     K, M0 = exchange.exchange_matrix(kappa, f), np.array([f, 1.0 - f])
@@ -165,7 +176,7 @@ def _assert_stick_zeppelin_karger_recovers_truth(kappa, **fit_kwargs):
     most ``sqrt(rss (J^T J)^-1_ii)``, ``J`` the model's Jacobian at the solution."""
     sch = _multi_delta_scheme()
     assert sorted(set(np.round(sch.Delta, 6))) == [0.015, 0.025, 0.04]
-    model, pre = stick_zeppelin_karger(), "X0GeneralizedKarger_1_"
+    model, pre = _stick_zeppelin_karger(), "X0GeneralizedKarger_1_"
     truth = {pre + "C1Stick_1_lambda_par": 2.2e-9, pre + "G2Zeppelin_1_lambda_par": 1.6e-9, pre + "mu": [0.6, 1.0],
              pre + "f": 0.55, pre + "kappa": kappa}
     E = model(sch, **truth)

@@ -17,11 +17,25 @@ from dmipy_analytic.constants import GAMMA
 from dmipy_fit.core.acquisition_scheme import (
     AcquisitionScheme, acquisition_scheme_from_bvalues,
 )
-from dmipy_fit.custom_optimizers.reference_models import fexi, nexi, stick_zeppelin_karger
+from dmipy_fit.custom_optimizers.reference_models import fexi, nexi
+from dmipy_fit.core.modeling_framework import MultiCompartmentModel
+from dmipy_fit.signal_models.cylinder_models import C1Stick
+from dmipy_fit.signal_models.exchange_models import X0GeneralizedKarger
+from dmipy_fit.signal_models.gaussian_models import G2Zeppelin
 from dmipy_fit.signal_models.filter_exchange import (
     FEXIApparentExchange, fexi_measurements,
 )
 from dmipy_fit.signal_models.nexi_reference import nexi_jelescu2022
+from dmipy_fit.utils.utils import T1_tortuosity
+
+
+def _stick_zeppelin_karger():
+    """Stick + Zeppelin exchanging at the Karger rate, with the tortuosity link De_perp = (1 - f) De_par."""
+    stick, zeppelin = C1Stick(), G2Zeppelin()
+    return MultiCompartmentModel([X0GeneralizedKarger(
+        stick, zeppelin,
+        parameter_links=[(zeppelin, 'lambda_perp', T1_tortuosity(),
+                          [(zeppelin, 'lambda_par'), (None, 'f')])])])
 
 
 def _generator(f, kappa):
@@ -48,7 +62,7 @@ def _factory_case(name, b, directions, delta, big_delta, f, kappa):
                            prefix + "mu": [0., 0.]})
         c2 = scheme.gradient_directions[:, 2] ** 2
         diffusivities = np.column_stack([di * c2, de * (c2 + (1-f) * (1-c2))])
-        model = stick_zeppelin_karger()
+        model = _stick_zeppelin_karger()
     elif name == "fexi":
         parameters[prefix + "G1Ball_1_lambda_iso"] = 0.3e-9
         diffusivities = np.tile([0.3e-9, 2.e-9], (len(b), 1))

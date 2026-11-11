@@ -9,7 +9,7 @@ jax = pytest.importorskip("jax")
 import jax.numpy as jnp
 
 from dmipy_fit.core.modeling_framework import MultiCompartmentModel
-from dmipy_fit.custom_optimizers.reference_models import nexi, stick_zeppelin_karger
+from dmipy_fit.custom_optimizers.reference_models import nexi
 from dmipy_fit.core.acquisition_scheme import acquisition_scheme_from_bvalues
 from dmipy_fit.data.saved_acquisition_schemes import wu_minn_hcp_acquisition_scheme
 from dmipy_fit.jax.multicompartment_jax import build_mc_forward_fn, build_mc_sm_forward_fn
@@ -17,12 +17,22 @@ from dmipy_fit.signal_models.cylinder_models import C1Stick
 from dmipy_fit.signal_models.exchange_models import X0GeneralizedKarger
 from dmipy_fit.signal_models.gaussian_models import G2Zeppelin
 from dmipy_fit.signal_models.nexi_reference import nexi_jelescu2022
+from dmipy_fit.utils.utils import T1_tortuosity
 
 U32 = 2.0 ** -24            # the unit roundoff of the float32 forward
 OPS = 64                    # the rounding operations between the parameters and the signal: the two diffusivities
 #                             along the gradient (6), the exponents (4), the Karger rates (30) and eigenvalues (10)
 #                             and the two exponentials with their weights (14)
 PREFIX = "X0GeneralizedKarger_1_"
+
+
+def _stick_zeppelin_karger():
+    """Stick + Zeppelin exchanging at the Karger rate, with the tortuosity link De_perp = (1 - f) De_par."""
+    stick, zeppelin = C1Stick(), G2Zeppelin()
+    return MultiCompartmentModel([X0GeneralizedKarger(
+        stick, zeppelin,
+        parameter_links=[(zeppelin, 'lambda_perp', T1_tortuosity(),
+                          [(zeppelin, 'lambda_par'), (None, 'f')])])])
 
 
 @pytest.fixture(scope="module")
@@ -43,14 +53,14 @@ def _compare(model, scheme, values):
 def test_stick_zeppelin_karger_matches_the_numpy_model(scheme, f):
     values = {PREFIX + "C1Stick_1_lambda_par": 2.0e-9, PREFIX + "G2Zeppelin_1_lambda_par": 1.5e-9,
               PREFIX + "mu": [0.7, 1.1], PREFIX + "f": f, PREFIX + "kappa": 30.0}
-    expected = _compare(stick_zeppelin_karger(), scheme, values)
+    expected = _compare(_stick_zeppelin_karger(), scheme, values)
     assert expected.min() < 0.5                                  # a real attenuation, not a flat signal
 
 
 def test_the_tortuosity_link_sets_the_perpendicular_diffusivity_of_the_zeppelin(scheme):
     """Two fractions at the same parallel diffusivities attenuate differently through the link alone: the model
     exposes no perpendicular diffusivity of the zeppelin to set."""
-    model = stick_zeppelin_karger()
+    model = _stick_zeppelin_karger()
     assert PREFIX + "G2Zeppelin_1_lambda_perp" not in model.parameter_names
     base = {PREFIX + "C1Stick_1_lambda_par": 2.0e-9, PREFIX + "G2Zeppelin_1_lambda_par": 1.5e-9,
             PREFIX + "mu": [0.7, 1.1], PREFIX + "kappa": 30.0}
