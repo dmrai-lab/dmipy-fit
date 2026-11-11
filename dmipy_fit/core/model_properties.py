@@ -27,6 +27,11 @@ class ModelProperties:
 
     S0_response = 1.
 
+    # Minimum floating-point precision ``solver='jax'`` must fit this model in:
+    # 'float32' (the production default) or 'float64'. A model that reports a
+    # parameter float32 cannot recover declares 'float64' and says why.
+    required_precision = 'float32'
+
     @property
     def parameter_ranges(self):
         """Returns the optimization ranges of the model parameters.

@@ -3,6 +3,7 @@ import warnings
 from time import time
 
 import numpy as np
+from .jax_precision import at_required_precision
 from ..utils.sh_basis import optional_module
 
 from .fitted_modeling_framework import (
@@ -159,6 +160,7 @@ class MultiCompartmentSphericalMeanModel(MultiCompartmentModelProperties):
                     del self.parameter_cardinality[appended_param_name]
                     del self.parameter_types[appended_param_name]
 
+    @at_required_precision
     def fit(self, acquisition_scheme, data,
             mask=None, solver='brute2fine', Ns=5, maxiter=300,
             N_sphere_samples=30, use_parallel_processing=False,

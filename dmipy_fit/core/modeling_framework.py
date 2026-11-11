@@ -3,6 +3,7 @@ import warnings
 from time import time
 
 import numpy as np
+from .jax_precision import at_required_precision
 from ..utils.sh_basis import optional_module
 
 from .fitted_modeling_framework import FittedMultiCompartmentModel
@@ -165,6 +166,7 @@ class MultiCompartmentModel(MultiCompartmentModelProperties):
                 if self.parameter_optimization_flags[name]:
                     raise ValueError(msg.format(name))
 
+    @at_required_precision
     def fit(self, acquisition_scheme, data,
             mask=None, solver='brute2fine', Ns=5, maxiter=300,
             N_sphere_samples=30, use_parallel_processing=False,
@@ -374,6 +376,8 @@ class MultiCompartmentModel(MultiCompartmentModelProperties):
             import jax.numpy as jnp
             from ..jax.vmap_fit import vmap_fit
             from ..jax.brute_jax import build_jax_brute_fn
+            from ..jax.precision import float64_compartments
+            fit_dtype = np.float64 if float64_compartments(self) else np.float32
             try:
                 from jaxlib.xla_extension import XlaRuntimeError
             except Exception:
@@ -384,10 +388,10 @@ class MultiCompartmentModel(MultiCompartmentModelProperties):
             # or per-measurement (multi-TE / T2 mode / S0_tissue_responses).
             if S0_masked.ndim == 1:
                 # Per-voxel scalar S0
-                data_norm = (data_masked / S0_masked[:, None]).astype(np.float32)
+                data_norm = (data_masked / S0_masked[:, None]).astype(fit_dtype)
             else:
                 # Per-measurement S0 (multi-TE or T2-mode ones array)
-                data_norm = (data_masked / S0_masked).astype(np.float32)
+                data_norm = (data_masked / S0_masked).astype(fit_dtype)
 
             def _run_jax_fit():
                 # JAX brute-force grid search: evaluates all grid points on GPU,
@@ -397,9 +401,10 @@ class MultiCompartmentModel(MultiCompartmentModelProperties):
                     N_sphere_samples, Ns))
                 brute_fn = build_jax_brute_fn(
                     self, self.scheme, forward_fn, fit_func,
-                    Ns=Ns, N_sphere_samples=N_sphere_samples)
+                    Ns=Ns, N_sphere_samples=N_sphere_samples,
+                    dtype=fit_dtype)
                 x0_nested_all = np.array(
-                    brute_fn(jnp.array(data_norm, dtype=jnp.float32)))
+                    brute_fn(jnp.array(data_norm, dtype=fit_dtype)))
 
                 # When fitting sigma, the brute grid covers model params only.
                 # Append the (fixed) sigma initial guess as the last column so
