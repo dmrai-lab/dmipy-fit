@@ -19,12 +19,12 @@ A2  zeppelin()                        1  Anisotropic     Basser et al. 1994, Bio
 A3  temporal_zeppelin()               1  Time-dep        Novikov et al. 2019, NMR Biomed 32
 B1  ball_and_stick()                  1  2-comp WM       Behrens et al. 2003, MRM 50
 B2  ball_and_zeppelin()               1  2-comp WM       Panagiotaki et al. 2012, NeuroImage 59
-B3  stick_tortuous_zeppelin()         5  Standard Model  Novikov et al. 2019, NMR Biomed 32
+B3  stick_tortuous_zeppelin()         5  SM special case Novikov et al. 2019, NMR Biomed 32
 B4  free_water_elimination()          3  Free water      Pasternak et al. 2009, MRM 62
-B5  ivim()                            3  Perfusion       Le Bihan et al. 1988, Radiology 161
+B5  ivim()                            3  Perfusion       Le Bihan et al. 1988, Radiology 168
 C1  noddi()                           9  ODF dispersion  Zhang et al. 2012, NeuroImage 61
 C2  bingham_noddi()                   9  ODF dispersion  Tariq et al. 2016, NeuroImage 133
-C3  noddida()                         5  ODF dispersion  Jelescu et al. 2015, NMR Biomed 28
+C3  noddida()                         5  ODF dispersion  Jelescu et al. 2016, NMR Biomed 29
 C4  mcsmt()                           5  Spherical mean  Kaden et al. 2016, NeuroImage 139
 D1  two_fascicle_noddi()             16  Multi-fascicle  Behrens et al. 2007, NeuroImage 34
 E1  charmed()                         7  Cylinder        Assaf & Basser 2005, NeuroImage 27
@@ -43,7 +43,7 @@ I1  mte_ball_stick()                  3  Relaxometry     Gong et al. 2020, Neuro
 I2  mte_noddi()                       9  Relaxometry     Gong et al. 2020, NeuroImage 217
 I3  mte_sandi()                       5  Relaxometry     ISMRM 2023 abstract #0766
 I4  wmti()                            5  Kurtosis-WM     Fieremans et al. 2011, NeuroImage 58
-I5  noddida_mte()                     8  Relaxometry     Jelescu 2015 + Gong 2020
+I5  noddida_mte()                     8  Relaxometry     Jelescu 2016 + Gong 2020
 I6  mte_impulsed()                    3  Relaxometry     Jiang et al. 2025, MRM
 
 Total: 31 models, 8 categories
@@ -105,6 +105,7 @@ from dmipy_fit.distributions.distribute_models import (
     SD2BinghamDistributed,
     DD1GammaDistributed,
 )
+from dmipy_fit.distributions.distributions import kappa2odi
 from dmipy_fit.core.modeling_framework import (
     MultiCompartmentModel,
     MultiCompartmentSphericalMeanModel,
@@ -116,6 +117,7 @@ from dmipy_fit.core.modeling_framework import (
 _Da   = 1.7e-9    # m²/s  intra-axonal/neurite diffusivity (NODDI, NEXI, …)
 _Dcsf = 3.0e-9   # m²/s  cerebrospinal-fluid free diffusivity
 _Din  = 1.58e-9   # m²/s  intra-cellular diffusivity (IMPULSED/SANDI default)
+_KAPPA_MAX_BINGHAM = 64.   # Tariq et al. 2016: kappa, beta <= 64
 
 
 # ===========================================================================
@@ -156,12 +158,18 @@ def temporal_zeppelin():
 # ===========================================================================
 
 def ball_and_stick():
-    """Isotropic Ball + zero-radius Stick (intra-axonal).
+    """Isotropic Ball + zero-radius Stick (intra-axonal), one shared diffusivity.
+
+    S/S0 = f exp(-b d (g.n)^2) + (1 - f) exp(-b d): the stick and the ball
+    share the single diffusivity d (parameter ``C1Stick_1_lambda_par``), as in
+    Eqs. 12-13 of the paper.
 
     Behrens et al. 2003, Magnetic Resonance in Medicine 50
     doi:10.1002/mrm.10609
     """
-    return MultiCompartmentModel([C1Stick(), G1Ball()])
+    mcm = MultiCompartmentModel([C1Stick(), G1Ball()])
+    mcm.set_equal_parameter('C1Stick_1_lambda_par', 'G1Ball_1_lambda_iso')
+    return mcm
 
 
 def ball_and_zeppelin():
@@ -176,9 +184,13 @@ def ball_and_zeppelin():
 def stick_tortuous_zeppelin():
     """Intra-axonal Stick + tortuous extra-axonal Zeppelin.
 
-    The 'Standard Model' two-compartment WM parametrisation.
-    Tortuosity: D_e_perp = D_a × (1 − f_intra).
-    Orientation and lambda_par shared between compartments.
+    The dispersion-free, tortuosity-constrained special case of the Standard
+    Model (Novikov et al. 2019, Eqs. 3.4-3.5), not the Standard Model itself.
+    The Standard Model has an orientation distribution and at least four free
+    scalars (f, D_a, D_e_par, D_e_perp); this model has a single orientation
+    (a delta-function ODF) and one diffusivity: D_e_par = D_a (shared
+    lambda_par) and the tortuosity link D_e_perp = D_a x (1 - f_intra).
+    Orientation is shared between the compartments.
 
     Novikov, Fieremans, Jespersen & Kiselev 2019, NMR in Biomedicine 32
     doi:10.1002/nbm.3998
@@ -201,6 +213,15 @@ def free_water_elimination():
 
     Removes CSF partial-volume contamination from DTI maps.
 
+    Differs from the published model: Pasternak et al. 2009 take the tissue
+    compartment to be a full diffusion tensor (six parameters; free-water
+    fraction, D_iso = 3.0e-9 m²/s), restated as S0[f exp(-b D_iso) + (1 - f)
+    exp(-b g^T D g)] in Neto Henriques et al. 2017 (secondary source; the 2009
+    equations were not read). The package has no full-tensor Gaussian
+    compartment, so the tissue here is an axially symmetric Zeppelin, which
+    cannot represent two distinct radial eigenvalues (an example in
+    tests/test_catalog_audit_batch1.py leaves an rms residual of about 4e-2).
+
     Pasternak, Sochen, Gur, Intrator & Assaf 2009, MRM 62
     doi:10.1002/mrm.22055
     """
@@ -215,7 +236,7 @@ def ivim():
     Blood pseudo-diffusion D* fixed at 7×10⁻⁹ m²/s;
     tissue ADC optimisation range [0.5, 6]×10⁻⁹ m²/s.
 
-    Le Bihan et al. 1988, Radiology 161
+    Le Bihan et al. 1988, Radiology 168
     doi:10.1148/radiology.168.2.3393671
     """
     mcm = MultiCompartmentModel([G1Ball(), G1Ball()])
@@ -233,6 +254,13 @@ def noddi():
 
     Published defaults: D_a = 1.7×10⁻⁹ m²/s (fixed), D_csf = 3.0×10⁻⁹ m²/s
     (fixed), tortuosity D_e_perp = D_a × (1 − f_intra).
+
+    Differs from Zhang et al. 2012 Eq. 4, which takes the extracellular signal
+    as the exponential of the ODF-averaged tensor, exp(-b g^T <D> g). Here the
+    extracellular signal is the ODF average of the per-orientation zeppelin
+    signals, the Watson-bundle design of this package (it keeps the volume
+    fractions nested for the optimizer). The two differ by 4.5e-3 to 7.3e-3 of
+    S0 for ODI 0.1-0.7 (nu_ic 0.6, nu_iso 0.2, b = 1-3 ms/um^2).
 
     Zhang, Schneider, Wheeler-Kingshott & Alexander 2012, NeuroImage 61
     doi:10.1016/j.neuroimage.2012.03.072
@@ -254,7 +282,16 @@ def bingham_noddi():
     """Bingham-NODDI: Bingham-dispersed Stick + tortuous Zeppelin + CSF Ball.
 
     Extends NODDI with anisotropic orientation spread (ODI + beta_fraction)
-    for fanning/bending fascicles.
+    for fanning/bending fascicles. The concentration kappa is bounded by 64 as
+    in the paper (odi >= (2/pi) arctan(1/64)).
+
+    Differs from Tariq et al. 2016 Eqs. 4-5, which take the extra-neurite
+    signal as the exponential of the ODF-averaged tensor. Here the
+    extracellular signal is the ODF average of the per-orientation zeppelin
+    signals, the Bingham-bundle design of this package (it keeps the volume
+    fractions nested for the optimizer). For the cases tested (ODI 0.3,
+    beta_fraction 0.5 and 0.9, nu_ic 0.6, nu_iso 0.2, b = 1-3 ms/um^2) the two
+    differ by 7.3e-3 and 7.4e-3 of S0 (4.5e-3 to 7.3e-3 for NODDI).
 
     Tariq, Schneider, Alexander, Gandini Wheeler-Kingshott & Zhang 2016,
     NeuroImage 133, doi:10.1016/j.neuroimage.2016.01.046
@@ -269,27 +306,38 @@ def bingham_noddi():
     bundle.set_fixed_parameter('G2Zeppelin_1_lambda_par', _Da)
     mcm = MultiCompartmentModel([bundle, G1Ball()])
     mcm.set_fixed_parameter('G1Ball_1_lambda_iso', _Dcsf)
+    mcm.set_parameter_optimization_bounds(
+        'SD2BinghamDistributed_1_SD2Bingham_1_odi',
+        [kappa2odi(_KAPPA_MAX_BINGHAM), 0.99])
     return mcm
 
 
 def noddida():
-    """NODDIDA: Stick + tortuous Zeppelin + free Ball — all diffusivities free.
+    """NODDIDA: Watson-dispersed Stick + Zeppelin, no CSF, three free diffusivities.
 
-    No fixed D_a; allows exploring parameter degeneracy of the Standard Model.
-    CSF replaced by free-diffusing Ball with optimised D_iso.
+    S/S0 = f A_stick(D_a, kappa) + (1 - f) A_zeppelin(D_e_par, D_e_perp, kappa)
+    with a Watson ODF (Jelescu et al. 2016, Eq. 2). D_a, D_e_par and D_e_perp
+    are free in [0, 4] um^2/ms, with no tortuosity link and no equality of
+    D_a and D_e_par (the constraints of NODDI that NODDIDA removes), and the
+    model has no isotropic compartment. The concentration bound is this
+    package's odi range (kappa <= 31.8); the paper's bound on kappa was not
+    read.
 
-    Jelescu, Veraart, Adisetiyo, Milla, Novikov & Fieremans 2015,
-    NMR in Biomedicine 28, doi:10.1002/nbm.3450
+    The bundle is built as in :func:`noddi`, so the extracellular signal is the
+    ODF average of per-orientation zeppelin signals, not the exponential of the
+    averaged tensor of Eq. 2 (the design difference documented at
+    :func:`noddi`); for f = 0.5, D_a = 2.1, D_e_par = 1.4, D_e_perp = 0.6
+    um^2/ms and ODI 0.1-0.7 it is 6.0e-3 to 9.8e-3 of S0 at b = 1-3 ms/um^2.
+
+    Jelescu, Veraart, Fieremans & Novikov 2016, NMR in Biomedicine 29
+    doi:10.1002/nbm.3450
     """
-    mcm = MultiCompartmentModel([C1Stick(), G2Zeppelin(), G1Ball()])
-    mcm.set_tortuous_parameter(          # tortuosity before set_equal
-        'G2Zeppelin_1_lambda_perp',
-        'C1Stick_1_lambda_par',
-        'partial_volume_0',
-        'partial_volume_1',
-    )
-    mcm.set_equal_parameter('C1Stick_1_mu', 'G2Zeppelin_1_mu')
-    mcm.set_equal_parameter('C1Stick_1_lambda_par', 'G2Zeppelin_1_lambda_par')
+    bundle = SD1WatsonDistributed(models=[C1Stick(), G2Zeppelin()])
+    mcm = MultiCompartmentModel([bundle])
+    for name in ('C1Stick_1_lambda_par', 'G2Zeppelin_1_lambda_par',
+                 'G2Zeppelin_1_lambda_perp'):
+        mcm.set_parameter_optimization_bounds(
+            'SD1WatsonDistributed_1_' + name, [0., 4e-9])
     return mcm
 
 
@@ -299,7 +347,7 @@ def mcsmt():
     Orientation-invariant; operates on per-shell spherical mean signal.
     Stick (intra) + tortuous Zeppelin (extra), shared lambda_par.
 
-    Kaden, Kelm, Carson, McKinstry & Rueckert 2016, NeuroImage 139
+    Kaden, Kelm, Carson, Does & Alexander 2016, NeuroImage 139
     doi:10.1016/j.neuroimage.2016.06.002
     """
     mcm = MultiCompartmentSphericalMeanModel([C1Stick(), G2Zeppelin()])
@@ -652,7 +700,7 @@ def noddida_mte():
     Combines the NODDIDA parametrisation (D_a free, D_iso free) with
     per-compartment T2.  Suitable for 7T multi-echo experiments.
 
-    NODDIDA: Jelescu et al. 2015, NMR Biomed 28, doi:10.1002/nbm.3450
+    NODDIDA: Jelescu et al. 2016, NMR Biomed 29, doi:10.1002/nbm.3450
     MTE extension: Gong et al. 2020, NeuroImage 217, doi:10.1016/j.neuroimage.2020.116906
     """
     stick    = OccupancyGatedModel(C1Stick(), [TransverseRelaxation()])
