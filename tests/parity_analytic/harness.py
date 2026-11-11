@@ -31,8 +31,9 @@ its jit of a form is a second implementation of it):
   print how far each replaced entry moved (max abs, max relative, max ulp). Every other entry is left as it was; one
   that differs without a prefix is reported and the record is not written.
 * ``python tests/parity_analytic/harness.py rebaseline --only KEY...``: emit only the named cases (a KEY is a case id or
-  an ``fnmatch`` pattern such as ``jax_f32/C1Stick/*``; each must match a registered case) and replace exactly those
-  entries and arrays. Nothing else is read for drift, so the environment drift of the other cases (another Python,
+  an ``fnmatch`` pattern such as ``jax_f32/C1Stick/*``; each must match a registered case or a recorded entry) and
+  replace exactly those entries and arrays; a matching recorded entry whose case is no longer registered is dropped
+  (entry and array). Nothing else is read for drift, so the environment drift of the other cases (another Python,
   NumPy or JAX than the record's) does not matter; the manifest's ``environment`` block stays as it was, and the
   manifest's ``rewrites`` list records which keys were written in which environment.
 * ``python tests/parity_analytic/harness.py rename-case OLD NEW``: rename the keys of case ``OLD`` (the id, and every id
@@ -356,7 +357,7 @@ def _sm_forward_cases():
     (``lambda_par > lambda_perp``: the closed form with ``erf``) by narrowed bounds and by the tortuosity link of MC-SMT,
     and oblate (``lambda_par < lambda_perp``: the Gauss-Legendre rule of dmipy-analytic) by narrowed bounds."""
     from dmipy_fit.core.modeling_framework import MultiCompartmentSphericalMeanModel
-    from dmipy_fit.custom_optimizers.reference_models import mcsmt
+    from dmipy_fit.custom_optimizers.reference_models import mcsmt, sandi
     from dmipy_fit.signal_models import cylinder_models as cm, gaussian_models as gm
 
     def compartments(*classes):
@@ -373,7 +374,8 @@ def _sm_forward_cases():
     for cid, build in (("ball", compartments(gm.G1Ball)),
                        ("stick_zeppelin", stick_zeppelin([1.0e-9, 3.0e-9], [0.1e-9, 1.0e-9])),
                        ("stick_zeppelin_oblate", stick_zeppelin([0.1e-9, 1.0e-9], [1.0e-9, 3.0e-9])),
-                       ("stick_ball", compartments(cm.C1Stick, gm.G1Ball)), ("mcsmt", mcsmt)):
+                       ("stick_ball", compartments(cm.C1Stick, gm.G1Ball)), ("mcsmt", mcsmt),
+                       ("sandi", sandi)):
         for broadcast in (False, True):
             for sect in ("jax_f32", "jax_f64"):
                 add(sect, f"{sect}/sm_forward/{cid}/{'meas' if broadcast else 'shell'}",
@@ -640,6 +642,7 @@ JAX_UNSUPPORTED = {
     "dist.gamma_c2": "the diameter integral has C3 and C4 cylinders only",
     "dist.poisson_c4": "the Poisson diameter integral has the C3 cylinder only",
     "dist.bundle": "no JAX forward for the bundle model",
+    "ref.sandi": "a spherical-mean model: its JAX forward is the sm_forward/sandi case",
 }
 
 
@@ -1004,19 +1007,30 @@ def rebaseline_only(patterns, record_dir=RECORD):
     ``rewrites`` list of the manifest gains the written keys under the environment they were written in."""
     import numpy as np
     registry = build_registry()
-    unmatched = [p for p in patterns if not any(fnmatch.fnmatchcase(cid, p) for cid in registry)]
-    if not patterns or unmatched:
-        raise SystemExit(f"--only needs case ids or patterns that each match a registered case; no match: "
-                         f"{unmatched or 'none given'}")
     with open(os.path.join(record_dir, "manifest.json")) as f:
         manifest = json.load(f)
+    known = set(registry) | {cid for s in SECTIONS for cid in manifest["sections"][s]}
+    unmatched = [p for p in patterns if not any(fnmatch.fnmatchcase(cid, p) for cid in known)]
+    if not patterns or unmatched:
+        raise SystemExit(f"--only needs case ids or patterns that each match a registered case or a recorded entry; "
+                         f"no match: {unmatched or 'none given'}")
     written, report = {}, []
     for section in SECTIONS:
         names = [cid for cid, c in registry.items() if c.section == section and matches(cid, patterns)]
-        if not names:
-            continue
         entries = manifest["sections"][section]
+        stale = [cid for cid in entries if matches(cid, patterns) and cid not in registry]
+        if not names and not stale:
+            continue
         recorded = load(os.path.join(record_dir, section + ".npz"))
+        for cid in stale:
+            del entries[cid]
+            recorded.pop(cid.replace("/", "__"), None)
+            report.append(f"{cid}: removed")
+            written.setdefault(section, [])
+        if not names:
+            manifest["sections"][section] = dict(sorted(entries.items()))
+            np.savez(os.path.join(record_dir, section + ".npz"), **recorded)
+            continue
         with tempfile.TemporaryDirectory() as d:
             run_emit(section, d, only=patterns)
             now = load(os.path.join(d, section + ".npz"))

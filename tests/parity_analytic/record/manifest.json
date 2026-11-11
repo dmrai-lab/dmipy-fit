@@ -2313,7 +2313,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.active_ax/pgse2": {
-    "sha256": "d9eb959fda43412c35a14ca4505e918ed0443ac2dffbdef672d6ae7521137a56",
+    "sha256": "8f1413eb3d7625468f28040704fd0e01e160c3709fae5fc08b1ceec50859ca09",
     "shape": [
      32
     ],
@@ -2497,17 +2497,17 @@
     "bitwise": true
    },
    "numpy/composite/ref.sandi/mixed": {
-    "sha256": "2edf5ccbe03ef439c4a4de54d9b06b3a4d3f246c2a49a967c5ef85e50c2a56b9",
+    "sha256": "0837530eac4c98bb1f5b9ecc916a6cb398bc04afbfd7dc8ad43d55f9bfe3cb4e",
     "shape": [
-     40
+     9
     ],
     "dtype": "<f8",
     "bitwise": true
    },
    "numpy/composite/ref.sandi/pgse2": {
-    "sha256": "5ebc5acfe2f8c9bbcefc88867396f9d5f2c785f9abbb46c33a6b514454abe248",
+    "sha256": "440c77b8eb302eb2daddbcd8a83d7925b6949a9e444d08aca655c66a0f0c90df",
     "shape": [
-     32
+     12
     ],
     "dtype": "<f8",
     "bitwise": true
@@ -3473,22 +3473,6 @@
     "dtype": "<f4",
     "bitwise": true
    },
-   "jax_f32/forward/ref.sandi/mixed": {
-    "sha256": "6255b7748cf3710c744fb00d7aa596e10e71f8e4eecff8c8229099a96831d664",
-    "shape": [
-     40
-    ],
-    "dtype": "<f4",
-    "bitwise": true
-   },
-   "jax_f32/forward/ref.sandi/pgse2": {
-    "sha256": "beadfb258a89902f48e31a143534458dff9756309085664f15a971c2678d5472",
-    "shape": [
-     32
-    ],
-    "dtype": "<f4",
-    "bitwise": true
-   },
    "jax_f32/forward/ref.sandix/pgse2": {
     "sha256": "210089d83853625ce1c06aa890253168b1d69feb1336c90cf285c59e1b68d61c",
     "shape": [
@@ -3699,6 +3683,22 @@
    },
    "jax_f32/sm_forward/mcsmt/shell": {
     "sha256": "3eefa571f14f8899b325093bf4e2f79f297ee30da40065af3d13124b66c806a3",
+    "shape": [
+     6
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/sm_forward/sandi/meas": {
+    "sha256": "beb5f760a82f87760df20a44b89f0f368429cffca2bf286864a281ac8f24c07d",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/sm_forward/sandi/shell": {
+    "sha256": "c26c262fc1e180040f0124aa64424a2c66945b80429a70c8507d94d845cb76d8",
     "shape": [
      6
     ],
@@ -4530,7 +4530,7 @@
     "bitwise": true
    },
    "jax_f64/forward/ref.active_ax/pgse2": {
-    "sha256": "f630ca70404492fccbd851b23236c780d4944ce5293523b27f7f11d9455f269a",
+    "sha256": "2959debc54d9fe1c1f5f1bcbbd57fc1647e0818c3839b642cd370e980b36ca74",
     "shape": [
      32
     ],
@@ -4707,22 +4707,6 @@
    },
    "jax_f64/forward/ref.noddida/pgse": {
     "sha256": "ed885502f751e636fc51479599b65874324f066beec38f900ffba3f8c044b043",
-    "shape": [
-     32
-    ],
-    "dtype": "<f8",
-    "bitwise": true
-   },
-   "jax_f64/forward/ref.sandi/mixed": {
-    "sha256": "1f113b65897239086512447302962bf9153733ab9cb0cdb9b8fb402bf59e7f4a",
-    "shape": [
-     40
-    ],
-    "dtype": "<f8",
-    "bitwise": true
-   },
-   "jax_f64/forward/ref.sandi/pgse2": {
-    "sha256": "0d5a7575bc5662693ad3434a5dbc723f1106c9ba5196598e069d6400474098f5",
     "shape": [
      32
     ],
@@ -4993,6 +4977,22 @@
     "dtype": "<f8",
     "bitwise": true
    },
+   "jax_f64/sm_forward/sandi/meas": {
+    "sha256": "416986ccbdef8bcae33021b746cbbc579337dae47df9138e23ed49ae92c571f8",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/sm_forward/sandi/shell": {
+    "sha256": "1caf0e57da03071fd9713e0179c57f90f1da337db81e4e49b7ced1161343bb93",
+    "shape": [
+     6
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
    "jax_f64/sm_forward/stick_ball/meas": {
     "sha256": "58abd3c28b247bf32d074e9de4263af0a532dd941485c59045100b61389aacaa",
     "shape": [
@@ -5058,25 +5058,33 @@
    },
    "keys": {
     "numpy": [
+     "numpy/composite/ref.active_ax/pgse2",
      "numpy/composite/ref.ball_and_stick/legacy",
      "numpy/composite/ref.ball_and_stick/pgse",
      "numpy/composite/ref.bingham_noddi/legacy",
      "numpy/composite/ref.bingham_noddi/pgse",
-     "numpy/composite/ref.noddida/pgse"
+     "numpy/composite/ref.noddida/pgse",
+     "numpy/composite/ref.sandi/mixed",
+     "numpy/composite/ref.sandi/pgse2"
     ],
     "jax_f32": [
      "jax_f32/forward/ref.ball_and_stick/legacy",
      "jax_f32/forward/ref.ball_and_stick/pgse",
      "jax_f32/forward/ref.bingham_noddi/legacy",
      "jax_f32/forward/ref.bingham_noddi/pgse",
-     "jax_f32/forward/ref.noddida/pgse"
+     "jax_f32/forward/ref.noddida/pgse",
+     "jax_f32/sm_forward/sandi/meas",
+     "jax_f32/sm_forward/sandi/shell"
     ],
     "jax_f64": [
+     "jax_f64/forward/ref.active_ax/pgse2",
      "jax_f64/forward/ref.ball_and_stick/legacy",
      "jax_f64/forward/ref.ball_and_stick/pgse",
      "jax_f64/forward/ref.bingham_noddi/legacy",
      "jax_f64/forward/ref.bingham_noddi/pgse",
-     "jax_f64/forward/ref.noddida/pgse"
+     "jax_f64/forward/ref.noddida/pgse",
+     "jax_f64/sm_forward/sandi/meas",
+     "jax_f64/sm_forward/sandi/shell"
     ]
    }
   }

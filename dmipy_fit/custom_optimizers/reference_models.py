@@ -26,7 +26,7 @@ C1  noddi()                           9  ODF dispersion  Zhang et al. 2012, Neur
 C2  bingham_noddi()                   9  ODF dispersion  Tariq et al. 2016, NeuroImage 133
 C3  noddida()                         5  ODF dispersion  Jelescu et al. 2016, NMR Biomed 29
 C4  mcsmt()                           5  Spherical mean  Kaden et al. 2016, NeuroImage 139
-D1  two_fascicle_noddi()             16  Multi-fascicle  Behrens et al. 2007, NeuroImage 34
+D1  two_fascicle_noddi()             16  Multi-fascicle  Zhang 2012 bundles x2 (unpublished composition)
 E1  charmed()                         7  Cylinder        Assaf & Basser 2005, NeuroImage 27
 E2  axcaliber()                       4  Cylinder diam   Assaf et al. 2008, MRM 59
 E3  active_ax()                       5  Cylinder diam   Alexander et al. 2010, NeuroImage 52
@@ -43,7 +43,7 @@ I1  mte_ball_stick()                  3  Relaxometry     Gong et al. 2020, Neuro
 I2  mte_noddi()                       9  Relaxometry     Gong et al. 2020, NeuroImage 217
 I3  mte_sandi()                       5  Relaxometry     ISMRM 2023 abstract #0766
 I4  wmti()                            5  Kurtosis-WM     Fieremans et al. 2011, NeuroImage 58
-I5  noddida_mte()                     8  Relaxometry     Jelescu 2016 + Gong 2020
+I5  noddida_mte()                     8  Relaxometry     Jelescu 2016 + Gong 2020 (unpublished composition)
 I6  mte_impulsed()                    3  Relaxometry     Jiang et al. 2025, MRM
 
 Total: 31 models, 8 categories
@@ -116,7 +116,8 @@ from dmipy_fit.core.modeling_framework import (
 # ---------------------------------------------------------------------------
 _Da   = 1.7e-9    # m²/s  intra-axonal/neurite diffusivity (NODDI, NEXI, …)
 _Dcsf = 3.0e-9   # m²/s  cerebrospinal-fluid free diffusivity
-_Din  = 1.58e-9   # m²/s  intra-cellular diffusivity (IMPULSED/SANDI default)
+_Din  = 1.58e-9   # m²/s  intra-cellular diffusivity (IMPULSED default)
+_D_SOMA = 3.0e-9  # m²/s  soma diffusivity of SANDI (free water at 37 C, Palombo et al. 2020)
 _KAPPA_MAX_BINGHAM = 64.   # Tariq et al. 2016: kappa, beta <= 64
 
 
@@ -371,8 +372,14 @@ def two_fascicle_noddi():
     Each bundle has its own mu, ODI, f_intra.  D_a = 1.7×10⁻⁹ fixed.
     Suitable for crossing-fibre voxels.
 
-    Behrens, Berg, Jbabdi, Rushworth & Woolrich 2007, NeuroImage 34
-    doi:10.1016/j.neuroimage.2006.09.018
+    This composition is this package's; it is not a published model. Behrens
+    et al. 2007 (NeuroImage 34, doi:10.1016/j.neuroimage.2006.09.018) motivate
+    more than one fibre orientation per voxel, with a ball-and-sticks model
+    (Eq. 1: N sticks and one isotropic compartment sharing one diffusivity)
+    that has no Watson dispersion and no tortuosity, so that paper does not
+    define this factory. Each bundle is the NODDI bundle of Zhang et al. 2012
+    (NeuroImage 61, doi:10.1016/j.neuroimage.2012.03.072), with the
+    extracellular-signal design difference documented at :func:`noddi`.
     """
     bundle1 = SD1WatsonDistributed(models=[C1Stick(), G2Zeppelin()])
     bundle1.set_tortuous_parameter(
@@ -400,6 +407,10 @@ def charmed():
 
     Orientation and lambda_par shared; uses C3 Callaghan solution
     (more accurate than Stejskal-Tanner approximation at high b).
+    The composite E = f_h E_h + f_r E_r with Callaghan's cylinder for E_r is
+    checked against Assaf et al. 2008, Eqs. 1-3. The original paper was not
+    readable (abstract only), so the tortuosity link D_h_perp = D_par
+    (1 - f_r) and the shared parallel diffusivity are unverified.
 
     Assaf & Basser 2005, NeuroImage 27, doi:10.1016/j.neuroimage.2005.03.042
     """
@@ -422,8 +433,11 @@ def charmed():
 def axcaliber():
     """AxCaliber: Gamma-distributed Callaghan cylinders + Zeppelin.
 
-    Estimates the full axon diameter distribution (α, β of Gamma distribution)
-    alongside intra-axonal density.  Requires varying diffusion times.
+    Estimates the axon size distribution (α, β of the Gamma distribution of
+    the axon radius, Eq. 5; the mean diameter is 2αβ, cylinders are weighted by
+    their area) alongside intra-axonal density.  Requires varying diffusion
+    times. The hindered diffusivity D_h is free (Eq. 2, perpendicular to the
+    axons) and the intra-axonal diffusivity is fixed.
 
     Assaf, Blumenfeld-Katzir, Yovel & Basser 2008, MRM 59
     doi:10.1002/mrm.21577
@@ -438,16 +452,33 @@ def axcaliber():
 
 
 def active_ax():
-    """ActiveAx: single-diameter Callaghan cylinder + Zeppelin + free Ball.
+    """ActiveAx: single-diameter Callaghan cylinder + tortuous Zeppelin + CSF Ball.
 
-    Orientationally invariant; optimised for clinical scanner gradient
-    strengths; estimates a single representative axon diameter index.
+    Orientationally invariant indices of axon diameter and density. The
+    minimal model of white matter diffusion has coaxial intra-axonal cylinders
+    (one radius) and an extra-axonal hindered compartment with tortuosity
+    perpendicular to the axons, D_e_perp = D_a v_ec / (v_ic + v_ec), the same
+    parallel diffusivity in both, and a CSF compartment with D = 3×10⁻⁹ m²/s
+    fixed. The dot (isotropic restricted) compartment of the ex-vivo model is
+    not included. Primary source read as abstract only; the model structure is
+    from Dyrby et al. 2013 and Sepehrband et al. 2016.
 
     Alexander et al. 2010, NeuroImage 52
     doi:10.1016/j.neuroimage.2010.05.043
     """
     mcm = MultiCompartmentModel([
         C3CylinderCallaghanApproximation(), G2Zeppelin(), G1Ball()])
+    mcm.set_tortuous_parameter(          # tortuosity before set_equal
+        'G2Zeppelin_1_lambda_perp',
+        'C3CylinderCallaghanApproximation_1_lambda_par',
+        'partial_volume_0',
+        'partial_volume_1',
+    )
+    mcm.set_equal_parameter(
+        'C3CylinderCallaghanApproximation_1_mu', 'G2Zeppelin_1_mu')
+    mcm.set_equal_parameter(
+        'C3CylinderCallaghanApproximation_1_lambda_par',
+        'G2Zeppelin_1_lambda_par')
     mcm.set_fixed_parameter('G1Ball_1_lambda_iso', _Dcsf)
     return mcm
 
@@ -460,7 +491,11 @@ def verdict():
     """VERDICT: Sphere (cell body) + Stick (membrane/vascular) + Ball (EES).
 
     Designed for tumour microstructure; sphere diameter and intra-cellular
-    fraction are the key output parameters.
+    fraction are the key output parameters. The abstract (the paper itself was
+    not readable) names intracellular, extracellular and vascular compartments;
+    the fixed diffusivities and whether the vascular stick is orientation
+    averaged (tumour tissue is isotropic) are unverified. Here the stick has
+    an orientation and a free diffusivity.
 
     Panagiotaki et al. 2014, Cancer Research 74
     doi:10.1158/0008-5472.can-13-2511
@@ -470,24 +505,33 @@ def verdict():
 
 
 def sandi():
-    """SANDI: Sphere (soma) + Stick (neurite) + Ball (extra-cellular).
+    """SANDI: Sphere (soma) + Stick (neurite) + Ball (extra-cellular), direction-averaged.
 
-    Gray-matter analog of NODDI; targets soma radius and density.
-    Requires high b-values (b ≳ 6 ms/µm²).  D_in fixed at 1.58×10⁻⁹ m²/s.
+    Gray-matter analog of NODDI; targets soma radius and density. The model
+    is the powder-averaged signal of Eq. 10: (1 - f_ec)(f_in A_in + (1 - f_in)
+    A_is) + f_ec A_ec, with A_in the direction-averaged stick (Eq. 7), A_is
+    the Gaussian-phase sphere (Eq. 8) with D_is fixed at the free-water value
+    3×10⁻⁹ m²/s, and A_ec an isotropic Gaussian; f_in, f_ec, D_in, D_ec and
+    the soma radius are free. It is a spherical-mean model: it has no
+    orientation. The three signal fractions are f_is = (1 - f_ec)(1 - f_in),
+    f_in' = (1 - f_ec) f_in and f_ec.
+    Requires high b-values (b ≳ 6 ms/µm²).
 
     Palombo et al. 2020, NeuroImage 215
     doi:10.1016/j.neuroimage.2020.116835
     """
-    soma = S4SphereGaussianPhaseApproximation(diffusion_constant=_Din)
-    mcm  = MultiCompartmentModel([soma, C1Stick(), G1Ball()])
-    mcm.set_fixed_parameter('C1Stick_1_lambda_par', _Da)
-    return mcm
+    soma = S4SphereGaussianPhaseApproximation(diffusion_constant=_D_SOMA)
+    return MultiCompartmentSphericalMeanModel([soma, C1Stick(), G1Ball()])
 
 
 def impulsed():
     """IMPULSED: Sphere + isotropic Ball (two-compartment, fixed D_in).
 
     Designed for measuring mean cell diameter in tumours via varying-Δ OGSE.
+    S = v_in S_in + (1 - v_in) exp(-b D_ex), cells as impermeable spheres with
+    D_in = 1.58 µm²/ms fixed (Xu et al. 2019, Eq. 1 and its "IMPULSED
+    outcomes" paragraph; the OGSE sphere equations are in the supplement,
+    which was not read).
 
     Xu, Jiang, Li et al. 2019, Magnetic Resonance in Medicine
     doi:10.1002/mrm.28056
@@ -695,27 +739,26 @@ def wmti():
 
 
 def noddida_mte():
-    """NODDIDA-MTE: unconstrained NODDIDA with per-compartment T2.
+    """NODDIDA-MTE: NODDIDA with a T2 per compartment.
 
-    Combines the NODDIDA parametrisation (D_a free, D_iso free) with
-    per-compartment T2.  Suitable for 7T multi-echo experiments.
-
-    NODDIDA: Jelescu et al. 2016, NMR Biomed 29, doi:10.1002/nbm.3450
-    MTE extension: Gong et al. 2020, NeuroImage 217, doi:10.1016/j.neuroimage.2020.116906
+    The Watson-dispersed Stick + Zeppelin of :func:`noddida` (three free
+    diffusivities in [0, 4] µm²/ms, no CSF compartment, no tortuosity link),
+    with one T2 for the stick and one for the zeppelin; acquire at several TE
+    to separate the T2 weighting of the fractions. This combination is not a
+    published model: NODDIDA is Jelescu et al. 2016, NMR Biomed 29,
+    doi:10.1002/nbm.3450, and the per-compartment T2 of MTE-NODDI is Gong et
+    al. 2020, NeuroImage 217, doi:10.1016/j.neuroimage.2020.116906.
     """
-    stick    = OccupancyGatedModel(C1Stick(), [TransverseRelaxation()])
-    zeppelin = OccupancyGatedModel(G2Zeppelin(), [TransverseRelaxation()])
-    extra    = OccupancyGatedModel(G1Ball(), [TransverseRelaxation()])
-    mcm = MultiCompartmentModel([stick, zeppelin, extra])
-    mcm.set_tortuous_parameter(
-        'OccupancyGatedModel_2_lambda_perp',
-        'OccupancyGatedModel_1_lambda_par',
-        'partial_volume_0',
-        'partial_volume_1',
-    )
-    mcm.set_equal_parameter('OccupancyGatedModel_1_mu', 'OccupancyGatedModel_2_mu')
-    mcm.set_equal_parameter('OccupancyGatedModel_1_lambda_par', 'OccupancyGatedModel_2_lambda_par')
-    return mcm   # per-compartment T2 (all three) via the T2 factors
+    bundle = SD1WatsonDistributed(models=[
+        OccupancyGatedModel(C1Stick(), [TransverseRelaxation()]),
+        OccupancyGatedModel(G2Zeppelin(), [TransverseRelaxation()])])
+    mcm = MultiCompartmentModel([bundle])
+    for name in ('OccupancyGatedModel_1_lambda_par',
+                 'OccupancyGatedModel_2_lambda_par',
+                 'OccupancyGatedModel_2_lambda_perp'):
+        mcm.set_parameter_optimization_bounds(
+            'SD1WatsonDistributed_1_' + name, [0., 4e-9])
+    return mcm   # per-compartment T2 via the T2 factors
 
 
 def mte_impulsed():

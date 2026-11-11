@@ -880,7 +880,32 @@ def _make_nexi_sm_jax_fn(model, acquisition_scheme):
     return forward
 
 
-_JAX_SM_MODEL_FACTORIES = {X1NEXI: _make_nexi_sm_jax_fn}
+def _make_s4sphere_sm_jax_fn(model, acquisition_scheme):
+    """S4 spherical mean: the sphere is isotropic, so its spherical mean is its
+    Gaussian-phase signal on the shell's PGSE (gradient strength, delta, Delta)."""
+    if (acquisition_scheme.shell_gradient_strengths is None
+            or acquisition_scheme.shell_delta is None
+            or acquisition_scheme.shell_Delta is None):
+        raise ValueError('The spherical-mean sphere requires a PGSE scheme '
+                         '(gradient strength, delta and Delta per shell)')
+    mask = ~acquisition_scheme.shell_b0_mask
+    g = jnp.asarray(acquisition_scheme.shell_gradient_strengths[mask])
+    delta = jnp.asarray(acquisition_scheme.shell_delta[mask])
+    big_delta = jnp.asarray(acquisition_scheme.shell_Delta[mask])
+    D = float(model.diffusion_constant)
+    gamma = float(model.gyromagnetic_ratio)
+
+    def forward(bvalues, params):
+        return jax.vmap(lambda g_, d_, D_: jsphere.gaussian_phase(
+            g_, d_, D_, params['diameter'], D, gamma=gamma))(
+                g, delta, big_delta)
+
+    return forward
+
+
+_JAX_SM_MODEL_FACTORIES = {X1NEXI: _make_nexi_sm_jax_fn,
+                           S4SphereGaussianPhaseApproximation:
+                               _make_s4sphere_sm_jax_fn}
 
 
 def build_mc_sm_forward_fn(model, acquisition_scheme, broadcast=True):

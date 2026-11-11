@@ -103,6 +103,24 @@ def test_only_refuses_a_name_that_matches_nothing(harness, record, monkeypatch):
     assert (record / "manifest.json").read_text() == before
 
 
+def test_only_drops_a_matching_recorded_case_that_is_no_longer_registered(harness, record, monkeypatch, capsys):
+    calls = _install_fake_code(harness, monkeypatch)
+    del harness.REGISTRY["numpy/B/x"]                         # the case left the registry
+    before = json.loads((record / "manifest.json").read_text())
+    other_before = harness.load(record / "numpy.npz")
+    harness.rebaseline_only(["numpy/B/*"], record_dir=str(record))
+    after = json.loads((record / "manifest.json").read_text())
+    now = harness.load(record / "numpy.npz")
+
+    assert "numpy/B/x" not in after["sections"]["numpy"] and "numpy__B__x" not in now
+    for cid in ("numpy/A/x", "numpy/A/y"):                    # everything else is untouched
+        assert after["sections"]["numpy"][cid] == before["sections"]["numpy"][cid]
+        assert np.array_equal(now[cid.replace("/", "__")], other_before[cid.replace("/", "__")])
+    assert after["sections"]["jax_f32"] == before["sections"]["jax_f32"]
+    assert calls == []                                        # nothing registered matched: nothing evaluated
+    assert "numpy/B/x: removed" in capsys.readouterr().out
+
+
 def test_only_keeps_the_tolerance_of_a_case_that_is_not_bit_reproducible(harness, record, monkeypatch):
     _install_fake_code(harness, monkeypatch)
     manifest = json.loads((record / "manifest.json").read_text())
