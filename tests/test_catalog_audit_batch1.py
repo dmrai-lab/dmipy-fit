@@ -520,12 +520,6 @@ def test_c3_factory_is_the_aligned_special_case_without_the_ball():
     np.testing.assert_allclose(e, ref, rtol=1e-12, atol=1e-14)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "CATALOG-AUDIT-C3b: T1_tortuosity.__call__ normalises vf_intra by "
-    "(vf_intra + vf_extra) but then uses the UNnormalised vf_extra, so for "
-    "vf_intra + vf_extra != 1 it returns the wrong lambda_perp. Hit by "
-    "noddida() whenever the ball fraction is non-zero. The existing unit "
-    "test compares values of order 1e-9 at 7 decimals and cannot see it."))
 def test_c3b_tortuosity_with_a_third_compartment():
     """Szafer/Bruggeman: lambda_perp = lambda_par * vf_extra / (vf_intra +
     vf_extra) (the helper's own docstring and unit test intend this).
@@ -540,10 +534,6 @@ def test_c3b_tortuosity_with_a_third_compartment():
     np.testing.assert_allclose(got, lpar * 0.35 / 0.75, rtol=1e-9)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "CATALOG-AUDIT-C3b: consequence for noddida(): with a non-zero ball "
-    "fraction the zeppelin's perpendicular diffusivity is Da * 0.396 instead "
-    "of Da * 0.467 at fractions (0.4, 0.35, 0.25)."))
 def test_c3b_noddida_signal_with_ball_fraction():
     """Closed form with De_perp = Da f_ec/(f_ic + f_ec).
 
