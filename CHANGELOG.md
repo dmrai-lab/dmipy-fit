@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **`T1_tortuosity` normalises both fractions (wrong lambda_perp with a third compartment).** Called with two
+  explicit fractions, the link divided the intra fraction by `vf_intra + vf_extra` but used the raw extra fraction, so
+  whenever the two did not sum to one it returned the wrong perpendicular diffusivity; it now uses the intra fraction of
+  the intra+extra bundle, `vf_intra / (vf_intra + vf_extra)` (Szafer et al. 1995), with the S0 weighting unchanged.
+  Affected: the NumPy path of any model with a compartment besides the linked intra and extra pair, i.e. `noddida()`
+  and `noddida_mte()` (their Ball takes part of the volume); at fractions (0.4, 0.35, 0.25) `noddida()` set
+  lambda_perp = 0.396 D_a instead of 0.467 D_a (18 % low), moving the signal by up to 2e-2. Two-compartment models
+  (`stick_tortuous_zeppelin()`, `charmed()`, `mcsmt()`, `wmti()`, NODDI) have fractions that sum to one and are
+  unchanged; the JAX forward already computed the correct value, so the two paths now agree. The unit test compared
+  values of order 1e-9 at 7 decimals and could not fail; it now uses a relative tolerance, fractions summing below one,
+  and unequal S0 responses.
+
 - **`reference_models.stick_zeppelin_karger()` removed.** The reference factory holds published models only, each
   faithful to its paper. This one was the former `nexi()`: an orientation-resolved Stick plus a tortuous Zeppelin with
   a one-way Karger rate. No paper defines that composition (Karger et al. 1988 covers the exchange equation, not
