@@ -105,7 +105,7 @@ def _build_param_grid(model, Ns, N_sphere_samples):
 
 
 def build_jax_brute_fn(model, acquisition_scheme, forward_fn, optimizer,
-                       Ns=5, N_sphere_samples=30):
+                       Ns=5, N_sphere_samples=30, dtype=jnp.float32):
     """Build a JIT-compiled brute-force grid search for a MC model.
 
     Parameters
@@ -121,6 +121,9 @@ def build_jax_brute_fn(model, acquisition_scheme, forward_fn, optimizer,
         Grid steps per scalar parameter (default 5, same as brute2fine).
     N_sphere_samples : int
         Orientation grid points on the hemisphere (default 30).
+    dtype : jnp.dtype
+        Grid and starting-point dtype (float32 production; float64 needs
+        ``jax_enable_x64``).
 
     Returns
     -------
@@ -145,7 +148,7 @@ def build_jax_brute_fn(model, acquisition_scheme, forward_fn, optimizer,
     # Each chunk compiles independently (fixed shape → no recompilation within
     # the run), and results are concatenated on CPU.
     chunk_size = 256
-    param_grid_jax = jnp.array(param_grid_si, dtype=jnp.float32)
+    param_grid_jax = jnp.array(param_grid_si, dtype=dtype)
     chunks = []
     for start in range(0, N_grid, chunk_size):
         end   = min(start + chunk_size, N_grid)
@@ -155,7 +158,7 @@ def build_jax_brute_fn(model, acquisition_scheme, forward_fn, optimizer,
         if end - start < chunk_size:
             pad   = chunk_size - (end - start)
             chunk = jnp.concatenate(
-                [chunk, jnp.zeros((pad, chunk.shape[1]), dtype=jnp.float32)])
+                [chunk, jnp.zeros((pad, chunk.shape[1]), dtype=dtype)])
             out   = jax.vmap(forward_fn)(chunk)[: end - start]
         else:
             out   = jax.vmap(forward_fn)(chunk)
@@ -201,7 +204,7 @@ def build_jax_brute_fn(model, acquisition_scheme, forward_fn, optimizer,
     margin = 0.05 * (upper_model - lower_model)
     x0_candidates = np.clip(x0_candidates,
                             lower_model + margin, upper_model - margin)
-    x0_candidates_jax = jnp.array(x0_candidates, dtype=jnp.float32)
+    x0_candidates_jax = jnp.array(x0_candidates, dtype=dtype)
 
     # Precompute per-grid sum-of-squares for distance-matrix MSE
     grid_sq = jnp.sum(grid_signals ** 2, axis=-1)          # (N_grid,)

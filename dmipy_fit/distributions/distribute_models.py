@@ -33,6 +33,10 @@ class DistributedModel:
     _validity_constraints = []
     _spherical_mean = False
 
+    # The distribution itself (its kernel and quadrature) fits in float32; the
+    # precision a distributed compartment requires is read from its own models.
+    required_precision = 'float32'
+
     def _check_for_double_model_class_instances(self):
         "Checks if there are no models with the same class instantiation."
         if len(self.models) != len(set(self.models)):

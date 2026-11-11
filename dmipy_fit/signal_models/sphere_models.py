@@ -239,7 +239,12 @@ class S4SphereGaussianPhaseApproximation(
     r"""
     The gaussian phase approximation for diffusion inside a sphere.
     It is dependent on gradient strength, pulse separation and pulse length.
+
+    ``required_precision = 'float64'``: in the SANDI spherical-mean fit
+    (``tests/test_sm_recovery.py``) ``solver='jax'`` in float32 recovers the
+    sphere diameter to 0.898 of the truth where float64 recovers 0.997.
     """
+    required_precision = 'float64'
     _citations = {
         'definition': [
             {'key': 'balinov1993', 'authors': 'Balinov B, Jonsson B, Linse P, Soderman O',

@@ -65,10 +65,30 @@ def test_sandi_recovery_mix():
 
 
 @pytest.mark.slow
-def test_sandi_recovery_jax_float64():
+def test_sandi_recovery_jax_default():
+    """The default JAX precision recovers the soma diameter: the model declares float64."""
     jax = pytest.importorskip("jax")
-    with jax.enable_x64(True):
-        _check_sandi("jax")
+    assert not jax.config.jax_enable_x64
+    _check_sandi("jax")
+    assert not jax.config.jax_enable_x64       # the ambient setting is restored
+
+
+def test_float64_models_are_declared():
+    pytest.importorskip("jax")
+    from dmipy_fit.jax.precision import float64_compartments
+    assert float64_compartments(rm.sandi()) == [
+        "S4SphereGaussianPhaseApproximation"]
+    assert float64_compartments(rm.mcsmt()) == []
+
+
+def test_jax_refuses_by_name_when_float64_is_unavailable(monkeypatch):
+    import contextlib
+    jax = pytest.importorskip("jax")
+    monkeypatch.setattr(jax, "enable_x64", lambda flag: contextlib.nullcontext())
+    model, scheme = rm.sandi(), _scheme(**SANDI_SCHEME)
+    data = np.asarray(model.simulate_signal(scheme, SANDI_TRUTH))
+    with pytest.raises(ValueError, match="S4SphereGaussianPhaseApproximation"):
+        model.fit(scheme, data, solver="jax")
 
 
 def test_mcsmt_recovery_brute2fine():
@@ -81,7 +101,9 @@ def test_mcsmt_recovery_brute2fine():
 
 @pytest.mark.slow
 def test_mcsmt_recovery_jax():
-    pytest.importorskip("jax")
+    """A float32 model is fitted in float32: the ambient setting is untouched."""
+    jax = pytest.importorskip("jax")
+    assert not jax.config.jax_enable_x64
     model, scheme = rm.mcsmt(), _scheme(**MCSMT_SCHEME)
     _, got, _ = _fit(model, scheme, MCSMT_TRUTH, "jax")
     for k, v in MCSMT_TRUTH.items():
@@ -93,3 +115,23 @@ def test_mcsmt_mix_is_refused_with_the_tortuosity_constraint():
     data = np.asarray(model.simulate_signal(scheme, MCSMT_TRUTH))
     with pytest.raises(ValueError, match="Tortuosity"):
         model.fit(scheme, data, solver="mix")
+
+
+@pytest.mark.slow
+def test_full_model_with_sphere_is_fitted_in_float64():
+    """The full-model JAX path carries the required precision through the brute grid and the fit."""
+    jax = pytest.importorskip("jax")
+    from dmipy_fit.core.modeling_framework import MultiCompartmentModel
+    from dmipy_fit.signal_models.gaussian_models import G1Ball
+    from dmipy_fit.signal_models.sphere_models import (
+        S4SphereGaussianPhaseApproximation)
+    model = MultiCompartmentModel(
+        [S4SphereGaussianPhaseApproximation(diffusion_constant=3e-9), G1Ball()])
+    scheme = _scheme(**SANDI_SCHEME)
+    truth = {"S4SphereGaussianPhaseApproximation_1_diameter": 12e-6,
+             "G1Ball_1_lambda_iso": 1.1e-9,
+             "partial_volume_0": 0.4, "partial_volume_1": 0.6}
+    _, got, _ = _fit(model, scheme, truth, "jax")
+    assert not jax.config.jax_enable_x64
+    for k, v in truth.items():
+        assert got[k] == pytest.approx(v, rel=0.02)

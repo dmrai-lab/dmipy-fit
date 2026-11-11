@@ -523,8 +523,10 @@ def sandi():
     determined: along that direction the signal moves by < 5e-4 over a 20 %
     change (the stick's b^-1/2 tail), so optimizers stop anywhere along it
     with a data residual of 1e-6. Resolving it needs shells beyond 8 ms/µm²
-    or a measured D_in. ``solver='jax'`` needs float64 (``jax_enable_x64``);
-    in float32 it also loses the soma radius.
+    or a measured D_in. The soma compartment declares
+    ``required_precision='float64'``: ``solver='jax'`` fits SANDI in float64
+    (float32 loses the soma radius) and refuses, naming the compartment, if
+    the runtime cannot provide float64.
 
     Palombo et al. 2020, NeuroImage 215
     doi:10.1016/j.neuroimage.2020.116835
