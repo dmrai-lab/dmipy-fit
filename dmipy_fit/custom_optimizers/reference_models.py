@@ -517,6 +517,15 @@ def sandi():
     f_in' = (1 - f_ec) f_in and f_ec.
     Requires high b-values (b ≳ 6 ms/µm²).
 
+    Identifiability: on a noise-free multi-shell scheme (ten shells,
+    0.3-8 ms/µm², Δ = 20 ms, δ = 6 ms) the soma radius, soma fraction and
+    D_ec are recovered to within 2 %, but D_in and f_in are only weakly
+    determined: along that direction the signal moves by < 5e-4 over a 20 %
+    change (the stick's b^-1/2 tail), so optimizers stop anywhere along it
+    with a data residual of 1e-6. Resolving it needs shells beyond 8 ms/µm²
+    or a measured D_in. ``solver='jax'`` needs float64 (``jax_enable_x64``);
+    in float32 it also loses the soma radius.
+
     Palombo et al. 2020, NeuroImage 215
     doi:10.1016/j.neuroimage.2020.116835
     """
