@@ -30,6 +30,15 @@ its jit of a form is a second implementation of it):
   entries of the cases whose id starts with a prefix, drop the entries of cases that are no longer registered, and
   print how far each replaced entry moved (max abs, max relative, max ulp). Every other entry is left as it was; one
   that differs without a prefix is reported and the record is not written.
+* ``python tests/parity_analytic/harness.py rebaseline --only KEY...``: emit only the named cases (a KEY is a case id or
+  an ``fnmatch`` pattern such as ``jax_f32/C1Stick/*``; each must match a registered case) and replace exactly those
+  entries and arrays. Nothing else is read for drift, so the environment drift of the other cases (another Python,
+  NumPy or JAX than the record's) does not matter; the manifest's ``environment`` block stays as it was, and the
+  manifest's ``rewrites`` list records which keys were written in which environment.
+* ``python tests/parity_analytic/harness.py rename-case OLD NEW``: rename the keys of case ``OLD`` (the id, and every id
+  below ``OLD/``) to ``NEW`` in the manifest and the ``.npz`` files, array bytes untouched, and verify that every
+  renamed array has its old sha256 under its new name. ``OLD`` and ``NEW`` without a section prefix apply to every
+  section (``C1Stick/legacy`` renames ``numpy/``, ``jax_f32/`` and ``jax_f64/`` ids alike).
 * ``python tests/parity_analytic/harness.py inputs``: write ``inputs.npz``, the fixed arrays the cases read.
 * ``python tests/parity_analytic/harness.py list``: the case ids.
 
@@ -43,6 +52,7 @@ of a unit state, so its rounding is absolute.
 """
 import hashlib
 import importlib
+import fnmatch
 import importlib.util
 import json
 import os
@@ -719,8 +729,13 @@ def environment():
     return info
 
 
-def emit(section, out_dir):
-    """Run every case of ``section`` and write ``out_dir/<section>.npz``."""
+def matches(cid, patterns):
+    """Whether case id ``cid`` is one of ``patterns`` (exact ids or ``fnmatch`` patterns)."""
+    return any(fnmatch.fnmatchcase(cid, p) for p in patterns)
+
+
+def emit(section, out_dir, only=None):
+    """Run every case of ``section`` (only those matching ``only``, when given) and write ``out_dir/<section>.npz``."""
     import warnings
     import numpy as np
     if importlib.util.find_spec("numba") is not None:
@@ -737,7 +752,7 @@ def emit(section, out_dir):
         warnings.simplefilter("ignore")
         with np.errstate(all="ignore"):
             for cid, case in REGISTRY.items():
-                if case.section != section:
+                if case.section != section or (only is not None and not matches(cid, only)):
                     continue
                 try:
                     a = np.ascontiguousarray(np.asarray(case.thunk()))
@@ -760,12 +775,13 @@ def emit(section, out_dir):
     return len(out)
 
 
-def run_emit(section, out_dir):
+def run_emit(section, out_dir, only=None):
     """``emit`` in a fresh interpreter under the pinned environment."""
     env = dict(os.environ)
     env.update(PINNED_ENV)
     env["JAX_ENABLE_X64"] = "1" if section == "jax_f64" else "0"
-    subprocess.run([sys.executable, os.path.abspath(__file__), "emit", section, out_dir], check=True, env=env)
+    subprocess.run([sys.executable, os.path.abspath(__file__), "emit", section, out_dir, *(only or [])],
+                   check=True, env=env)
 
 
 def ulps(a, b):
@@ -976,10 +992,137 @@ def rebaseline(prefixes):
     print(f"{len(report)} entries changed")
 
 
+def _write_manifest(manifest, record_dir):
+    with open(os.path.join(record_dir, "manifest.json"), "w") as f:
+        json.dump(manifest, f, indent=1, sort_keys=False)
+        f.write("\n")
+
+
+def rebaseline_only(patterns, record_dir=RECORD):
+    """Replace the record's entries and arrays of the registered cases matching ``patterns`` by this code's outputs
+    and nothing else: the other entries are not compared, the manifest's ``environment`` block is kept, and the
+    ``rewrites`` list of the manifest gains the written keys under the environment they were written in."""
+    import numpy as np
+    registry = build_registry()
+    unmatched = [p for p in patterns if not any(fnmatch.fnmatchcase(cid, p) for cid in registry)]
+    if not patterns or unmatched:
+        raise SystemExit(f"--only needs case ids or patterns that each match a registered case; no match: "
+                         f"{unmatched or 'none given'}")
+    with open(os.path.join(record_dir, "manifest.json")) as f:
+        manifest = json.load(f)
+    written, report = {}, []
+    for section in SECTIONS:
+        names = [cid for cid, c in registry.items() if c.section == section and matches(cid, patterns)]
+        if not names:
+            continue
+        entries = manifest["sections"][section]
+        recorded = load(os.path.join(record_dir, section + ".npz"))
+        with tempfile.TemporaryDirectory() as d:
+            run_emit(section, d, only=patterns)
+            now = load(os.path.join(d, section + ".npz"))
+        for cid in sorted(names):
+            key = cid.replace("/", "__")
+            a, old = now[key], recorded.get(key)
+            entry = {"sha256": digest(a), "shape": list(a.shape), "dtype": a.dtype.str, "bitwise": True}
+            if cid in entries and not entries[cid]["bitwise"]:
+                entry = dict(entries[cid], sha256=digest(a))
+            entries[cid] = entry
+            recorded[key] = a
+            written.setdefault(section, []).append(cid)
+            if old is None:
+                report.append(f"{cid}: added")
+            elif old.dtype == a.dtype and old.shape == a.shape and np.array_equal(old, a):
+                report.append(f"{cid}: unchanged")
+            else:
+                d_abs = np.abs(a - old) if old.shape == a.shape else np.array([np.nan])
+                rel = d_abs / np.maximum(np.abs(old), np.finfo(old.dtype).tiny) if old.shape == a.shape else d_abs
+                report.append(f"{cid}: moved, max abs {np.nanmax(d_abs):.3e}, max rel {np.nanmax(rel):.3e}")
+        manifest["sections"][section] = dict(sorted(entries.items()))
+        np.savez(os.path.join(record_dir, section + ".npz"), **recorded)
+    env = environment()
+    env.pop("pinned_env", None)
+    rewrites = manifest.setdefault("rewrites", [])
+    for rec in rewrites:
+        if rec["environment"] == env:
+            for section, cids in written.items():
+                rec["keys"][section] = sorted(set(rec["keys"].get(section, [])) | set(cids))
+            break
+    else:
+        rewrites.append({"environment": env, "keys": {s: sorted(c) for s, c in written.items()}})
+    _write_manifest(manifest, record_dir)
+    for line in report:
+        print(line)
+    print(f"{sum(map(len, written.values()))} keys written; every other key and the environment block untouched")
+
+
+def rename_case(old, new, record_dir=RECORD):
+    """Rename case ``old`` (its id and every id below ``old/``) to ``new`` in the manifest and the ``.npz`` files, array
+    bytes untouched; verify that each renamed array has its old sha256 under the new name and that nothing else moved.
+    Without a section prefix on ``old`` and ``new`` the rename applies to every section."""
+    import numpy as np
+
+    def rename(cid, prefix_old, prefix_new):
+        if cid == prefix_old:
+            return prefix_new
+        if cid.startswith(prefix_old + "/"):
+            return prefix_new + cid[len(prefix_old):]
+        return None
+
+    sectioned = old.split("/", 1)[0] in SECTIONS
+    if sectioned != (new.split("/", 1)[0] in SECTIONS):
+        raise SystemExit("OLD and NEW must both carry a section prefix or both not")
+    if sectioned and old.split("/", 1)[0] != new.split("/", 1)[0]:
+        raise SystemExit("a case cannot move between sections")
+    with open(os.path.join(record_dir, "manifest.json")) as f:
+        manifest = json.load(f)
+    moved, new_arrays = 0, {}
+    for section in SECTIONS:
+        po, pn = (old, new) if sectioned else (f"{section}/{old}", f"{section}/{new}")
+        entries = manifest["sections"][section]
+        recorded = load(os.path.join(record_dir, section + ".npz"))
+        renames = {cid: rename(cid, po, pn) for cid in entries}
+        renames = {a: b for a, b in renames.items() if b is not None}
+        if not renames:
+            continue
+        clash = sorted(set(renames.values()) & (set(entries) - set(renames)))
+        if clash:
+            raise SystemExit(f"{section}: the new ids already exist: {clash}")
+        before = {cid: e["sha256"] for cid, e in entries.items()}
+        out_entries, out_arrays = {}, {}
+        for cid, entry in entries.items():
+            target = renames.get(cid, cid)
+            out_entries[target] = entry
+            out_arrays[target.replace("/", "__")] = recorded[cid.replace("/", "__")]
+        for cid, target in renames.items():             # verification: bytes, digests, key sets
+            if digest(out_arrays[target.replace("/", "__")]) != before[cid]:
+                raise SystemExit(f"{cid}: the renamed array does not have its old sha256")
+        if set(out_arrays) != {c.replace("/", "__") for c in out_entries} or len(out_entries) != len(entries):
+            raise SystemExit(f"{section}: manifest and arrays disagree after the rename")
+        manifest["sections"][section] = dict(sorted(out_entries.items()))
+        new_arrays[section] = out_arrays
+        moved += len(renames)
+    if not moved:
+        raise SystemExit(f"no case matches {old}")
+    for rec in manifest.get("rewrites", []):           # the rewrite log follows the rename
+        for section, cids in rec["keys"].items():
+            po, pn = (old, new) if sectioned else (f"{section}/{old}", f"{section}/{new}")
+            rec["keys"][section] = sorted(rename(c, po, pn) or c for c in cids)
+    for section, arrays in new_arrays.items():
+        np.savez(os.path.join(record_dir, section + ".npz"), **arrays)
+    _write_manifest(manifest, record_dir)
+    for section in new_arrays:                          # re-read what was written
+        entries = json.load(open(os.path.join(record_dir, "manifest.json")))["sections"][section]
+        on_disk = load(os.path.join(record_dir, section + ".npz"))
+        for cid, entry in entries.items():
+            if digest(on_disk[cid.replace("/", "__")]) != entry["sha256"]:
+                raise SystemExit(f"{cid}: written array does not match its sha256")
+    print(f"{moved} keys renamed {old} -> {new}; arrays and digests verified")
+
+
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else "check"
     if cmd == "emit":
-        print(f"{argv[2]}: {emit(argv[2], argv[3])} cases")
+        print(f"{argv[2]}: {emit(argv[2], argv[3], argv[4:] or None)} cases")
     elif cmd == "record":
         record()
     elif cmd == "check":
@@ -989,7 +1132,14 @@ def main(argv):
             raise SystemExit(f"check takes --reference DIR and --base-manifest FILE, not {sorted(unknown) or argv[2:]}")
         sys.exit(check(options.get("--reference"), options.get("--base-manifest")))
     elif cmd == "rebaseline":
-        rebaseline(argv[2:])
+        if argv[2:3] == ["--only"]:
+            rebaseline_only(argv[3:])
+        else:
+            rebaseline(argv[2:])
+    elif cmd == "rename-case":
+        if len(argv) != 4:
+            raise SystemExit("rename-case takes OLD NEW")
+        rename_case(argv[2], argv[3])
     elif cmd == "inputs":
         make_inputs()
     elif cmd == "list":
