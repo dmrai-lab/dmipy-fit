@@ -87,7 +87,15 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install system dependencies
-        run: sudo apt-get install -y graphviz
+        # Refresh the image's package index first; if Azure's Ubuntu mirror does not resolve, use the main archive.
+        run: |
+          for attempt in 1 2 3; do
+            sudo apt-get update -q && sudo apt-get install -y -q graphviz && exit 0
+            echo "apt attempt $attempt failed; using archive.ubuntu.com"
+            sudo sed -i 's#azure\.archive\.ubuntu\.com#archive.ubuntu.com#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+            sleep 10
+          done
+          exit 1
 
       - name: Install dependencies
         run: |
