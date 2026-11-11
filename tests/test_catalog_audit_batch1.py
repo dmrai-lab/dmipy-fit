@@ -4,8 +4,11 @@ The audit IDs (B1-B5, C1-C4) and the published equations are in
 docs/catalog_audit.md. No network, external files or reference checkouts are
 used. Every reference signal below is written here from the paper's equations
 with NumPy/SciPy only. Predictions and tolerances are stated in each test's
-docstring. A test that asserts the *published* behaviour and fails on the
-factory is a strict xfail naming the finding; the factory is not changed here.
+docstring. A defect the audit found is fixed and tested against the paper's
+equations. A documented design difference (NODDI/Bingham-NODDI signal-averaged
+extracellular compartment, the Zeppelin tissue of free_water_elimination, the
+dispersion-free special case of stick_tortuous_zeppelin) is asserted as such,
+with its measured size.
 
 Conventions: SI units (b in s/m^2, diffusivities in m^2/s). Fractions are
 signal fractions.
@@ -93,38 +96,31 @@ def _zeppelin_tensor_average(scheme, nodes, weights, dpar, dperp):
 # B1  ball_and_stick  (Behrens 2003, MRM 50, Eq. 12-13)
 # ---------------------------------------------------------------------------
 
-def test_b1_matches_behrens_eq12_when_diffusivities_are_equal():
+def test_b1_matches_behrens_eq12():
     """Eq. 12: S = (1-f) exp(-b d) + f exp(-b d (g.n)^2), one shared d.
 
-    Prediction: with both factory diffusivities set to the same d the factory
-    equals Eq. 12 to rtol 1e-12 (both closed forms in float64).
+    Prediction: the factory equals Eq. 12 to rtol 1e-12 (both closed forms in
+    float64), with d the single diffusivity parameter.
     """
     scheme = _scheme()
     f, d, mu = 0.4, 1.3e-9, [0.8, -0.5]
     model = rm.ball_and_stick()
     e = model(scheme, C1Stick_1_mu=mu, C1Stick_1_lambda_par=d,
-              G1Ball_1_lambda_iso=d, partial_volume_0=f,
-              partial_volume_1=1 - f)
+              partial_volume_0=f, partial_volume_1=1 - f)
     c = scheme.gradient_directions @ _unit(mu)
     ref = (1 - f) * np.exp(-scheme.bvalues * d) \
         + f * np.exp(-scheme.bvalues * d * c ** 2)
     np.testing.assert_allclose(e, ref, rtol=1e-12, atol=1e-14)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "CATALOG-AUDIT-B1: Behrens 2003 Eq. 12 has ONE diffusivity d shared by "
-    "the stick and the isotropic part (six parameters: sigma, S0, d, f, "
-    "theta, phi). ball_and_stick() frees the stick and ball diffusivities "
-    "separately."))
 def test_b1_has_a_single_shared_diffusivity():
-    """Published model: exactly one diffusivity parameter.
+    """Behrens 2003 Eq. 12 has ONE diffusivity d shared by the stick and the
+    isotropic part.
 
-    Prediction: fails; the factory exposes C1Stick_1_lambda_par and
-    G1Ball_1_lambda_iso (two).
+    Prediction: the only diffusivity parameter is C1Stick_1_lambda_par.
     """
     names = rm.ball_and_stick().parameter_names
-    diffusivities = [n for n in names if "lambda" in n]
-    assert len(diffusivities) == 1
+    assert [n for n in names if "lambda" in n] == ["C1Stick_1_lambda_par"]
 
 
 # ---------------------------------------------------------------------------
@@ -172,33 +168,21 @@ def test_b3_equals_standard_model_kernel_under_the_tortuosity_constraint():
     np.testing.assert_allclose(e, ref, rtol=1e-12, atol=1e-14)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "CATALOG-AUDIT-B3: the Standard Model kernel (Eq. 3.5) has four "
-    "independent scalars f, Da, De_par, De_perp; Novikov 2019 Sec. 3.4 "
-    "treats tortuosity/equal-diffusivity as optional constraints. The "
-    "factory imposes both (De_par=Da, De_perp=Da(1-f)), leaving one "
-    "diffusivity."))
-def test_b3_has_three_independent_diffusivities():
-    """Published model: Da, De_par, De_perp all free.
+def test_b3_is_the_dispersion_free_tortuosity_constrained_special_case():
+    """Documented design: the Standard Model kernel (Eq. 3.5) has four free
+    scalars and an ODF; the factory is its special case with De_par = Da,
+    De_perp = Da(1-f) and a delta-function ODF, and says so.
 
-    Prediction: fails; the factory exposes one diffusivity parameter.
+    Prediction: one diffusivity parameter, no ODF/dispersion parameter, and the
+    docstring names it a special case, not the Standard Model.
     """
-    names = rm.stick_tortuous_zeppelin().parameter_names
-    assert len([n for n in names if "lambda" in n]) == 3
-
-
-@pytest.mark.xfail(strict=True, reason=(
-    "CATALOG-AUDIT-B3: the Standard Model convolves the kernel with an ODF "
-    "P(n) (Eq. 3.4); the factory has a single orientation (delta ODF) and "
-    "no dispersion or ODF parameter."))
-def test_b3_has_an_orientation_distribution():
-    """Published model: signal = integral P(n) K(b, g.n) dn.
-
-    Prediction: fails; no parameter name mentions an ODF/dispersion
-    (odi, kappa, ...).
-    """
-    names = rm.stick_tortuous_zeppelin().parameter_names
-    assert any(k in n for n in names for k in ("odi", "kappa", "sh_coeff"))
+    model = rm.stick_tortuous_zeppelin()
+    names = model.parameter_names
+    assert [n for n in names if "lambda" in n] == ["C1Stick_1_lambda_par"]
+    assert not any(k in n for n in names for k in ("odi", "kappa", "sh_coeff"))
+    doc = " ".join(rm.stick_tortuous_zeppelin.__doc__.split())
+    assert "special case of the Standard Model" in doc
+    assert "not the Standard Model itself" in doc
 
 
 # ---------------------------------------------------------------------------
@@ -224,20 +208,19 @@ def test_b4_free_water_ball_is_fixed_at_3e_minus_3_mm2_per_s():
     np.testing.assert_allclose(e, ref, rtol=1e-12, atol=1e-14)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "CATALOG-AUDIT-B4: Pasternak 2009 fits a bi-tensor model whose tissue "
-    "compartment is a full diffusion tensor (six parameters). The factory "
-    "tissue compartment is an axially symmetric Zeppelin (two "
-    "diffusivities, one axis)."))
-def test_b4_tissue_compartment_represents_a_general_tensor():
-    """Generate free-water-plus-full-tensor data and refit the factory.
+def test_b4_zeppelin_tissue_cannot_represent_a_general_tensor():
+    """Documented difference (the package has no full-tensor Gaussian
+    compartment): Pasternak 2009's tissue compartment is a full diffusion
+    tensor; the factory's is an axially symmetric Zeppelin.
+
+    Generate free-water-plus-full-tensor data and refit the factory.
 
     Tensor eigenvalues (1.7, 0.9, 0.4)e-9 m^2/s (distinct), free-water
     fraction 0.2, shells b = 1, 2, 3e9. A Zeppelin cannot represent two
     different radial eigenvalues.
 
-    Prediction: the best Zeppelin fit leaves an rms residual above 1e-3 (my
-    estimate 1e-2), so asserting rms < 1e-6 fails.
+    Prediction: the best Zeppelin fit leaves an rms residual above 1e-2
+    (measured 4.4e-2): the difference the factory's docstring states.
     """
     scheme = _scheme(per_shell=30)
     rng = np.random.default_rng(3)
@@ -265,7 +248,9 @@ def test_b4_tissue_compartment_represents_a_general_tensor():
             residual, [theta0, phi0, lp0, lq0, 0.8],
             bounds=([0, -np.pi, 0.1, 0.1, 0.01], [np.pi, np.pi, 3, 3, 0.99]))
         best = min(best, np.sqrt(np.mean(sol.fun ** 2)))
-    assert best < 1e-6
+    assert best > 1e-2
+    assert "full diffusion tensor" in " ".join(
+        rm.free_water_elimination.__doc__.split())
 
 
 # ---------------------------------------------------------------------------
@@ -352,18 +337,19 @@ def test_c1_composition_matches_eq1_with_signal_averaged_extracellular(odi):
     np.testing.assert_allclose(e, ref, atol=1.5e-3)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "CATALOG-AUDIT-C1: Zhang 2012 Eq. 4 defines the extracellular signal as "
-    "exp(-b g^T (int f(n) D(n) dn) g), the exponential of the ODF-averaged "
-    "TENSOR (apparent d'_par, d'_perp, Eqs. 5-8). The factory averages the "
-    "per-orientation zeppelin SIGNALS. The two differ by up to ~0.02 of S0."))
-@pytest.mark.parametrize("odi", [0.1, 0.3, 0.7])
-def test_c1_extracellular_is_exponential_of_averaged_tensor(odi):
-    """Full NODDI signal per Eqs. 1, 2, 4 (tensor average via quadrature).
+@pytest.mark.parametrize("odi,size", [(0.1, 4.5e-3), (0.3, 6.9e-3),
+                                      (0.7, 7.3e-3)])
+def test_c1_extracellular_differs_from_zhang_eq4_by_the_documented_size(
+        odi, size):
+    """Design difference (documented in noddi()): Zhang 2012 Eq. 4 is the
+    exponential of the ODF-averaged TENSOR (apparent d'_par, d'_perp, Eqs.
+    5-8); the factory averages the per-orientation zeppelin SIGNALS, for the
+    optimizer's nested volume fractions.
 
-    Prediction: fails at atol 1.5e-3; the largest deviation measured in a
-    pre-run of the zeppelin alone was 8e-3 (ODI 0.05), 2e-2 (ODI 0.3, 0.7)
-    before weighting by (1-f_iso)(1-nu) = 0.32.
+    Full NODDI signal per Eqs. 1, 2, 4 (tensor average via quadrature).
+    Prediction: the maximum deviation is 4.5e-3, 6.9e-3, 7.3e-3 of S0 at ODI
+    0.1, 0.3, 0.7 (rtol 5 %), far above the 1.5e-3 agreement of the
+    signal-averaged reference.
     """
     scheme = _scheme()
     nu, fiso, mu = 0.6, 0.2, [0.7, 0.4]
@@ -374,7 +360,9 @@ def test_c1_extracellular_is_exponential_of_averaged_tensor(odi):
     ref = (1 - fiso) * (nu * a_in + (1 - nu) * a_ec) \
         + fiso * np.exp(-scheme.bvalues * DISO)
     e = rm.noddi()(scheme, **_noddi_params(odi, nu, fiso, mu))
-    np.testing.assert_allclose(e, ref, atol=1.5e-3)
+    np.testing.assert_allclose(np.abs(e - ref).max(), size, rtol=0.05)
+    doc = " ".join(rm.noddi.__doc__.split())
+    assert "Zhang et al. 2012 Eq. 4" in doc and "4.5e-3 to 7.3e-3" in doc
 
 
 def test_c1_free_parameters_are_the_published_set():
@@ -451,16 +439,16 @@ def test_c2_composition_matches_eq1_with_signal_averaged_extracellular(
     np.testing.assert_allclose(e, ref, atol=2e-3)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "CATALOG-AUDIT-C2: Tariq 2016 Eqs. 4-5 define the extra-neurite signal "
-    "as exp(-b g^T D_en g) with D_en the ODF-averaged tensor; the factory "
-    "averages the per-orientation zeppelin signals (same defect as C1)."))
-@pytest.mark.parametrize("beta_fraction", [0.5, 0.9])
-def test_c2_extracellular_is_exponential_of_averaged_tensor(beta_fraction):
-    """Full Bingham-NODDI signal per Eqs. 1, 3, 4, 5.
+@pytest.mark.parametrize("beta_fraction,size", [(0.5, 7.3e-3), (0.9, 7.4e-3)])
+def test_c2_extracellular_differs_from_tariq_eq4_by_the_documented_size(
+        beta_fraction, size):
+    """Design difference (documented in bingham_noddi()): Tariq 2016 Eqs. 4-5
+    define the extra-neurite signal as exp(-b g^T D_en g) with D_en the
+    ODF-averaged tensor; the factory averages the per-orientation zeppelin
+    signals (as noddi()).
 
-    Prediction: fails at atol 2e-3; deviation of the same order as C1
-    (~1e-2 of S0 after weighting).
+    Full Bingham-NODDI signal per Eqs. 1, 3, 4, 5.
+    Prediction: the maximum deviation is 7.3e-3 and 7.4e-3 of S0 (rtol 5 %).
     """
     scheme = _scheme()
     odi, psi, nu, fiso, mu = 0.3, 0.4, 0.6, 0.2, [0.7, 0.4]
@@ -472,113 +460,136 @@ def test_c2_extracellular_is_exponential_of_averaged_tensor(beta_fraction):
         + fiso * np.exp(-scheme.bvalues * DISO)
     e = rm.bingham_noddi()(scheme, **_bingham_params(
         odi, beta_fraction, psi, nu, fiso, mu))
-    np.testing.assert_allclose(e, ref, atol=2e-3)
+    np.testing.assert_allclose(np.abs(e - ref).max(), size, rtol=0.05)
+    doc = " ".join(rm.bingham_noddi.__doc__.split())
+    assert "Tariq et al. 2016 Eqs. 4-5" in doc and "7.3e-3 and 7.4e-3" in doc
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "CATALOG-AUDIT-C2: the Bingham-NODDI fit constrains kappa, beta <= 64 "
-    "(Tariq 2016, Model fitting procedure). The factory's odi >= 0.02 caps "
-    "kappa at about 31.8."))
 def test_c2_kappa_upper_bound_is_64():
-    """Published bound kappa <= 64 reachable through the odi range.
+    """Tariq 2016, Model fitting procedure: kappa, beta <= 64.
 
-    Prediction: fails; odi2kappa(0.02) = 31.8 < 64.
+    Prediction: the lower odi bound maps to kappa = 64 (rtol 1e-9; beta <=
+    kappa by construction of beta_fraction), and the signal at that bound
+    equals the quadrature reference with signal-averaged extracellular to
+    atol 1e-3 (measured 8e-4).
     """
-    lo = rm.bingham_noddi().parameter_ranges[_B + "SD2Bingham_1_odi"][0]
-    assert odi2kappa(lo) >= 64
+    name = _B + "SD2Bingham_1_odi"
+    model = rm.bingham_noddi()
+    lo = np.asarray(model.parameter_ranges[name])[0] \
+        * model.parameter_scales[name]
+    np.testing.assert_allclose(odi2kappa(lo), 64.0, rtol=1e-9)
+    scheme = _scheme()
+    psi, nu, fiso, mu = 0.4, 0.6, 0.2, [0.7, 0.4]
+    nodes, w = _sphere_grid()
+    wt = _bingham_weights(nodes, w, lo, 0.0, psi, mu)
+    ref = (1 - fiso) * (nu * _stick_dispersed(scheme, nodes, wt, DA)
+                        + (1 - nu) * _zeppelin_signal_average(
+                            scheme, nodes, wt, DA, DA * (1 - nu))) \
+        + fiso * np.exp(-scheme.bvalues * DISO)
+    e = model(scheme, **_bingham_params(lo, 0.0, psi, nu, fiso, mu))
+    np.testing.assert_allclose(e, ref, atol=1e-3)
 
 
 # ---------------------------------------------------------------------------
 # C3  noddida  (Jelescu 2016, NMR Biomed 29:33, Eqs. 2-5)
 # ---------------------------------------------------------------------------
 
-def _noddida_closed_form(scheme, f, da, diso, mu, f_in):
-    """f1 stick + f2 zeppelin(Da, De_perp = Da (1 - f_in)) + f3 ball."""
-    xi = scheme.gradient_directions @ _unit(mu)
-    b = scheme.bvalues
-    stick = np.exp(-b * da * xi ** 2)
-    zep = np.exp(-b * da * (1 - f_in) - b * da * f_in * xi ** 2)
-    return f[0] * stick + f[1] * zep + f[2] * np.exp(-b * diso)
+_N = "SD1WatsonDistributed_1_"
 
 
-def test_c3_factory_is_the_aligned_special_case_without_the_ball():
-    """Aligned (kappa -> inf) limit of Eq. 2 with Da = De_par, De_perp =
-    Da(1-f), the ball fraction set to zero (fractions sum over the two
-    tissue compartments only).
+def _noddida_params(f, da, dpar, dperp, odi, mu):
+    return {_N + "C1Stick_1_lambda_par": da,
+            _N + "G2Zeppelin_1_lambda_par": dpar,
+            _N + "G2Zeppelin_1_lambda_perp": dperp,
+            _N + "SD1Watson_1_mu": mu, _N + "SD1Watson_1_odi": odi,
+            _N + "partial_volume_0": f}
 
-    Prediction: factory == closed form to rtol 1e-12. This documents what the
-    factory is, not what NODDIDA is.
+
+def _noddida_reference(scheme, odi, f, da, dpar, dperp, mu, extracellular):
+    nodes, w = _sphere_grid()
+    wt = _watson_weights(nodes, w, odi2kappa(odi), _unit(mu))
+    return f * _stick_dispersed(scheme, nodes, wt, da) \
+        + (1 - f) * extracellular(scheme, nodes, wt, dpar, dperp)
+
+
+def test_c3_has_the_published_free_parameters_and_bounds():
+    """Jelescu 2016 Eq. 2: free f, Da, De_par, De_perp, kappa and mu; no CSF
+    compartment; no tortuosity link; diffusivity bounds [0, 4] um^2/ms.
+
+    Prediction: exactly those parameters, no Ball, and each diffusivity bound
+    equals [0, 4e-9] m^2/s.
+    """
+    model = rm.noddida()
+    assert set(model.parameter_names) == {
+        _N + "C1Stick_1_lambda_par", _N + "G2Zeppelin_1_lambda_par",
+        _N + "G2Zeppelin_1_lambda_perp", _N + "SD1Watson_1_mu",
+        _N + "SD1Watson_1_odi", _N + "partial_volume_0"}
+    assert not any("G1Ball" in n for n in model.parameter_names)
+    for name in (_N + "C1Stick_1_lambda_par", _N + "G2Zeppelin_1_lambda_par",
+                 _N + "G2Zeppelin_1_lambda_perp"):
+        bounds = np.asarray(model.parameter_ranges[name]) \
+            * model.parameter_scales[name]
+        np.testing.assert_allclose(bounds, [0.0, 4e-9], atol=1e-20)
+
+
+@pytest.mark.parametrize("odi", [0.1, 0.3, 0.7])
+def test_c3_matches_eq2_with_signal_averaged_extracellular(odi):
+    """Eq. 2 with independent Da, De_par, De_perp and the Watson ODF by
+    quadrature, the extracellular compartment written as the ODF average of
+    the per-orientation zeppelin SIGNAL (the bundle design of noddi()).
+
+    Prediction: the factory agrees to atol 1.5e-3 (measured <= 7e-5).
     """
     scheme = _scheme()
-    f = np.array([0.45, 0.55, 0.0])
-    da, diso, mu = 1.9e-9, 2.6e-9, [0.9, -1.2]
-    e = rm.noddida()(
-        scheme, C1Stick_1_mu=mu, C1Stick_1_lambda_par=da,
-        G1Ball_1_lambda_iso=diso, partial_volume_0=f[0],
-        partial_volume_1=f[1], partial_volume_2=f[2])
-    ref = _noddida_closed_form(scheme, f, da, diso, mu, f[0] / (f[0] + f[1]))
-    np.testing.assert_allclose(e, ref, rtol=1e-12, atol=1e-14)
+    f, da, dpar, dperp, mu = 0.5, 2.1e-9, 1.4e-9, 0.6e-9, [0.7, 0.4]
+    ref = _noddida_reference(scheme, odi, f, da, dpar, dperp, mu,
+                             _zeppelin_signal_average)
+    e = rm.noddida()(scheme, **_noddida_params(f, da, dpar, dperp, odi, mu))
+    np.testing.assert_allclose(e, ref, atol=1.5e-3)
+
+
+@pytest.mark.parametrize("odi,size", [(0.1, 6.0e-3), (0.3, 9.3e-3),
+                                      (0.7, 9.8e-3)])
+def test_c3_extracellular_differs_from_eq2_by_the_documented_size(odi, size):
+    """Design difference (documented in noddida() and noddi()): Eq. 2 is the
+    exponential of the ODF-averaged tensor; the factory averages zeppelin
+    signals.
+
+    Prediction: for f 0.5, Da 2.1, De_par 1.4, De_perp 0.6 um^2/ms the maximum
+    deviation is 6.0e-3, 9.3e-3, 9.8e-3 of S0 at ODI 0.1, 0.3, 0.7 (rtol 5 %).
+    """
+    scheme = _scheme()
+    f, da, dpar, dperp, mu = 0.5, 2.1e-9, 1.4e-9, 0.6e-9, [0.7, 0.4]
+    ref = _noddida_reference(scheme, odi, f, da, dpar, dperp, mu,
+                             _zeppelin_tensor_average)
+    e = rm.noddida()(scheme, **_noddida_params(f, da, dpar, dperp, odi, mu))
+    np.testing.assert_allclose(np.abs(e - ref).max(), size, rtol=0.05)
+
+
+def test_c3_zero_diffusivities_are_valid():
+    """The paper's lower bound is 0: the signal at Da = 0 is finite and the
+    stick is then unattenuated.
+
+    Prediction: finite values; with f = 1 the signal is 1 to 1e-9.
+    """
+    scheme = _scheme()
+    e = rm.noddida()(scheme, **_noddida_params(
+        1.0, 0.0, 1.4e-9, 0.6e-9, 0.3, [0.7, 0.4]))
+    assert np.isfinite(e).all()
+    np.testing.assert_allclose(e, 1.0, atol=1e-9)
 
 
 def test_c3b_tortuosity_with_a_third_compartment():
     """Szafer/Bruggeman: lambda_perp = lambda_par * vf_extra / (vf_intra +
     vf_extra) (the helper's own docstring and unit test intend this).
 
-    Prediction: fails; with (0.4, 0.35) the helper returns 0.3962 lambda_par
-    instead of 0.4667 lambda_par (measured in the audit by inverting the
-    factory signal; computed here from the helper's code path).
+    Prediction: with (0.4, 0.35) the helper returns 0.4667 lambda_par (it
+    returned 0.3962 lambda_par before the fix of the normalisation).
     """
     from dmipy_fit.utils.utils import T1_tortuosity
     lpar = 1.9e-9
     got = T1_tortuosity()(lpar, 0.4, 0.35)
     np.testing.assert_allclose(got, lpar * 0.35 / 0.75, rtol=1e-9)
-
-
-def test_c3b_noddida_signal_with_ball_fraction():
-    """Closed form with De_perp = Da f_ec/(f_ic + f_ec).
-
-    Prediction: fails; the signal differs by up to ~2e-2 (b <= 3e9).
-    """
-    scheme = _scheme()
-    f = np.array([0.4, 0.35, 0.25])
-    da, diso, mu = 1.9e-9, 2.6e-9, [0.9, -1.2]
-    e = rm.noddida()(
-        scheme, C1Stick_1_mu=mu, C1Stick_1_lambda_par=da,
-        G1Ball_1_lambda_iso=diso, partial_volume_0=f[0],
-        partial_volume_1=f[1], partial_volume_2=f[2])
-    ref = _noddida_closed_form(scheme, f, da, diso, mu, f[0] / (f[0] + f[1]))
-    np.testing.assert_allclose(e, ref, rtol=1e-9)
-
-
-@pytest.mark.xfail(strict=True, reason=(
-    "CATALOG-AUDIT-C3: NODDIDA releases Da, De_par and De_perp as three "
-    "independent diffusivities (Jelescu 2016 Eq. 2, Methods). The factory "
-    "ties De_par = Da and De_perp = Da(1-f) and so has one."))
-def test_c3_has_three_independent_tissue_diffusivities():
-    """Prediction: fails; the tissue diffusivity parameters are Da plus the
-    free Ball's d_iso (two names, only one of them tissue)."""
-    names = rm.noddida().parameter_names
-    tissue = [n for n in names if "lambda" in n and "G1Ball" not in n]
-    assert len(tissue) == 3
-
-
-@pytest.mark.xfail(strict=True, reason=(
-    "CATALOG-AUDIT-C3: NODDIDA keeps NODDI's Watson-dispersed neurite "
-    "orientation distribution (concentration kappa, Eqs. 2-3). The factory "
-    "has no dispersion: all neurites are parallel."))
-def test_c3_has_a_watson_dispersion_parameter():
-    """Prediction: fails; no odi/kappa parameter exists."""
-    names = rm.noddida().parameter_names
-    assert any(k in n for n in names for k in ("odi", "kappa"))
-
-
-@pytest.mark.xfail(strict=True, reason=(
-    "CATALOG-AUDIT-C3: the NODDIDA of Jelescu 2016 has no CSF compartment "
-    "(f_iso = 0). The factory adds a free-diffusivity isotropic Ball."))
-def test_c3_has_no_isotropic_compartment():
-    """Prediction: fails; the factory contains G1Ball."""
-    names = rm.noddida().parameter_names
-    assert not any("G1Ball" in n for n in names)
 
 
 # ---------------------------------------------------------------------------
@@ -619,3 +630,24 @@ def test_c4_free_parameters_are_v_int_and_lambda():
     """
     assert set(rm.mcsmt().parameter_names) == {
         "C1Stick_1_lambda_par", "partial_volume_0", "partial_volume_1"}
+
+
+# ---------------------------------------------------------------------------
+# Citations
+# ---------------------------------------------------------------------------
+
+def test_citations_are_corrected():
+    """Le Bihan 1988 is Radiology 168; Kaden 2016's authors are Kaden, Kelm,
+    Carson, Does & Alexander; NODDIDA is Jelescu, Veraart, Fieremans &
+    Novikov, NMR Biomed 29 (2016), in the docstrings and the catalogue table.
+    """
+    for text in (rm.__doc__, rm.ivim.__doc__):
+        assert "Radiology 168" in text and "Radiology 161" not in text
+    for text in (rm.__doc__ + rm.mcsmt.__doc__,):
+        assert "Kaden, Kelm, Carson, Does & Alexander" in text \
+            or "Kaden et al. 2016" in text
+        assert "McKinstry" not in text and "Rueckert" not in text
+    for text in (rm.noddida.__doc__, rm.noddida_mte.__doc__):
+        assert "Jelescu" in text and "2016" in text
+        assert "Adisetiyo" not in text and "2015" not in text
+    assert "Jelescu et al. 2016, NMR Biomed 29" in rm.__doc__

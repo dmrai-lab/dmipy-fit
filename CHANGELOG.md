@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **Reference catalogue, batch 1: the obvious mistakes fixed** (audit in `docs/catalog_audit.md`; documented design
+  choices stay).
+  - `ball_and_stick()` has one diffusivity shared by stick and ball (Behrens 2003 Eqs. 12-13): the parameter
+    `G1Ball_1_lambda_iso` is gone and `C1Stick_1_lambda_par` is d. Fits had two free diffusivities; the ball can no
+    longer be slower or faster than the stick.
+  - `noddida()` is NODDIDA (Jelescu, Veraart, Fieremans & Novikov 2016, Eqs. 2-5): a Watson-dispersed Stick + Zeppelin
+    with free D_a, D_e,par and D_e,perp in [0, 4] um^2/ms, no tortuosity link, no Ball. Its parameter names, count and
+    meaning change (`SD1WatsonDistributed_1_*`, plus `odi` and `mu`); fitted values of the former aligned
+    Stick + Zeppelin + Ball model have no counterpart (no dispersion, no CSF fraction, tied diffusivities).
+  - `bingham_noddi()`: kappa is bounded by 64 (Tariq 2016), the odi lower bound is 0.00994 instead of 0.02.
+    Voxels of coherent tissue (kappa between 31.8 and 64) can now fit; elsewhere the signal is unchanged.
+  - Docstrings only: `stick_tortuous_zeppelin()` is the dispersion-free, tortuosity-constrained special case of the
+    Standard Model, not the Standard Model; `free_water_elimination()` states that its tissue is a Zeppelin, not the
+    full tensor of Pasternak 2009 (no full-tensor Gaussian compartment exists in the package); `noddi()`,
+    `bingham_noddi()` and `noddida()` state that their dispersed extracellular signal is the ODF average of zeppelin
+    signals, which differs from the exponential of the averaged tensor (Zhang 2012 Eq. 4) by 4.5e-3 to 7.3e-3 of S0
+    (NODDI), 7.3e-3 to 7.4e-3 (Bingham-NODDI) and 6.0e-3 to 9.8e-3 (NODDIDA) in the tested cases. No fitted value of
+    `noddi()` changes.
+  - Citations: Le Bihan 1988 is Radiology 168; Kaden, Kelm, Carson, Does & Alexander 2016; NODDIDA is Jelescu,
+    Veraart, Fieremans & Novikov, NMR Biomed 29 (2016).
+  - Parity record: re-baselined with `rebaseline --only`: `ref.bingham_noddi` (pgse, legacy; the default parameter
+    vector moves with the new odi lower bound; max abs 2.9e-4 NumPy, 3.9e-4 JAX) and `ref.noddida` (pgse; a different
+    model; max abs 2.7e-1 NumPy, 2.2e-1 JAX). `ref.ball_and_stick` keys are unchanged.
+
 - **Parity harness: `rebaseline --only KEY...` and `rename-case OLD NEW`.** `rebaseline PREFIX...` refused whenever any
   unnamed key differed, which on a machine with another Python, NumPy or JAX than the record's is dozens of keys of
   environment drift. `rebaseline --only` takes case ids or `fnmatch` patterns (each must match a registered case),
