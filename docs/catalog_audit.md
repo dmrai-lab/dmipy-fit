@@ -3,9 +3,11 @@
 `dmipy_fit/custom_optimizers/reference_models.py` is meant to hold published
 models only, each faithful to its paper's equations. This batch checks nine
 factories against their papers: B1-B5 and C1-C4 of the catalogue table.
-Nothing was fixed. Checks are in `tests/test_catalog_audit_batch1.py`; each
-test's prediction and tolerance is in its docstring, and every mismatch is a
-strict xfail whose reason names the finding (`CATALOG-AUDIT-<id>`).
+The audit itself changed nothing; the fixes that followed are listed under
+"Status after the fixes" at the end of this file. Checks are in
+`tests/test_catalog_audit_batch1.py`; each test's prediction and tolerance is
+in its docstring. (The audit first recorded every mismatch as a strict xfail
+named `CATALOG-AUDIT-<id>`; the text below describes the factories as audited.)
 
 **How each source was read.** "Full text" means the paper's own equations were
 read in a raw copy (PDF text extraction or the PMC page) and searched; the
@@ -294,3 +296,23 @@ rtol 1e-9) and `test_c4_free_parameters_are_v_int_and_lambda` pass.
 | C3 | Not NODDIDA | Implement Eq. 2 (Watson dispersion, three free diffusivities, no ball), or rename. |
 | C3b | `T1_tortuosity` mixes normalised and raw fractions; its unit test cannot fail | Fix the helper and test at the SI scale. |
 | B2, B5 | Primary text unread | Needs the papers (institutional access) before a verdict. |
+
+## Status after the fixes
+
+Decision (lead, dmipy-fit PR 82): fix the obvious mistakes; documented design
+choices stay.
+
+| ID | Outcome |
+|---|---|
+| B1 | Fixed: stick and ball share one diffusivity d (`C1Stick_1_lambda_par`), as in Behrens 2003 Eqs. 12-13. |
+| B3 | Model kept; docstring and table say it is the dispersion-free, tortuosity-constrained special case of the Standard Model. Asserted by a passing test. |
+| B4 | Documented difference: the package has no full-tensor Gaussian compartment, so the tissue stays a Zeppelin; the docstring states it (secondary source Neto Henriques 2017). Asserted by a passing test (rms residual > 1e-2). |
+| B5 | Citation volume corrected (Radiology 168); primary text still unread. |
+| C1 | Formulation kept (dmipy's Watson bundle, signal-averaged extracellular, for nested volume fractions). Docstring states the 4.5e-3 to 7.3e-3 of S0 difference from Zhang Eq. 4; the test asserts it. |
+| C2 | Same formulation kept and documented (7.3e-3, 7.4e-3 of S0 at the tested cases). kappa bound is the paper's 64. |
+| C3 | Rebuilt as NODDIDA: Watson-dispersed Stick + Zeppelin with free D_a, D_e,par, D_e,perp in [0, 4] um^2/ms, no tortuosity, no Ball. The signal-averaged extracellular difference from Eq. 2 is documented (6.0e-3 to 9.8e-3 of S0 at the tested cases). The paper's bound on kappa was not read; the package's odi >= 0.02 stays. C3b was fixed in its own PR. |
+| C4 | Authors corrected. |
+| B2 | Unchanged (source unread). |
+
+`noddida_mte()` keeps its Stick + tortuous Zeppelin + Ball structure (it is
+not rebuilt here); only its NODDIDA citation is corrected.
