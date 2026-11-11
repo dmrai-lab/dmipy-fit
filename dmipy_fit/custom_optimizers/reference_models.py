@@ -454,12 +454,20 @@ def impulsed():
 # ===========================================================================
 
 def nexi():
-    """NEXI: Neurite Exchange Imaging — Stick + Zeppelin with Kärger exchange.
+    """Orientation-resolved Stick + tortuous Zeppelin exchange variant.
 
     The same generic X0GeneralizedKarger used by karger_two_compartment/fexi, with an
     intra-axonal Stick, an extra-axonal Zeppelin, and the NODDI tortuosity link
     (De_perp = (1 − f)·De_par) pre-wired via parameter_links.  Free parameters:
     mu, f, kappa, C1Stick_1_lambda_par (Di), G2Zeppelin_1_lambda_par (De).
+
+    This differs from published NEXI: Jelescu et al. Eqs. (3)--(6) use a
+    powder average, an independent isotropic extra-neurite diffusivity,
+    and no tortuosity link. Here kappa is the intra-to-extra rate (s^-1),
+    so the paper's t_ex = (1-f)/kappa, not 1/kappa. These structural
+    differences can change fitted fractions, diffusivities and exchange.
+    See signal_models.nexi_reference.nexi_jelescu2022 for an opt-in
+    reference predictor of the published signal.
 
     Jelescu, de Skowronski, Geffroy, Palombo & Novikov 2022, NeuroImage 256
     doi:10.1016/j.neuroimage.2022.119277
@@ -486,7 +494,7 @@ def karger_two_compartment():
 
 
 def fexi():
-    """FEXI: Filter EXchange Imaging — two isotropic pools with exchange.
+    """Two-pool forward model for a FEXI acquisition, with fixed fast D.
 
     The two-site Kärger model of a filter-exchange acquisition: a slow and a
     fast (``D = 2e-9`` m²/s) isotropic pool exchanging at ``kappa``. On a FEXI
@@ -495,6 +503,14 @@ def fexi():
     (``dmipy_analytic.exchange.karger_waveform``). The apparent-exchange-rate
     analysis of the same scheme (``ADC_eq``, ``sigma``, ``AXR``) is
     :class:`dmipy_fit.signal_models.filter_exchange.FEXIApparentExchange`.
+
+    This factory is not the published phenomenological AXR fit. Fixing
+    the fast diffusivity at 2e-9 m²/s is an additional assumption that
+    can bias recovered values. The fitted kappa is the slow-to-fast
+    rate: AXR = kappa/(1-f) for ideal two-site exchange, not kappa.
+    No ordering constraint forces the other fitted diffusivity to be
+    slower. On a single PGSE scheme this is an ordinary two-pool Kärger
+    signal, without a diffusion filter or a mixing-time experiment.
 
     Lasič, Nilsson, Lätt, Ståhlberg & Topgaard 2011, Magnetic Resonance in Medicine 66
     doi:10.1002/mrm.22782
