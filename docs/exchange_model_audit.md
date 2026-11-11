@@ -277,3 +277,43 @@ All 614 parity archive arrays still match their recorded hashes; six case
 IDs and archive keys were renamed to `karger.stick_zeppelin_tortuous`, with their
 values and hashes preserved. The complete parity harness was not run.
 Nothing was committed.
+
+## 7. SMEX (Olesen et al. 2022): what the paper defines
+
+Source: Olesen, Østergaard, Shemesh and Jespersen, NeuroImage 251 (2022), 118976,
+doi:10.1016/j.neuroimage.2022.118976, open access (PMC8961002); the full text was read, section 2.1 and section 2.6.
+
+Defined by the paper:
+
+- Eq. (1) is the no-exchange powder average (SANDI): f_e exp(-b D_e) + f_n sqrt(pi/(4 b D_n)) erf(sqrt(b D_n)) +
+  soma + f_im. SMEX replaces the neurite and extracellular terms by an exchanging pair.
+- Eqs. (2)--(3), the generalised rate equation, for any gradient profile through q(t) = gamma int g dt: two Gaussian
+  pools, neurite apparent diffusivity D_n eps^2 with eps = g.n, extracellular diffusivity D_e, the exchange matrix
+  [[-r_n, r_e], [r_n, -r_e]], detailed balance r_n f_n = r_e f_e, and the signal read as S_n + S_e at the end of the
+  encoding. Each neurite exchanges only with its own local extracellular water.
+- Eqs. (4)--(6), the narrow-pulse closed form: S = f1' exp(-a1) + f2' exp(-a2), with
+  a_{1,2} = (b D1 + b D2 + t r1 + t r2 +/- sqrt((b D1 - b D2 + t r1 - t r2)^2 + 4 t^2 r1 r2))/2 and
+  f1,2' = +/-(b Dbar - a_{2,1})/(a1 - a2), Dbar = f1 D1 + f2 D2. This is the same kernel as Jelescu Eqs. (3)--(5).
+  The orientation signal substitutes D_n eps^2 for D1.
+- The powder average is Gauss-Legendre quadrature in eps (the expression is axisymmetric); Eq. (7) writes it as
+  (1/2) int_{-1}^{1} S(eps) d eps. The total SMEX signal adds the immobile fraction f_im.
+- Fitted: diffusivities, the exchange rate, the exchanging-pair fraction (nonlinear), the other fractions by variable
+  projection. Initial values were drawn uniformly on 0--3 um^2/ms (diffusivities), 0--1 ms^-1 (rate), 0--100 % (the
+  fraction); these are initialisation ranges, not stated bounds. Units: um^2/ms, ms/um^2, ms^-1. Table 1 reports
+  f_e, D_e, f_n, D_n, tau_n and f_im.
+
+Not defined by the paper (and therefore not reproducible as a published model):
+
+- An anisotropic extra-neurite Zeppelin. Section 2.1.1 says the extracellular diffusion "can be straightforwardly
+  relaxed to be anisotropic", reports that the effect on fit and estimates was small, and keeps an isotropic D_e for
+  SANDI and SMEX. No equation, parameterisation or fit with D_e,par and D_e,perp appears.
+- A symbol or formula t_ex = 1/(r_n + r_e). The paper's exchange parameter is the neurite rate r_n, quoted as the
+  mean neurite residence time tau_n (about 4 ms); r_e follows from detailed balance.
+- A t = Delta - delta/3 effective time. Delta - delta/3 occurs only in the b_max relation. The closed form
+  Eqs. (4)--(6) is a narrow-pulse expression with t undefined for finite pulses; the finite-pulse treatment of the
+  paper is the numerical integration of Eq. (2) along the actual gradient waveform.
+
+Consequence: the published SMEX signal is the published NEXI kernel with isotropic D_e, a different exchange
+coordinate (r_n, or tau_n = 1/r_n, instead of t_ex = 1/(r_n + r_e)) and an additional immobile fraction. An axially symmetric
+extra-neurite Zeppelin with free D_e,par and D_e,perp is the extension the paper names but does not publish, so it
+is outside a factory that holds published models only.
