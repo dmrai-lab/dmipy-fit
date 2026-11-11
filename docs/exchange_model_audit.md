@@ -1,8 +1,11 @@
 # NEXI and FEXI correctness audit
 
-The existing factories retain their numerical behaviour. `nexi()` is an
-orientation-resolved exchange variant, not the NEXI implementation defined by
-Jelescu et al. (2022). `fexi()` is a constrained two-pool forward model on a
+`nexi()` now fits the powder-averaged Stick + independent isotropic Ball
+model defined by Jelescu et al. (2022), with four free parameters: f, Di, De
+and t_ex in seconds. The former orientation-resolved, tortuous Stick +
+Zeppelin variant retains its numerical behaviour as `stick_zeppelin_karger()`.
+There is no compatibility alias for that variant under the NEXI name.
+`fexi()` is a constrained two-pool forward model on a
 user-supplied acquisition, not the phenomenological AXR analysis. The latter is
 already available as `FEXIApparentExchange`.
 
@@ -46,7 +49,11 @@ The fitted signal is powder-averaged and has no fitted orientation or ODF.
 The kernel assumes Gaussian, time-independent compartment diffusivities,
 barrier-limited exchange, and narrow diffusion pulses.
 
-| Property | Published NEXI | Existing `nexi()` | Effect on recovered values |
+The following comparison describes the preserved directional variant;
+`nexi()` now implements the published column (subject to the unchanged
+finite-pulse approximation and compartment-signal floor).
+
+| Property | Published NEXI | `stick_zeppelin_karger()` | Effect on recovered values |
 |---|---|---|---|
 | Intra-neurite compartment | Stick | Stick | Same compartment assumption. |
 | Extra-neurite compartment | Independent isotropic Ball | Coaxial Zeppelin | Changes signal and meaning of De; can bias every tissue estimate under model mismatch. |
@@ -154,7 +161,7 @@ in the new NEXI reference predictor.
 
 | Audit ID (local finding, not a remote issue number) | Evidence | Disposition |
 |---|---|---|
-| EXCHANGE-AUDIT-1 | Existing `nexi()` fails the published powder signal at equivalent tissue parameters. | One strict xfail, preserving the equality assertion; opt-in published reference supplied. |
+| EXCHANGE-AUDIT-1 | The former factory was directional Stick + tortuous Zeppelin. | Resolved: renamed `stick_zeppelin_karger()`; `nexi()` is now a spherical-mean Stick + Ball fitter with t_ex in seconds. The original equality assertion passes without xfail. |
 | EXCHANGE-AUDIT-2 | At delta=18 ms, Delta=40 ms, b=2.4e9, f=0.35, kappa=17/s, closed-path NEXI variant gives 0.02358852056 versus ODE 0.02349958737 (0.378% high); two-Ball FEXI on PGSE gives 0.1339173042 versus 0.1307964269 (2.386% high). Narrow-pulse and waveform checks pass. | Two strict xfails at rtol=1e-5. Do not advertise this PGSE path as exact for finite pulses. |
 | EXCHANGE-AUDIT-3 | At b=1e11, kappa=0, the E_i>=1e-10 floor replaces the true small compartment signals. | Two strict xfails retain the exact nonexchanging sum at rtol=2e-12, atol=0. |
 | EXCHANGE-AUDIT-4 | FEXI delta=4 ms, Delta=10 ms, dt=0.2 ms reports filtered b about 1.19999987e9, while exact integration of its piecewise-constant effective gradient gives about 1.19957310e9 (0.0356% less). No-exchange signal is 0.30323503 versus 0.30315341 at declared b; fast exchange also fails. | Two strict xfails; original tolerances unchanged. Shared acquisition/analytic weighting convention needs review. |
@@ -172,12 +179,22 @@ parameter identifiability for an arbitrary demo protocol.
 
 ## 4. Proposed fixes and decisions for the lead
 
-* **NEXI model definition:** explicitly opt into
-  `dmipy_fit.signal_models.nexi_reference.nexi_jelescu2022`. It predicts
-  Eqs. (3)--(6) with independent Di and isotropic De, no mu or tortuosity, and
-  an explicit t_ex in seconds. It is a standalone CPU reference predictor,
-  **not an integrated fitting factory**; adding a fitter is a separate decision.
-  All six arguments are required. Existing `nexi()` behaviour is unchanged.
+* **NEXI model definition (implemented):** `reference_models.nexi()` returns
+  a `MultiCompartmentSphericalMeanModel` containing `X1NEXI`, which composes
+  `X0GeneralizedKarger(C1Stick(), G1Ball())` and averages its coupled kernels
+  with 64-point Gauss-Legendre quadrature. Its JAX twin uses the same nodes
+  and the analytic Karger twin. All four tissue parameters are required:
+  `X1NEXI_1_f`, `X1NEXI_1_D_i`, `X1NEXI_1_D_e`, `X1NEXI_1_t_ex`.
+  Diffusivities use m²/s, exchange time uses seconds, with fitting bounds
+  f=0.01--0.99, Di/De=0.1--3 µm²/ms and t_ex=1--500 ms. There is no mu or
+  tortuosity. The independent `nexi_jelescu2022` reference is retained.
+  The NumPy fitter and both JAX precisions are tested on 36 tissue settings
+  spanning f=0.2/0.5/0.8, Di=1.2/2.8, De=0.6/1.8 µm²/ms,
+  t_ex=5/30/200 ms and 15 b/Delta pairs (b=0/0.2/1/3/6 ms/µm²,
+  Delta=15/40/80 ms, delta=4 ms). NumPy/float64 tolerance is rtol=2e-12,
+  atol=2e-14; float32 tolerance is rtol=2e-5, atol=2e-7.
+  The directional variant's callers and parity cases now use
+  `stick_zeppelin_karger()`; its predictions and assertions are preserved.
 * **Time definition:** the reference accepts b and t explicitly, with b=q²t;
   it does not silently substitute Delta-delta/3 for a finite-pulse experiment.
   t_ex=inf and t_ex=0 explicitly select the two mathematical limits.
@@ -205,12 +222,14 @@ parameter identifiability for an arbitrary demo protocol.
   consistent units. Without that input a true-permeability comparison is
   undefined, even with the correct published model.
 
-Only documentary inaccuracies in existing code were corrected in place:
-the NEXI variant's identity, the FEXI forward/AXR distinction, the finite-PGSE
-exactness claim, and the finite-b ADC/first-cumulant statement. No existing
-signal equations, parameter bounds, defaults, scopes, or thresholds changed.
+The initial audit corrected documentary inaccuracies in place: the directional
+variant's identity, the FEXI forward/AXR distinction, the finite-PGSE exactness
+claim, and the finite-b ADC/first-cumulant statement. The NEXI follow-up then
+changed the factory definition as described above and preserved the renamed
+variant's equations and parameter bounds. Findings 2--4 remain open, with
+their original physical assertions and strict xfail marks.
 
-## 5. Execution
+## 5. Initial audit execution
 
 Only the new test file is run with the requested interpreter, this worktree
 and the supplied analytic source on PYTHONPATH, JAX_PLATFORMS=cpu, and pytest's
@@ -223,3 +242,41 @@ failures became EXCHANGE-AUDIT-4 strict xfails without changing their
 predictions, tolerances, or assertions. Final run: **18 passed, 7 xfailed in
 1.36 s**, exit status zero. All seven xfails are strict and represent the
 open findings above, rather than claims that those physical limits pass.
+
+## 6. Published NEXI follow-up execution
+
+Affected files were run individually with the supplied interpreter, worktree
+and analytic source on PYTHONPATH, JAX_PLATFORMS=cpu, and
+`python -m pytest -q <file> -p no:cacheprovider`:
+
+| File | Result |
+|---|---|
+| `signal_models/tests/test_nexi.py` | 42 passed |
+| `jax/tests/test_nexi_jax.py` | 77 passed, 1 skipped |
+| `jax/tests/test_fexi_karger_jax.py` | 2 passed |
+| `signal_models/tests/test_filter_exchange.py` | 14 passed |
+| `custom_optimizers/tests/test_reference_models_catalog.py` | 96 passed |
+| `tests/test_exchange_model_audit.py` | 19 passed, 6 strict xfailed |
+| `jax/tests/test_spherical_mean_jax.py` | 6 passed, 6 failed at missing jaxopt import |
+| `jax/tests/test_sm_zeppelin_jax.py` | 7 passed |
+
+Paths in the first five rows and the last two rows are relative to
+`dmipy_fit/`. No dedicated layout test was present; the NEXI twin and
+existing spherical-mean dispatch tests were included.
+
+Across the 36 tissue settings and 15 b/Delta pairs above, maximum absolute
+errors versus `nexi_jelescu2022` were **5.8287e-16** (NumPy), **5.5511e-16**
+(JAX float64), and **3.1364e-7** (JAX float32). Both JAX precisions compiled
+and produced finite gradients for every free parameter. The NumPy fitter
+recovered all four parameters within 0.2% from a 5% perturbed initial guess.
+
+The environment lacks the declared JAX-extra dependency `jaxopt`, and its
+site-packages directory is read-only, preventing installation. The new JAX
+fit test skips explicitly when that optional dependency is absent; the six
+existing spherical-mean fit tests retain their assertions and fail at its
+import. End-to-end JAX fitting and GPU execution are therefore unverified.
+
+All 614 parity archive arrays still match their recorded hashes; six case
+IDs and archive keys were renamed to `ref.stick_zeppelin_karger`, with their
+values and hashes preserved. The complete parity harness was not run.
+Nothing was committed.

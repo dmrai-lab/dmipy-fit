@@ -1,16 +1,18 @@
 # -*- coding: utf-8 -*-
 """Two-compartment water exchange models for diffusion MRI.
 
-Implements the generalised Karger exchange framework. The factory
-reference_models.nexi() is an orientation-resolved Stick+Zeppelin+tortuosity
-variant; published NEXI instead uses a powder-averaged Stick+Ball signal
-without a tortuosity constraint (Jelescu et al. 2022, Eqs. 3--6).
+Implements the generalised Karger exchange framework and published NEXI,
+a powder-averaged Stick+Ball signal without a tortuosity constraint
+(Jelescu et al. 2022, Eqs. 3--6). The orientation-resolved, tortuous
+Stick+Zeppelin factory is reference_models.stick_zeppelin_karger().
 
 Architecture
 ------------
 X0GeneralizedKarger  — wraps any two CompartmentModel instances with Karger
                        exchange.  Accepts parameter_links in the same format
                        as MultiCompartmentModel and SD1WatsonDistributed.
+X1NEXI              — powder-averages an exchanging Stick + Ball pair,
+                       exposing f, D_i, D_e and t_ex for spherical-mean fitting.
 
 References
 ----------
@@ -26,11 +28,14 @@ from collections import OrderedDict
 import numpy as np
 from dmipy_analytic import exchange
 
-from ..core.signal_model_properties import AnisotropicSignalModelProperties
+from ..core.model_properties import ModelProperties
+from ..core.signal_model_properties import (
+    AnisotropicSignalModelProperties, IsotropicSignalModelProperties)
 from ..distributions.distribute_models import DistributedModel
 
 __all__ = [
     'X0GeneralizedKarger',
+    'X1NEXI',
 ]
 
 from ..core.constants import DIFFUSIVITY_SCALING
@@ -471,6 +476,86 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
                 )
 
         return rh_array
+
+
+class X1NEXI(ModelProperties, IsotropicSignalModelProperties):
+    r"""Published NEXI: spherical mean of exchanging Stick and isotropic Ball.
+
+    The four required parameters are ``f``, ``D_i``, ``D_e`` (m²/s) and
+    ``t_ex`` (s), with detailed balance k_ie=(1-f)/t_ex, k_ei=f/t_ex.
+    A 64-point Gauss-Legendre integral averages the *coupled* orientation
+    kernels, rather than exchanging already averaged compartment signals.
+    There is no fitted orientation or tortuosity link.
+
+    Wrap in MultiCompartmentSphericalMeanModel for fitting. As with the
+    general Karger PGSE path, t=Delta-delta/3 approximates finite pulses;
+    Eqs. (3)--(6) are the narrow-pulse model, not a waveform propagator.
+    The existing Karger signal floor is unchanged.
+
+    Jelescu et al. 2022, NeuroImage 256, 119277.
+    doi:10.1016/j.neuroimage.2022.119277
+    """
+
+    _model_type = 'CompartmentModel'
+    _required_acquisition_parameters = ['bvalues', 'delta', 'Delta']
+    _parameter_ranges = {
+        'f': (0.01, 0.99), 'D_i': (0.1, 3.), 'D_e': (0.1, 3.),
+        't_ex': (1., 500.),
+    }
+    _parameter_scales = {
+        'f': 1., 'D_i': DIFFUSIVITY_SCALING, 'D_e': DIFFUSIVITY_SCALING,
+        't_ex': 1e-3,
+    }
+    _parameter_types = {p: 'normal' for p in ('f', 'D_i', 'D_e', 't_ex')}
+    _citations = {
+        'definition': [
+            {'key': 'Jelescu2022', 'authors': 'Jelescu IO et al.',
+             'title': 'Neurite Exchange Imaging (NEXI): A minimal model of '
+                      'diffusion in gray matter with inter-compartment water exchange',
+             'journal': 'NeuroImage', 'year': 2022,
+             'doi': '10.1016/j.neuroimage.2022.119277'},
+        ],
+        'default_parameters': {},
+    }
+    _validity_constraints = [
+        {'id': 'narrow_pulse', 'name': 'Narrow-pulse PGSE approximation',
+         'condition_human': 'Uses t=Delta-delta/3 in the constant-q Karger '
+                            'kernel; finite-pulse exchange is approximate.',
+         'severity': 'warning', 'source_key': 'Jelescu2022'},
+    ]
+
+    def __init__(self):
+        from .cylinder_models import C1Stick
+        from .gaussian_models import G1Ball
+
+        self.exchange_model = X0GeneralizedKarger(C1Stick(), G1Ball())
+        nodes, weights = np.polynomial.legendre.leggauss(64)
+        self.cos_theta = (nodes + 1.) / 2.
+        self.quadrature_weights = weights / 2.
+
+    def __call__(self, acquisition_scheme, **kwargs):
+        f, di, de, t_ex = (float(kwargs[p]) for p in ('f', 'D_i', 'D_e', 't_ex'))
+        if not np.isfinite(f) or not 0 < f < 1:
+            raise ValueError('f must be strictly between zero and one')
+        if not np.isfinite(di) or not np.isfinite(de) or di < 0 or de < 0:
+            raise ValueError('D_i and D_e must be finite and nonnegative')
+        if np.isnan(t_ex) or t_ex <= 0:
+            raise ValueError('t_ex must be positive (seconds)')
+        if acquisition_scheme.delta is None or acquisition_scheme.Delta is None:
+            raise ValueError('NEXI requires PGSE delta and Delta')
+        b, delta, big_delta = np.broadcast_arrays(
+            acquisition_scheme.bvalues, acquisition_scheme.delta, acquisition_scheme.Delta)
+        directions = np.column_stack([
+            np.sqrt(1. - self.cos_theta**2), np.zeros(64), self.cos_theta])
+        parameters = {
+            'C1Stick_1_lambda_par': di, 'G1Ball_1_lambda_iso': de,
+            'mu': [0., 0.], 'f': f, 'kappa': (1. - f) / t_ex,
+        }
+        signal = np.empty(b.shape)
+        for index in np.ndindex(b.shape):
+            nodes = _GLNodeScheme(b[index], delta[index], big_delta[index], directions)
+            signal[index] = self.exchange_model(nodes, **parameters) @ self.quadrature_weights
+        return signal
 
 
 def _double_encodings(acquisition_scheme):

@@ -17,7 +17,7 @@ from dmipy_analytic.constants import GAMMA
 from dmipy_fit.core.acquisition_scheme import (
     AcquisitionScheme, acquisition_scheme_from_bvalues,
 )
-from dmipy_fit.custom_optimizers.reference_models import fexi, nexi
+from dmipy_fit.custom_optimizers.reference_models import fexi, nexi, stick_zeppelin_karger
 from dmipy_fit.signal_models.filter_exchange import (
     FEXIApparentExchange, fexi_measurements,
 )
@@ -41,14 +41,14 @@ def _factory_case(name, b, directions, delta, big_delta, f, kappa):
     scheme = _pgse(b, directions, delta, big_delta)
     prefix = "X0GeneralizedKarger_1_"
     parameters = {prefix + "f": f, prefix + "kappa": kappa}
-    if name == "nexi":
+    if name == "stick_zeppelin_karger":
         di, de = 2.1e-9, 1.4e-9
         parameters.update({prefix + "C1Stick_1_lambda_par": di,
                            prefix + "G2Zeppelin_1_lambda_par": de,
                            prefix + "mu": [0., 0.]})
         c2 = scheme.gradient_directions[:, 2] ** 2
         diffusivities = np.column_stack([di * c2, de * (c2 + (1-f) * (1-c2))])
-        model = nexi()
+        model = stick_zeppelin_karger()
     elif name == "fexi":
         parameters[prefix + "G1Ball_1_lambda_iso"] = 0.3e-9
         diffusivities = np.tile([0.3e-9, 2.e-9], (len(b), 1))
@@ -73,7 +73,7 @@ def _finite_pgse_signal(b, delta, big_delta, diffusivities, f, kappa, steps):
     return m.sum()
 
 
-@pytest.mark.parametrize("name", ["nexi", "fexi"])
+@pytest.mark.parametrize("name", ["stick_zeppelin_karger", "fexi"])
 def test_factories_no_exchange(name):
     """At kappa=0, E=f E1+(1-f) E2, including b0; rtol=2e-12, atol=2e-14."""
     model, scheme, p, d = _factory_case(
@@ -85,7 +85,7 @@ def test_factories_no_exchange(name):
     assert_allclose(model(scheme, **p), expected, rtol=2e-12, atol=2e-14)
 
 
-@pytest.mark.parametrize("name", ["nexi", "fexi"])
+@pytest.mark.parametrize("name", ["stick_zeppelin_karger", "fexi"])
 def test_factories_fast_exchange_at_each_orientation(name):
     """At kappa=1e8/s, E approaches exp[-b(f D1+(1-f)D2)] per direction;
     rtol=5e-6, atol=2e-8 allows finite-rate correction and eigenvalue cancellation.
@@ -171,7 +171,7 @@ def test_karger_closed_form_against_narrow_pgse_matrix_exponential(f, kappa):
     assert_allclose(got, expected, rtol=2e-12, atol=2e-14)
 
 
-@pytest.mark.parametrize("name", ["nexi", "fexi"])
+@pytest.mark.parametrize("name", ["stick_zeppelin_karger", "fexi"])
 def test_factories_against_finite_pgse_in_narrow_pulse_limit(name):
     """At delta=1e-6 s, Delta=0.04 s, the effective-time formula approaches the
     Bloch-Torrey ODE to rtol=1e-5, atol=1e-10 (512 midpoint expm steps per lobe).
@@ -183,7 +183,7 @@ def test_factories_against_finite_pgse_in_narrow_pulse_limit(name):
 
 
 @pytest.mark.xfail(strict=True, reason="EXCHANGE-AUDIT-2: finite PGSE uses a constant-q effective-time approximation")
-@pytest.mark.parametrize("name", ["nexi", "fexi"])
+@pytest.mark.parametrize("name", ["stick_zeppelin_karger", "fexi"])
 def test_factories_against_finite_pgse_ode(name):
     """For delta=18 ms, Delta=40 ms, a claimed exact Gaussian PGSE model must match
     the time-ordered Bloch-Torrey solution to rtol=1e-5, atol=1e-10. The oracle's
@@ -214,23 +214,24 @@ def test_waveform_karger_against_finite_pgse_ode():
     assert_allclose(got, expected, rtol=2e-6, atol=1e-10)
 
 
-@pytest.mark.xfail(strict=True, reason="EXCHANGE-AUDIT-1: nexi factory is directional Stick+Zeppelin+tortuosity, not published NEXI")
 def test_nexi_factory_matches_published_nexi():
-    """A factory named NEXI should match Eq. (6) at equivalent physical parameters,
-    for perpendicular and parallel gradients alike, to rtol=2e-6, atol=1e-9.
-    This assertion intentionally remains strict xfail for the existing variant.
+    """Eq. (6) at equivalent tissue parameters, for perpendicular and parallel
+    gradients alike, to the original rtol=2e-6, atol=1e-9 audit tolerance.
     """
     f, t_ex = 0.37, 0.03
-    model, scheme, p, _ = _factory_case("nexi", [0., 2.e9, 2.e9],
-                                      [[0, 0, 1], [1, 0, 0], [0, 0, 1]],
-                                      0.004, 0.04, f, (1-f)/t_ex)
+    model = nexi()
+    scheme = _pgse([0., 2.e9, 2.e9],
+                   [[0, 0, 1], [1, 0, 0], [0, 0, 1]], 0.004, 0.04)
+    p = {"X1NEXI_1_f": f, "X1NEXI_1_D_i": 2.1e-9,
+         "X1NEXI_1_D_e": 1.4e-9, "X1NEXI_1_t_ex": t_ex}
     expected = nexi_jelescu2022(scheme.bvalues, scheme.Delta-scheme.delta/3,
                                f=f, di=2.1e-9, de=1.4e-9, t_ex=t_ex)
-    assert_allclose(model(scheme, **p), expected, rtol=2e-6, atol=1e-9)
+    got = model(scheme, **p)[scheme.shell_indices]
+    assert_allclose(got, expected, rtol=2e-6, atol=1e-9)
 
 
 @pytest.mark.xfail(strict=True, reason="EXCHANGE-AUDIT-3: compartment signals are clipped at 1e-10 before taking logs")
-@pytest.mark.parametrize("name", ["nexi", "fexi"])
+@pytest.mark.parametrize("name", ["stick_zeppelin_karger", "fexi"])
 def test_factories_no_exchange_at_high_attenuation(name):
     """Even below 1e-10, no exchange must give f E1+(1-f) E2 to rtol=2e-12,
     atol=0. At b=1e11 s/m² both kernels expose the current log-signal floor.

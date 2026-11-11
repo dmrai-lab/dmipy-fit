@@ -15,7 +15,7 @@ import pytest
 import dmipy_replay as dr
 from dmipy_analytic import exchange
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
-from dmipy_fit.custom_optimizers.reference_models import nexi
+from dmipy_fit.custom_optimizers.reference_models import stick_zeppelin_karger
 from dmipy_fit.signal_models.exchange_models import X0GeneralizedKarger
 from dmipy_fit.signal_models.filter_exchange import FEXIApparentExchange, fexi_measurements
 from dmipy_fit.signal_models.gaussian_models import G1Ball
@@ -67,7 +67,7 @@ def test_the_karger_model_on_a_fexi_protocol_is_the_waveform_form():
     assert np.all(E[~fexi_measurements(sch).filtered & (fexi_measurements(sch).b_d == 0)] == pytest.approx(1.0))
 
 
-def test_nexi_on_a_fexi_protocol_reads_each_pool_along_the_row_direction():
+def test_stick_zeppelin_karger_on_a_fexi_protocol_reads_each_pool_along_the_row_direction():
     """A stick and a tortuous zeppelin: along a row's direction ``n`` their diffusivities are ``D_i (n.mu)^2`` and
     ``D_e [(n.mu)^2 + (1 - f)(1 - (n.mu)^2)]``, Gaussian pools under a colinear encoding, so the waveform form with
     those two numbers is the model to the float32 rounding of the directions and b-values the scheme holds (the gradient
@@ -77,7 +77,7 @@ def test_nexi_on_a_fexi_protocol_reads_each_pool_along_the_row_direction():
                                       slew_rate=np.inf)
     pre = "X0GeneralizedKarger_1_"
     Di, De, f, kappa, mu = 2.1e-9, 1.7e-9, 0.6, 8.0, np.array([0.5, 0.3])
-    E = nexi()(sch, **{pre + "C1Stick_1_lambda_par": Di, pre + "G2Zeppelin_1_lambda_par": De, pre + "mu": mu,
+    E = stick_zeppelin_karger()(sch, **{pre + "C1Stick_1_lambda_par": Di, pre + "G2Zeppelin_1_lambda_par": De, pre + "mu": mu,
                        pre + "f": f, pre + "kappa": kappa})
     axis = np.array([np.sin(mu[0]) * np.cos(mu[1]), np.sin(mu[0]) * np.sin(mu[1]), np.cos(mu[0])])
     K, M0 = exchange.exchange_matrix(kappa, f), np.array([f, 1.0 - f])
@@ -159,13 +159,13 @@ def _multi_delta_scheme():
                                           for Delta in (0.015, 0.025, 0.04)]))
 
 
-def _assert_nexi_recovers_truth(kappa, **fit_kwargs):
-    """The noise-free NEXI signal on the multi-Delta protocol, fitted with ``fit_kwargs``, returns the generating
+def _assert_stick_zeppelin_karger_recovers_truth(kappa, **fit_kwargs):
+    """The noise-free Stick–Zeppelin Karger signal on the multi-Delta protocol, fitted with ``fit_kwargs``, returns the generating
     parameters (the axis up to its sign) to what its residual allows: in the linear regime a parameter's error is at
     most ``sqrt(rss (J^T J)^-1_ii)``, ``J`` the model's Jacobian at the solution."""
     sch = _multi_delta_scheme()
     assert sorted(set(np.round(sch.Delta, 6))) == [0.015, 0.025, 0.04]
-    model, pre = nexi(), "X0GeneralizedKarger_1_"
+    model, pre = stick_zeppelin_karger(), "X0GeneralizedKarger_1_"
     truth = {pre + "C1Stick_1_lambda_par": 2.2e-9, pre + "G2Zeppelin_1_lambda_par": 1.6e-9, pre + "mu": [0.6, 1.0],
              pre + "f": 0.55, pre + "kappa": kappa}
     E = model(sch, **truth)
@@ -200,17 +200,17 @@ def _assert_nexi_recovers_truth(kappa, **fit_kwargs):
         assert abs(g - w) <= max(bnd, 4 * np.finfo(float).eps * abs(w)), (k, g, w, bnd)
 
 
-def test_nexi_fits_on_a_protocol_of_multi_delta_pgse_sequences():
+def test_stick_zeppelin_karger_fits_on_a_protocol_of_multi_delta_pgse_sequences():
     """Three PGSE sequences of one ``delta`` and three ``Delta`` (one echo time each) in one Protocol: every row reads
-    its own sequence's diffusion time, and the MIX fit of the noise-free NEXI signal returns the generating
+    its own sequence's diffusion time, and the MIX fit of the noise-free Stick–Zeppelin Karger signal returns the generating
     parameters."""
-    _assert_nexi_recovers_truth(20.0, solver="mix")
+    _assert_stick_zeppelin_karger_recovers_truth(20.0, solver="mix")
 
 
 @pytest.mark.parametrize("kappa", [5.0, 20.0, 40.0, 77.0, 150.0])
-def test_nexi_default_solver_reaches_the_global_minimum_on_multi_delta_pgse(kappa):
-    """The default solver recovers the generating NEXI parameters of a noise-free multi-Delta protocol at exchange
+def test_stick_zeppelin_karger_default_solver_reaches_the_global_minimum_on_multi_delta_pgse(kappa):
+    """The default solver recovers the generating Stick–Zeppelin Karger parameters of a noise-free multi-Delta protocol at exchange
     rates from below ``1 / (Delta_max - delta / 3)`` = 26 s^-1 to above ``1 / (Delta_min - delta / 3)`` = 77 s^-1: its
     local stage runs until the residual stops decreasing, wherever the coarse grid (spacing 40 s^-1 in ``kappa``)
     left it."""
-    _assert_nexi_recovers_truth(kappa)
+    _assert_stick_zeppelin_karger_recovers_truth(kappa)

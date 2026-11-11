@@ -33,11 +33,12 @@ E3  active_ax()                       5  Cylinder diam   Alexander et al. 2010, 
 F1  verdict()                         3  Soma/sphere     Panagiotaki et al. 2014, Cancer Res 74
 F2  sandi()                           4  Soma/neurite    Palombo et al. 2020, NeuroImage 215
 F3  impulsed()                        3  Soma/tumour     Xu et al. 2019, Magn Reson Med
-G1  nexi()                            3  Exchange        Jelescu et al. 2022, NeuroImage 256
+G1  nexi()                            1  Exchange/SM     Jelescu et al. 2022, NeuroImage 256
 G2  karger_two_compartment()          3  Exchange        Kärger 1985, Adv Colloid Interface Sci 23
 G3  fexi()                            4  Exchange        Lasič et al. 2011, MRM 66
 G4  sandix()                          4  Exchange+soma   SANDI (Palombo 2020) + Kärger 1985
 G5  exchange_impulsed()               3  Exchange+soma   Shi et al. 2025, Magn Reson Imaging
+G6  stick_zeppelin_karger()           3  Exchange        Kärger et al. 1988, Adv Magn Reson 12
 H1  temporal_zeppelin_model()         3  Time-dep WM     Novikov et al. 2019, NMR Biomed 32
 I1  mte_ball_stick()                  3  Relaxometry     Gong et al. 2020, NeuroImage 217
 I2  mte_noddi()                       9  Relaxometry     Gong et al. 2020, NeuroImage 217
@@ -46,7 +47,7 @@ I4  wmti()                            5  Kurtosis-WM     Fieremans et al. 2011, 
 I5  noddida_mte()                     8  Relaxometry     Jelescu 2015 + Gong 2020
 I6  mte_impulsed()                    3  Relaxometry     Jiang et al. 2025, MRM
 
-Total: 31 models, 8 categories
+Total: 32 models, 8 categories
 
 
 IMPORTANT — WHAT IS NOT HERE
@@ -98,7 +99,7 @@ from dmipy_fit.signal_models.attenuation import (
     TransverseRelaxation,
 )
 from dmipy_fit.signal_models.exchange_models import (
-    X0GeneralizedKarger,
+    X0GeneralizedKarger, X1NEXI,
 )
 from dmipy_fit.distributions.distribute_models import (
     SD1WatsonDistributed,
@@ -454,6 +455,21 @@ def impulsed():
 # ===========================================================================
 
 def nexi():
+    """Published NEXI, Jelescu et al. 2022, Eqs. (3)--(6).
+
+    A fittable spherical-mean Stick + independent isotropic Ball with Karger
+    exchange. Free parameters: X1NEXI_1_f, X1NEXI_1_D_i, X1NEXI_1_D_e and
+    X1NEXI_1_t_ex. Diffusivities are in m²/s and exchange time in seconds,
+    t_ex=1/(k_ie+k_ei), with k_ie=(1-f)/t_ex. No orientation or tortuosity.
+    The fitting bounds for t_ex are 0.001--0.5 s. PGSE uses t=Delta-delta/3;
+    finite-pulse exchange and the existing Karger signal floor are unchanged.
+
+    doi:10.1016/j.neuroimage.2022.119277
+    """
+    return MultiCompartmentSphericalMeanModel([X1NEXI()])
+
+
+def stick_zeppelin_karger():
     """Orientation-resolved Stick + tortuous Zeppelin exchange variant.
 
     The same generic X0GeneralizedKarger used by karger_two_compartment/fexi, with an
@@ -466,11 +482,11 @@ def nexi():
     and no tortuosity link. Here kappa is the intra-to-extra rate (s^-1),
     so the paper's t_ex = (1-f)/kappa, not 1/kappa. These structural
     differences can change fitted fractions, diffusivities and exchange.
-    See signal_models.nexi_reference.nexi_jelescu2022 for an opt-in
-    reference predictor of the published signal.
+    The published signal is available as nexi(); this factory preserves the
+    orientation-resolved variant's parameters and numerical behaviour.
 
-    Jelescu, de Skowronski, Geffroy, Palombo & Novikov 2022, NeuroImage 256
-    doi:10.1016/j.neuroimage.2022.119277
+    Karger, Pfeifer & Heink 1988, Advances in Magnetic Resonance 12, 1--89.
+    doi:10.1016/S0065-2385(08)60067-1
     """
     stick, zeppelin = C1Stick(), G2Zeppelin()
     karger = X0GeneralizedKarger(

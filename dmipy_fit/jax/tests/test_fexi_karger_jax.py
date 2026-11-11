@@ -11,7 +11,7 @@ pytest.importorskip("jax")
 
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
 from dmipy_fit.core.modeling_framework import MultiCompartmentModel
-from dmipy_fit.custom_optimizers.reference_models import nexi
+from dmipy_fit.custom_optimizers.reference_models import stick_zeppelin_karger
 from dmipy_fit.jax.multicompartment_jax import build_mc_forward_fn
 from dmipy_fit.signal_models.exchange_models import X0GeneralizedKarger
 from dmipy_fit.signal_models.gaussian_models import G1Ball
@@ -43,7 +43,7 @@ def test_two_balls(scheme):
     assert want.min() < 0.5
 
 
-def test_nexi(scheme):
+def test_stick_zeppelin_karger(scheme):
     p = "X0GeneralizedKarger_1_"
-    _compare(nexi(), scheme, {p + "C1Stick_1_lambda_par": 2.1e-9, p + "G2Zeppelin_1_lambda_par": 1.7e-9,
+    _compare(stick_zeppelin_karger(), scheme, {p + "C1Stick_1_lambda_par": 2.1e-9, p + "G2Zeppelin_1_lambda_par": 1.7e-9,
                               p + "mu": [0.5, 0.3], p + "f": 0.6, p + "kappa": 8.0})

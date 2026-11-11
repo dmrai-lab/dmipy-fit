@@ -2,17 +2,23 @@
 
 ## Unreleased
 
+- **Published NEXI.** `reference_models.nexi()` is a fittable spherical-mean Stick + isotropic Ball with Karger
+  exchange (Jelescu et al. 2022, Eqs. 3--6), with free f, Di, De and t_ex in seconds, no orientation or tortuosity,
+  and a JAX twin. The former directional Stick + tortuous Zeppelin factory is `stick_zeppelin_karger()`;
+  its callers and parity records use that name, with no compatibility alias. The PGSE effective-time
+  approximation and compartment-signal floor are unchanged.
+
 - **`brute2fine` local stage runs to convergence.** `Brute2FineOptimizer` refines the coarse stage's best grid point
   with L-BFGS-B on the objective divided by its value there, with both stopping thresholds at the double-precision
   epsilon. L-BFGS-B's thresholds are absolute for an objective below one, so on the mean squared residual of a signal
-  attenuation (order 1e-3) with an exchange rate in s^-1 the refinement stopped at the first iterate: NEXI on a
+  attenuation (order 1e-3) with an exchange rate in s^-1 the refinement stopped at the first iterate: `stick_zeppelin_karger` on a
   multi-Delta PGSE protocol returned the nearest grid rate (kappa 50 for a true 20) instead of the global minimum.
 
 - **Filter-exchange imaging.** `AcquisitionScheme.from_fexi` (dmipy-replay's `fexi_protocol`: filter off/on x mixing
   times x detection b-values, one sequence per mixing time); `signal_models.filter_exchange.FEXIApparentExchange`, the
   AXR analysis (`ADC_eq`, `sigma`, `AXR`, one unweighted signal per series, the series eliminated in closed form) whose
   equation is `dmipy_analytic.exchange.fexi_signal`, every row's filter and detection b-value and mixing time read off
-  the sequences (`fexi_measurements`). The Kärger models (`X0GeneralizedKarger`, `nexi`, `fexi`) evaluate a FEXI
+  the sequences (`fexi_measurements`). The Kärger models (`X0GeneralizedKarger`, `stick_zeppelin_karger`, `fexi`) evaluate a FEXI
   sequence by the generalised Kärger equation along its own effective gradient
   (`dmipy_analytic.exchange.karger_waveform`), each pool's diffusivity along the row's direction; a scheme mixing FEXI
   sequences with others is refused. On the two-site signal the AXR fit converges to `k_12 + k_21` at first order in the
@@ -58,7 +64,7 @@ microstructure maps. It is the analytical inverse of the dmipy ecosystem: the eq
   do not inflate); the replay compartments stay exact, and other waveforms use them.
 - **Fixes.** The capped cylinders (`CC2`, `CC3`) attenuate along the axis alike for a gradient and its reverse: the
   signed projection of the wave-vector reaches the forms, which are even in it, where a gradient against the axis read the
-  cross-section's attenuation alone. The JAX forward of NEXI reads the parameters the model exposes (it raised a
+  cross-section's attenuation alone. The JAX forward of `stick_zeppelin_karger` reads the parameters the model exposes (it raised a
   `KeyError`), and a pair the closed form is not wired for is refused by name. `S3` and `S4` sum over dmipy-analytic's shared
   Neumann roots, with no private copy of a root left (their values move by at most 2e-10).
 - **Deleted.** `white_matter.surface.b_hat_ea_short`, whose exponent was not dimensionless and which nothing called, and
