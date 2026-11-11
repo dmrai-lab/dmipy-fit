@@ -200,7 +200,6 @@ def _assert_stick_zeppelin_karger_recovers_truth(kappa, **fit_kwargs):
         assert abs(g - w) <= max(bnd, 4 * np.finfo(float).eps * abs(w)), (k, g, w, bnd)
 
 
-@pytest.mark.slow     # each model call propagates every row's finite pulses: a fit takes minutes
 def test_stick_zeppelin_karger_fits_on_a_protocol_of_multi_delta_pgse_sequences():
     """Three PGSE sequences of one ``delta`` and three ``Delta`` (one echo time each) in one Protocol: every row reads
     its own sequence's diffusion time, and the MIX fit of the noise-free Stick–Zeppelin Karger signal returns the generating
@@ -208,7 +207,6 @@ def test_stick_zeppelin_karger_fits_on_a_protocol_of_multi_delta_pgse_sequences(
     _assert_stick_zeppelin_karger_recovers_truth(20.0, solver="mix")
 
 
-@pytest.mark.slow     # as above
 @pytest.mark.parametrize("kappa", [5.0, 20.0, 40.0, 77.0, 150.0])
 def test_stick_zeppelin_karger_default_solver_reaches_the_global_minimum_on_multi_delta_pgse(kappa):
     """The default solver recovers the generating Stick–Zeppelin Karger parameters of a noise-free multi-Delta protocol at exchange

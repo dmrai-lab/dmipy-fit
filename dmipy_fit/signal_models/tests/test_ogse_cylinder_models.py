@@ -162,7 +162,7 @@ def test_c4_ogse_parallel_unchanged():
     E_expected = np.exp(-bvalues * lambda_par)
     assert_allclose(E_pgse, E_expected, rtol=1e-10,
                     err_msg="PGSE parallel signal incorrect")
-    assert_allclose(E_ogse, E_expected, rtol=2e-7,   # the sequence stores its gradient in float32
+    assert_allclose(E_ogse, E_expected, rtol=1e-10,
                     err_msg="OGSE parallel signal differs from PGSE (should be identical)")
 
 

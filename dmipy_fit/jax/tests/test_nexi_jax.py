@@ -30,14 +30,11 @@ def scheme():
     return wu_minn_hcp_acquisition_scheme()
 
 
-def _compare(model, scheme, values, waveform=False):
+def _compare(model, scheme, values):
     expected = np.asarray(model(scheme, **values))
     forward = build_mc_forward_fn(model, scheme)
     got = np.asarray(forward(model.parameters_to_parameter_vector(**values)), dtype=float)
     rtol = OPS * U32 * max(1.0, float(-np.log(expected.min())))     # the exponent's rounding reaches the signal
-    if waveform:
-        # the finite-pulse waveform propagator multiplies a few hundred float32 steps; measured 3e-5
-        rtol = max(rtol, 1e-4)
     assert got == pytest.approx(expected, rel=rtol, abs=0)
     return expected
 
@@ -46,7 +43,7 @@ def _compare(model, scheme, values, waveform=False):
 def test_stick_zeppelin_karger_matches_the_numpy_model(scheme, f):
     values = {PREFIX + "C1Stick_1_lambda_par": 2.0e-9, PREFIX + "G2Zeppelin_1_lambda_par": 1.5e-9,
               PREFIX + "mu": [0.7, 1.1], PREFIX + "f": f, PREFIX + "kappa": 30.0}
-    expected = _compare(stick_zeppelin_karger(), scheme, values, waveform=True)
+    expected = _compare(stick_zeppelin_karger(), scheme, values)
     assert expected.min() < 0.5                                  # a real attenuation, not a flat signal
 
 
@@ -68,7 +65,7 @@ def test_the_oriented_pair_with_a_free_perpendicular_diffusivity_matches_the_num
     values = {PREFIX + "C1Stick_1_lambda_par": 2.0e-9, PREFIX + "G2Zeppelin_1_lambda_par": 1.5e-9,
               PREFIX + "G2Zeppelin_1_lambda_perp": 0.6e-9, PREFIX + "mu": [0.7, 1.1],
               PREFIX + "f": 0.45, PREFIX + "kappa": 30.0}
-    _compare(model, scheme, values, waveform=True)
+    _compare(model, scheme, values)
 
 
 def test_a_pair_the_closed_form_is_not_wired_for_is_refused_by_name(scheme):

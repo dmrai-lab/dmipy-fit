@@ -317,28 +317,12 @@ class PGSEAcquisitionScheme:
         b = self.bvalues               # (n_m,)
         return b[:, None, None] * np.einsum('mi,mj->mij', n, n)
 
-    def waveform_of(self, m):
-        """Exact rectangular PGSE (effective gradient, interval durations).
-
-        Unlike a sampled display grid, this keeps delta and Delta boundaries
-        exactly. The final gradient row is the readout and has no duration.
-        """
-        if self.delta is None or self.Delta is None or self.gradient_strengths is None:
-            raise ValueError('PGSE waveform_of requires delta, Delta and gradient_strengths')
-        d, big = float(self.delta[m]), float(self.Delta[m])
-        if not 0 < d <= big:
-            raise ValueError('PGSE waveform_of requires 0 < delta <= Delta')
-        g = self.gradient_strengths[m] * self.gradient_directions[m]
-        if big == d:
-            return np.array([g, -g, np.zeros(3)]), np.array([d, d])
-        return np.array([g, np.zeros(3), -g, np.zeros(3)]), np.array([d, big-d, d])
-
     def to_gradient_array(self, n_t=1000):
         """Convert PGSE scheme to a freeform gradient array for Monte Carlo simulation.
 
         Returns
         -------
-        G : np.ndarray, shape (n_measurements, n_t, 3), float64, T/m
+        G : np.ndarray, shape (n_measurements, n_t, 3), float32, T/m
             Gradient waveforms encoding the PGSE pulse structure.
         dt : float
             Uniform time step in seconds. Total duration = Delta + delta.
@@ -374,18 +358,12 @@ class PGSEAcquisitionScheme:
         n_Delta = round(Delta / dt)
 
         n_m = self.number_of_measurements
-        G = np.zeros((n_m, n_t, 3), dtype=np.float64)
+        G = np.zeros((n_m, n_t, 3), dtype=np.float32)
         for m in range(n_m):
             g_vec = (self.gradient_strengths[m] *
-                     self.gradient_directions[m])
+                     self.gradient_directions[m]).astype(np.float32)
             G[m, :n_pulse, :] = g_vec
             G[m, n_Delta:n_Delta + n_pulse, :] = -g_vec
-        from .waveform import waveform_bvalues
-        measured = waveform_bvalues(G, dt)
-        weighted = self.bvalues > 0
-        if np.any(measured[weighted] <= 0):
-            raise ValueError('to_gradient_array: grid cannot represent the weighted PGSE')
-        G[weighted] *= np.sqrt(self.bvalues[weighted] / measured[weighted])[:, None, None]
         return G, float(dt)
 
     def to_schemefile(self, filename):
@@ -570,28 +548,6 @@ def _enc(seq, field):
     return None if seq.encoding is None else getattr(seq.encoding, field, None)
 
 
-def _on_declared_b(sequences):
-    """``sequences`` (a ScannerSequence or Protocol built from requested b-values) with each weighted row's gradient
-    scaled by sqrt(requested b / continuous b of the played waveform), so the b the scheme reports for the row is
-    both the requested b and the integral of the waveform it emits. The scale departs from one by the sampling error
-    of the builder's grid (parts in 1e5 at 200 samples); delta, Delta and every timing are untouched."""
-    from dmipy_replay.acquisition.scanner_sequence import Protocol
-    from .waveform import waveform_bvalues
-    if isinstance(sequences, Protocol):
-        return Protocol([_on_declared_b(s) for s in sequences], rows=sequences.rows)
-    target = _enc(sequences, "bvalues")
-    if target is None:
-        return sequences
-    target = np.asarray(target, dtype=float)
-    measured = waveform_bvalues(np.asarray(sequences.G_eff, dtype=float), sequences.dt)
-    weighted = target > 0
-    if np.any(measured[weighted] <= 0):
-        raise ValueError("a positive requested b needs a waveform with positive b")
-    gradient = np.asarray(sequences.G, dtype=float).copy()
-    gradient[weighted] *= np.sqrt(target[weighted] / measured[weighted])[:, None, None]
-    return sequences.with_gradient(gradient)
-
-
 def _by_te(TE, n_m, build):
     """One sequence per distinct echo time, each holding the rows of that TE in acquisition order:
     ``build(rows, te)`` returns the ScannerSequence of ``rows`` (``te`` ``None`` = the smallest that fits). A
@@ -648,8 +604,7 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
                                 "build the sequence with a dmipy-sim builder or sequences.from_waveform")
         self.protocol = P
         n_m = P.n_meas
-        from .waveform import waveform_bvalues
-        bvalues = _gather(P, lambda s: waveform_bvalues(s.G_eff, s.dt))
+        bvalues = _gather(P, lambda s: _enc(s, "bvalues"))
         dirs = _gather(P, lambda s: _enc(s, "gradient_directions"))
         qvalues = _gather(P, lambda s: _enc(s, "qvalues"), fill=0.0)
         gs = _gather(P, lambda s: _enc(s, "gradient_strengths"), fill=0.0)
@@ -810,7 +765,7 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
         seq = _by_te(TE, n_m, lambda rows, te: pgse(
             dirs[rows], _rows_of(delta, rows, n_m), _rows_of(Delta, rows, n_m), bvalues=bvalues[rows], TE=te,
             n_t=n_t, slew_rate=slew_rate, timing=timing))
-        return cls(_on_declared_b(seq), min_b_shell_distance, b0_threshold)
+        return cls(seq, min_b_shell_distance, b0_threshold)
 
     @classmethod
     def from_pgste(cls, bvalues, gradient_directions, delta, TM, TE=None, n_t=1000, slew_rate=np.inf,
@@ -825,7 +780,7 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
         seq = _by_te(TE, n_m, lambda rows, te: pgste(
             dirs[rows], _rows_of(delta, rows, n_m), TM, bvalues=bvalues[rows], TE=te, n_t=n_t,
             slew_rate=slew_rate, timing=timing, ste_flip_angles=ste_flip_angles))
-        return cls(_on_declared_b(seq), min_b_shell_distance, b0_threshold)
+        return cls(seq, min_b_shell_distance, b0_threshold)
 
     @classmethod
     def from_fexi(cls, gradient_directions, delta, Delta, t_m, *, b_f, bvalues, dt, min_b_shell_distance=50e6,
@@ -838,24 +793,7 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
         back off the sequences."""
         from dmipy_replay.sequences import fexi_protocol
         P = fexi_protocol(gradient_directions, delta, Delta, t_m, b_f=b_f, bvalues=bvalues, dt=dt, **kwargs)
-        from dmipy_replay.acquisition.scanner_sequence import Protocol
-        from dmipy_replay.acquisition.rf import role_of
-        from dmipy_replay.sequences import fexi_bvalues
-        from ..signal_models.exchange_models import fexi_waveform_bvalues
-        sequences = []
-        for sequence in P:
-            targets = fexi_bvalues(sequence)
-            actual = fexi_waveform_bvalues(sequence)
-            roles = {role_of(e): e for e in sequence.rf}
-            split = int(round(roles['store'].t_s / sequence.dt))
-            gradient = np.asarray(sequence.G, dtype=float).copy()
-            for span, target, measured in zip((slice(None, split), slice(split, None)), targets, actual):
-                weighted = target > 0
-                if np.any(measured[weighted] <= 0):
-                    raise ValueError('from_fexi: positive target b requires a weighted block')
-                gradient[weighted, span] *= np.sqrt(target[weighted] / measured[weighted])[:, None, None]
-            sequences.append(sequence.with_gradient(gradient))
-        return cls(Protocol(sequences, rows=P.rows), min_b_shell_distance, b0_threshold)
+        return cls(P, min_b_shell_distance, b0_threshold)
 
     @classmethod
     def from_cpmg(cls, n_echoes, TE, bvalues=None, gradient_directions=None, beta_deg=180.0, n_t_per_echo=100,
@@ -866,7 +804,7 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
         from dmipy_replay.sequences import cpmg
         seq = cpmg(n_echoes, TE, gradient_directions=gradient_directions, bvalues=bvalues, polarity=polarity,
                    beta_deg=beta_deg, n_t_per_echo=n_t_per_echo, slew_rate=slew_rate, timing=timing)
-        return cls(_on_declared_b(seq), min_b_shell_distance, b0_threshold)
+        return cls(seq, min_b_shell_distance, b0_threshold)
 
     @classmethod
     def from_waveform(cls, G, dt, gradient_directions, delta=None, Delta=None, TE=None, allow_unrefocused=False,
@@ -894,7 +832,7 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
             dirs[rows], _rows_of(oscillation_frequency, rows, n_m), _rows_of(gradient_duration, rows, n_m),
             shape=shape, Delta=_rows_of(Delta, rows, n_m), bvalues=bvalues[rows], TE=te, n_t=n_t,
             slew_rate=slew_rate, timing=timing))
-        return cls(_on_declared_b(seq), min_b_shell_distance, b0_threshold)
+        return cls(seq, min_b_shell_distance, b0_threshold)
 
     @classmethod
     def from_btensor_ste(cls, bvalues, gradient_duration, TE=None, n_t=1000, slew_rate=np.inf, timing=None,
@@ -904,7 +842,7 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
         ([0, 0, 1]); the encoding is isotropic -- read ``scheme.btensor()``."""
         from dmipy_replay.sequences import ste
         seq = ste(gradient_duration, bvalues=bvalues, TE=TE, n_t=n_t, slew_rate=slew_rate, timing=timing)
-        return cls(_on_declared_b(seq), min_b_shell_distance, b0_threshold)
+        return cls(seq, min_b_shell_distance, b0_threshold)
 
     @classmethod
     def from_btensor_pte(cls, bvalues, plane_normal, gradient_duration, TE=None, n_t=1000, slew_rate=np.inf,
@@ -914,7 +852,7 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
         in-plane axis (nominal) -- read ``scheme.btensor()``."""
         from dmipy_replay.sequences import pte
         seq = pte(plane_normal, gradient_duration, bvalues=bvalues, TE=TE, n_t=n_t, slew_rate=slew_rate, timing=timing)
-        return cls(_on_declared_b(seq), min_b_shell_distance, b0_threshold)
+        return cls(seq, min_b_shell_distance, b0_threshold)
 
     @classmethod
     def from_btensor_waveform(cls, G, dt, *, echo_idx=None, TE=None, timing=None,
@@ -961,15 +899,19 @@ class AcquisitionScheme(PGSEAcquisitionScheme):
     def btensor(self):
         """The b-tensor ``B_ij = integral q_i q_j dt`` per measurement ``(n_m, 3, 3)`` (s/m²), in acquisition order.
 
-        Every encoding uses the continuous integral of its own held effective gradient,
-        including within each sample interval; trace(B) equals the reported b.
+        A colinear single-direction encoding (PGSE / PGSTE) has the exact rank-1 tensor ``b n n^T`` and reads
+        it from the declared b (the quadrature of the discretised waveform carries an O(1/n_t) error that would
+        otherwise make the anisotropic Gaussian models disagree with the analytic b); every other encoding is the
+        object's own integral of its effective gradient.
         """
         if hasattr(self, '_btensor_cache'):
             return self._btensor_cache
-        from .waveform import waveform_btensor
+        if getattr(self, '_colinear_pgse', False):
+            self._btensor_cache = super(AcquisitionScheme, self).btensor()
+            return self._btensor_cache
         B = np.empty((self.number_of_measurements, 3, 3), dtype=np.float64)
         for seq, rows in zip(self.protocol, self.protocol.rows):
-            B[rows] = waveform_btensor(seq.G_eff, seq.dt)
+            B[rows] = np.asarray(seq.btensor(), np.float64)
         self._btensor_cache = B
         return B
 

@@ -38,7 +38,7 @@ class FEXIMeasurements:
 def fexi_measurements(acquisition_scheme):
     """:class:`FEXIMeasurements` of an :class:`~dmipy_fit.core.acquisition_scheme.AcquisitionScheme` whose sequences are
     filter-exchange sequences; any other sequence is refused by :func:`dmipy_replay.sequences.fexi_bvalues`."""
-    from .exchange_models import fexi_waveform_bvalues
+    from dmipy_replay.sequences import fexi_bvalues
     protocol = getattr(acquisition_scheme, "protocol", None)
     if protocol is None:
         raise TypeError("the FEXI analysis reads the acquisition object: an AcquisitionScheme over dmipy-replay's "
@@ -49,7 +49,7 @@ def fexi_measurements(acquisition_scheme):
     filtered = np.empty(n, dtype=bool)
     k = 0
     for seq, rows in zip(protocol, protocol.rows):
-        bf, bd = fexi_waveform_bvalues(seq)
+        bf, bd = fexi_bvalues(seq)
         on = bf > 0.0
         b_f[rows], b_d[rows], t_m[rows], filtered[rows] = bf, bd, float(seq.TM), on
         for state in (False, True):

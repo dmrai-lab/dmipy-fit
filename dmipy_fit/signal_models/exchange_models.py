@@ -37,7 +37,7 @@ __all__ = [
     'X0GeneralizedKarger',
     'X1NEXI',
     'CompartmentSignalDomainError',
-    'compartment_exponent', 'double_encodings', 'fexi_waveform_bvalues', 'waveform_signal',
+    'compartment_exponent',
 ]
 
 from ..core.constants import DIFFUSIVITY_SCALING
@@ -80,7 +80,7 @@ class _GLNodeScheme:
     """Minimal single-shell acquisition scheme for GL quadrature evaluation.
 
     Provides exactly the attributes that CompartmentModel.__call__ needs
-    (bvalues, gradient_directions, delta, Delta, tau, TE, b0_mask, gradient_strengths,
+    (bvalues, gradient_directions, delta, Delta, tau, TE, b0_mask, _G,
     and a btensor() method matching the RotationalHarmonicsAcquisitionScheme
     convention) without the overhead of a full AcquisitionScheme.
     """
@@ -94,8 +94,7 @@ class _GLNodeScheme:
         self.tau = exchange.diffusion_time(float(delta), float(Delta))
         self.TE = None
         self.b0_mask = np.zeros(n, dtype=bool)
-        from dmipy_replay.math.gradient_conversions import g_from_b
-        self.gradient_strengths = g_from_b(self.bvalues, self.delta, self.Delta)
+        self._G = None  # signals PGSE path to all models
 
     def btensor(self):
         """PGSE B-tensor: B[m] = b * n[m]⊗n[m]."""
@@ -120,10 +119,9 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
     two sub-models under the given acquisition.
 
     For Gaussian compartments (Ball, Stick, Zeppelin) R_i is linear in b.
-    Finite PGSE and double-encoding sequences use the shared analytic waveform
-    propagator, preserving exchange during pulses and between them. The
-    finite-RF SE/STE route below retains its explicitly constant
-    weighting-rate approximation.
+    The closed form is exact for constant q in the narrow-pulse limit;
+    replacing finite PGSE pulses by t_d = Delta - delta/3 is an approximation
+    with exchange. Double-encoding sequences use the waveform propagator.
     For restricted compartments (Cylinder, Sphere) it
     is an effective-medium approximation that treats each compartment as a
     single-mode Gaussian with apparent diffusivity −log(E_i)/b.
@@ -170,8 +168,8 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
 
     Notes
     -----
-    - Requires PGSE timing metadata; waveform-free PGSE also requires gradient
-      strengths and timings representable on a practical uniform grid.
+    - Requires a PGSE acquisition scheme (delta and Delta must be set) for
+      the exchange diffusion time t_d = Delta − delta/3.
     - Relaxation and exchange do not factorise: a sub-model's ``…_T2`` / ``…_T1``
       is read here and applied inside the matrix-exponential propagator (coupled
       to exchange), not multiplied on afterwards.
@@ -198,8 +196,8 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
     _validity_constraints = [
         {'id': 'pgse_only',
          'name': 'PGSE acquisition required',
-         'condition_human': 'PGSE requires delta and Delta; exact held-waveform '
-                            'propagation is used for diffusion and exchange.',
+         'condition_human': 'Karger exchange uses t_d = Delta - delta/3. '
+                            'Not valid for arbitrary gradient waveforms.',
          'severity': 'warning',
          'source_key': 'Karger1988'},
         {'id': 'effective_medium',
@@ -277,15 +275,6 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
     def parameter_names(self):
         return list(self.parameter_ranges.keys())
 
-    @property
-    def compartment_parameter_names(self):
-        """Public (compartment, parameter) -> combined name record.
-
-        Includes linked parameters and orientations redirected to shared mu.
-        The returned copy cannot mutate the model's namespace.
-        """
-        return dict(self._inverted_parameter_map)
-
     def _sub_kwargs(self, model, full_kwargs):
         """Build keyword arguments for one sub-model from the combined dict."""
         params = {}
@@ -308,9 +297,8 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
     def __call__(self, acquisition_scheme, **kwargs):
         r"""Evaluate the Karger exchange signal using the matrix-exponential propagator.
 
-        Uses the held-waveform propagator, including coupled relaxation.
-        Finite-duration RF retains the separate SE/STE propagator, whose
-        constant diffusion-weighting rate is an approximation.
+        Uses the finite-RF SE or STE propagator of :mod:`dmipy_analytic.exchange` when relaxation or radiofrequency
+        durations are present, and its closed Karger form otherwise.
 
         Parameters
         ----------
@@ -334,13 +322,9 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
 
         f     = float(kwargs['f'])
         kappa = float(kwargs['kappa'])
-        if not np.isfinite(f) or not 0 < f < 1:
-            raise ValueError('X0GeneralizedKarger: f must be finite and strictly between zero and one')
-        if not np.isfinite(kappa) or kappa < 0:
-            raise ValueError('X0GeneralizedKarger: kappa must be finite and nonnegative')
 
         # Per-compartment relaxation (fall back to inf = no relaxation)
-        _INF = np.inf
+        _INF = 1e10
         # Extract T2 / T1 from sub-model parameter namespaces
         T2_1 = _INF
         T2_2 = _INF
@@ -349,20 +333,17 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
         for model_name, model in zip(self.model_names, self.models):
             t2_key = model_name + 'T2'
             t1_key = model_name + 'T1'
-            t2_v = kwargs[t2_key] if t2_key in self.parameter_ranges else kwargs.get(t2_key)
-            t1_v = kwargs[t1_key] if t1_key in self.parameter_ranges else kwargs.get(t1_key)
-            for key, value in ((t2_key, t2_v), (t1_key, t1_v)):
-                if value is not None and (np.isnan(float(value)) or float(value) <= 0):
-                    raise ValueError(f'{key}: relaxation time must be positive or infinity')
+            t2_v = kwargs.get(t2_key)
+            t1_v = kwargs.get(t1_key)
             if model is self.model_intra:
-                if t2_v is not None:
+                if t2_v is not None and not np.isnan(float(t2_v)):
                     T2_1 = float(t2_v)
-                if t1_v is not None:
+                if t1_v is not None and not np.isnan(float(t1_v)):
                     T1_1 = float(t1_v)
             else:
-                if t2_v is not None:
+                if t2_v is not None and not np.isnan(float(t2_v)):
                     T2_2 = float(t2_v)
-                if t1_v is not None:
+                if t1_v is not None and not np.isnan(float(t1_v)):
                     T1_2 = float(t1_v)
 
         # Sub-model signals (T2 handled inside models via tau_perp_SE or TE,
@@ -372,41 +353,26 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
         R2 = compartment_exponent(self.model_extra, acquisition_scheme,
                                   self._sub_kwargs(self.model_extra, kwargs))
 
-        double = double_encodings(acquisition_scheme)
+        double = _double_encodings(acquisition_scheme)
         if double:
             # a filter-exchange (double-encoding) sequence: the generalised Karger equation along its own effective
             # gradient, the pools' diffusivities along each row's direction, exchange and relaxation throughout
-            from ..core.waveform import acquisition_waveform_blocks
-            return waveform_signal(acquisition_scheme, acquisition_waveform_blocks(acquisition_scheme),
-                                   R1, R2, f, kappa,
-                                   np.array([T2_1, T2_2]), np.array([T1_1, T1_2]))
+            return _waveform_signal(acquisition_scheme, double, R1, R2, f, kappa,
+                                    np.array([T2_1, T2_2]), np.array([T1_1, T1_2]), _INF)
 
         # RF pulse durations (0 = instantaneous; backward compatible)
-        tau_exc  = getattr(acquisition_scheme, 'tau_exc', None)
-        tau_180  = getattr(acquisition_scheme, 'tau_180', None)
-        tau_90   = getattr(acquisition_scheme, 'tau_90', None)
+        tau_exc  = getattr(acquisition_scheme, 'tau_exc', 0.0)
+        tau_180  = getattr(acquisition_scheme, 'tau_180', 0.0)
+        tau_90   = getattr(acquisition_scheme, 'tau_90',  0.0)
 
         TM_ = getattr(acquisition_scheme, 'TM', None)
         TE_ = acquisition_scheme.TE
 
         # Check whether we have meaningful relaxation or RF to warrant matrix expm
         has_relaxation = (T2_1 < _INF or T2_2 < _INF or T1_1 < _INF or T1_2 < _INF)
-        has_finite_rf = any(t is not None and t > 0 for t in (tau_exc, tau_180, tau_90))
+        has_finite_rf  = (tau_exc > 0 or tau_180 > 0 or tau_90 > 0)
 
-        if not has_finite_rf:
-            from ..core.waveform import acquisition_waveform_blocks
-            E = waveform_signal(acquisition_scheme, acquisition_waveform_blocks(acquisition_scheme),
-                                R1, R2, f, kappa,
-                                np.array([T2_1, T2_2]), np.array([T1_1, T1_2]))
-            if has_relaxation:
-                # Preserve the established normalisation/pathway convention:
-                # b0 is 1; a relaxation-coupled PGSTE carries its 1/2 pathway.
-                if TM_ is not None:
-                    E *= .5
-                E = np.where(acquisition_scheme.bvalues < 1e3, 1., E)
-            return E
-
-        if has_finite_rf:
+        if has_relaxation or has_finite_rf:
             # Use matrix-exponential propagator
             K = exchange.exchange_matrix(kappa, f)
             M0 = np.array([f, 1.0 - f])
@@ -419,8 +385,8 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
                     E_out[idx] = 1.0
                     continue
 
-                D1_eff = float(R1[idx]) / b
-                D2_eff = float(R2[idx]) / b
+                D1_eff = float(R1[idx]) / max(b, 1.0)
+                D2_eff = float(R2[idx]) / max(b, 1.0)
 
                 d_arr = acquisition_scheme.delta
                 D_arr = acquisition_scheme.Delta
@@ -434,8 +400,6 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
                     # storage window. Read the second encoding lobe from the geometry
                     # directly -- dt6 = delta -- rather than back-computing a
                     # transverse time from TE (delta and TM are unambiguous).
-                    if tau_90 is None:
-                        raise ValueError('finite-RF STE requires tau_90')
                     tm = (float(TM_[idx]) if hasattr(TM_, '__len__')
                           else float(TM_))
                     dt6 = d
@@ -443,18 +407,20 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
                         K, M0, np.array([D1_eff, D2_eff]), T2, T1, b, d, tm, dt6, tau_90))
                 else:
                     # SE pathway
-                    if TE_ is None or tau_exc is None or tau_180 is None:
-                        raise ValueError('finite-RF SE requires TE, tau_exc and tau_180')
-                    te = float(TE_[idx]) if hasattr(TE_, '__len__') else float(TE_)
+                    te = (float(TE_[idx]) if TE_ is not None and hasattr(TE_, '__len__')
+                          else float(TE_) if TE_ is not None
+                          else 2 * De)
                     t180 = te / 2.0 - tau_exc / 2.0
-                    dt1 = t180 - tau_exc
-                    dt2 = te - t180 - tau_180
-                    if dt1 < 0 or dt2 < 0:
-                        raise ValueError('finite-RF SE requires nonnegative free-precession intervals')
+                    dt1 = max(t180 - tau_exc, 0.0)
+                    dt2 = max(te - t180 - tau_180, 0.0)
                     E_out[idx] = float(exchange.spin_echo_signal(
                         K, M0, np.array([D1_eff, D2_eff]), T2, T1, b, dt1, dt2, tau_exc, tau_180))
 
             return E_out
+
+        else:
+            # Fast path: no relaxation, instantaneous RF → scalar eigenvalue formula
+            return exchange.karger(R1, R2, kappa, f, exchange.diffusion_time(delta, Delta))
 
     # ------------------------------------------------------------------
     # Rotational harmonics (GL quadrature)
@@ -495,6 +461,9 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
         n_shells     = len(list(rh_scheme.shell_sh_orders))
         rh_array     = np.zeros((n_shells, max_sh_order // 2 + 1))
 
+        f     = float(kwargs['f'])
+        kappa = float(kwargs['kappa'])
+
         # GL nodes on [0,1]; fibre fixed at z, gradient sweeps elevation θ
         n_quad = 32
         xi, omega = np.polynomial.legendre.leggauss(n_quad)
@@ -508,6 +477,9 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
         rh_kwargs = dict(kwargs)
         rh_kwargs['mu'] = np.array([0., 0.])
 
+        kwargs_intra = self._sub_kwargs(self.model_intra, rh_kwargs)
+        kwargs_extra = self._sub_kwargs(self.model_extra, rh_kwargs)
+
         for i, (shell_index, sh_order) in enumerate(
                 rh_scheme.shell_sh_orders.items()):
             b       = float(rh_scheme.bvalues[i * rh_scheme.Nsamples])
@@ -516,7 +488,11 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
 
             node_scheme = _GLNodeScheme(b, delta_v, Delta_v, G_dirs)
 
-            E_u = self(node_scheme, **rh_kwargs)
+            R1_u = compartment_exponent(self.model_intra, node_scheme, kwargs_intra)
+            R2_u = compartment_exponent(self.model_extra, node_scheme, kwargs_extra)
+            t_d  = exchange.diffusion_time(delta_v, Delta_v)
+
+            E_u = exchange.karger(R1_u, R2_u, kappa, f, t_d)
 
             for l_half in range(sh_order // 2 + 1):
                 l     = 2 * l_half
@@ -538,8 +514,8 @@ class X1NEXI(ModelProperties, IsotropicSignalModelProperties):
     kernels, rather than exchanging already averaged compartment signals.
     There is no fitted orientation or tortuosity link.
 
-    Wrap in MultiCompartmentSphericalMeanModel for fitting. This published
-    model retains t=Delta-delta/3 for supplied PGSE timings;
+    Wrap in MultiCompartmentSphericalMeanModel for fitting. As with the
+    general Karger PGSE path, t=Delta-delta/3 approximates finite pulses;
     Eqs. (3)--(6) are the narrow-pulse model, not a waveform propagator.
     Gaussian exponents are formed directly, without a compartment-signal floor.
 
@@ -576,6 +552,10 @@ class X1NEXI(ModelProperties, IsotropicSignalModelProperties):
     ]
 
     def __init__(self):
+        from .cylinder_models import C1Stick
+        from .gaussian_models import G1Ball
+
+        self.exchange_model = X0GeneralizedKarger(C1Stick(), G1Ball())
         nodes, weights = np.polynomial.legendre.leggauss(64)
         self.cos_theta = (nodes + 1.) / 2.
         self.quadrature_weights = weights / 2.
@@ -592,30 +572,20 @@ class X1NEXI(ModelProperties, IsotropicSignalModelProperties):
             raise ValueError('NEXI requires PGSE delta and Delta')
         b, delta, big_delta = np.broadcast_arrays(
             acquisition_scheme.bvalues, acquisition_scheme.delta, acquisition_scheme.Delta)
-        ri = b[..., None] * di * self.cos_theta**2
-        re = b[..., None] * de
-        kernels = exchange.karger(ri, re, (1. - f) / t_ex, f,
-                                  exchange.diffusion_time(delta, big_delta)[..., None])
-        return kernels @ self.quadrature_weights
+        directions = np.column_stack([
+            np.sqrt(1. - self.cos_theta**2), np.zeros(64), self.cos_theta])
+        parameters = {
+            'C1Stick_1_lambda_par': di, 'G1Ball_1_lambda_iso': de,
+            'mu': [0., 0.], 'f': f, 'kappa': (1. - f) / t_ex,
+        }
+        signal = np.empty(b.shape)
+        for index in np.ndindex(b.shape):
+            nodes = _GLNodeScheme(b[index], delta[index], big_delta[index], directions)
+            signal[index] = self.exchange_model(nodes, **parameters) @ self.quadrature_weights
+        return signal
 
 
-def fexi_waveform_bvalues(sequence):
-    """Filter/detection b by the continuous integral, after public FEXI validation."""
-    from dmipy_replay.sequences import fexi_bvalues
-    from dmipy_replay.acquisition.rf import role_of
-    from ..core.waveform import waveform_bvalues
-    fexi_bvalues(sequence)  # validates the independently refocused blocks
-    roles = {role_of(e): e for e in sequence.rf}
-    store = int(round(roles['store'].t_s / sequence.dt))
-    recall = int(round(roles['recall'].t_s / sequence.dt))
-    gradient = np.asarray(sequence.G_eff, dtype=float)
-    pre, post = np.zeros_like(gradient), np.zeros_like(gradient)
-    pre[:, :store] = gradient[:, :store]
-    post[:, recall:] = gradient[:, recall:]
-    return waveform_bvalues(pre, sequence.dt), waveform_bvalues(post, sequence.dt)
-
-
-def double_encodings(acquisition_scheme):
+def _double_encodings(acquisition_scheme):
     """The ``(sequence, rows)`` of a scheme's filter-exchange sequences -- stimulated echoes whose encoding before the
     store refocuses on its own (:func:`dmipy_replay.sequences.fexi_bvalues` reads them) -- or ``[]``. Their signal is
     not the narrow-pulse Karger form of one diffusion time: the filter, the stored mixing time and the detection each
@@ -639,23 +609,23 @@ def double_encodings(acquisition_scheme):
     return out
 
 
-def waveform_signal(acquisition_scheme, blocks, R1, R2, f, kappa, T2, T1):
-    """Shared analytic waveform propagation; b=0 has zero diffusion weighting.
-
-    For Gaussian pools, R/b is the directional diffusivity. Restricted pools
-    retain their explicitly documented effective-medium R/b interpretation.
-    No floor or positive-b clamp is used. T2/T1=None selects no relaxation.
-    """
+def _waveform_signal(acquisition_scheme, double, R1, R2, f, kappa, T2, T1, inf):
+    """The two-pool signal of each row of each filter-exchange sequence: :func:`dmipy_analytic.exchange.karger_waveform`
+    along the row's effective gradient, the store-to-recall span stored (``T1``), the rest transverse (``T2``), from
+    the equilibrium ``(f, 1 - f)``. A pool's diffusivity along the row's direction is its dephasing exponent over the
+    row's b-value, exact for a Gaussian pool under a colinear encoding (the two blocks share their direction) and the
+    effective-medium reading for a restricted one. The stimulated echo's pathway amplitude is common to every row of a
+    sequence and left out, so the unweighted row of a sequence is its relaxation alone (1 without relaxation)."""
     K = exchange.exchange_matrix(kappa, f)
     M0 = np.array([f, 1.0 - f])
+    T2 = np.where(T2 < inf, T2, np.inf)
+    T1 = np.where(T1 < inf, T1, np.inf)
     b = np.asarray(acquisition_scheme.bvalues, dtype=float)
     E = np.empty(b.shape[0])
-    for gradient, dt, stored, rows in blocks:
-        # Dimensionless exchange stiffness; ordinary steps keep their native
-        # grid, stiff steps use eight Magnus subdivisions (also in JAX).
-        sub_steps = 8 if -np.trace(K)*dt > 1 else 1
-        for local, m in enumerate(rows):
-            D = np.array([R1[m], R2[m]]) / b[m] if b[m] > 0 else np.zeros(2)
-            E[m] = exchange.karger_waveform(gradient[local], dt, D, K, M0,
-                                           stored=stored, T2=T2, T1=T1, sub_steps=sub_steps)
+    for seq, rows in double:
+        stored = ~np.asarray(seq.rf.transverse_gate(seq.n_t, seq.dt), dtype=bool)
+        G = np.asarray(seq.G_eff, dtype=float)
+        for k, m in enumerate(rows):
+            D = np.where(b[m] > 0, np.array([R1[m], R2[m]]) / max(b[m], 1e-300), 0.0)
+            E[m] = exchange.karger_waveform(G[k], seq.dt, D, K, M0, stored=stored, T2=T2, T1=T1)
     return E

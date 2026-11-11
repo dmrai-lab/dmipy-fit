@@ -7,7 +7,7 @@ over the ``n`` steps of a column-substochastic product (the tree of products add
 import numpy as np
 import pytest
 
-jax = pytest.importorskip("jax")
+pytest.importorskip("jax")
 
 from dmipy_fit.core.acquisition_scheme import AcquisitionScheme
 from dmipy_fit.core.modeling_framework import MultiCompartmentModel
@@ -20,12 +20,6 @@ U32 = 2.0 ** -24
 OPS_D, OPS_STEP = 16, 36
 
 
-@pytest.fixture(autouse=True, params=[True, False])
-def precision(request):
-    with jax.enable_x64(request.param):
-        yield
-
-
 @pytest.fixture(scope="module")
 def scheme():
     return AcquisitionScheme.from_fexi([[1.0, 0.0, 0.0], [0.0, 0.6, 0.8]], 4e-3, 10e-3, [0.02, 0.1], b_f=1e9,
@@ -36,8 +30,7 @@ def _compare(model, scheme, values):
     want = np.asarray(model(scheme, **values))
     got = np.asarray(build_mc_forward_fn(model, scheme)(model.parameters_to_parameter_vector(**values)), dtype=float)
     n = max(s.n_t for s in scheme.protocol) - 1
-    u = np.finfo(np.float64 if jax.config.jax_enable_x64 else np.float32).eps / 2
-    rtol = (n * OPS_STEP + 3 * np.log2(n) + OPS_D * max(1.0, float(-np.log(want.min())))) * u
+    rtol = (n * OPS_STEP + 3 * np.log2(n) + OPS_D * max(1.0, float(-np.log(want.min())))) * U32
     assert got == pytest.approx(want, rel=rtol, abs=0)
     return want
 
