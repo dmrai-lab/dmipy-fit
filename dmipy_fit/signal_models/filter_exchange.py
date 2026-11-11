@@ -66,8 +66,10 @@ class FEXIApparentExchange:
 
     Its equation is :func:`dmipy_analytic.exchange.fexi_signal`, read on the measurements of a FEXI acquisition
     (:func:`fexi_measurements`). For two exchanging Gaussian pools of equal ``T1`` it is exact in the limit of a small
-    detection b-value, with ``AXR = k_12 + k_21`` (:func:`dmipy_analytic.exchange.fexi_adc`); at a finite detection b
-    each series' ADC is its first cumulant. The fit is least squares in the signal, the series' unweighted signals
+    detection b-value, with ``AXR = k_12 + k_21`` (:func:`dmipy_analytic.exchange.fexi_adc`). At finite detection b
+    the two-pool signal has higher cumulants: a monoexponential series fit estimates an effective ADC, which can
+    bias AXR. The fitted ADC approaches the first cumulant as detection b tends to zero.
+    The fit is least squares in the signal, the series' unweighted signals
     eliminated in closed form for each ``(ADC_eq, sigma, AXR)`` (variable projection), from several starting rates.
 
     References: Lasic S, Nilsson M, Latt J, Stahlberg F, Topgaard D (2011), Magn. Reson. Med. 66:356-365; md-dmri

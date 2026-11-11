@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """Two-compartment water exchange models for diffusion MRI.
 
-Implements the generalised Karger exchange framework. NEXI (Neurite
-Exchange Imaging) is the Stick+Zeppelin+tortuosity special case, built via
-X0GeneralizedKarger (see reference_models.nexi()).
+Implements the generalised Karger exchange framework. The factory
+reference_models.nexi() is an orientation-resolved Stick+Zeppelin+tortuosity
+variant; published NEXI instead uses a powder-averaged Stick+Ball signal
+without a tortuosity constraint (Jelescu et al. 2022, Eqs. 3--6).
 
 Architecture
 ------------
@@ -77,8 +78,11 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
     the effective dephasing exponents  R1 = −log E1,  R2 = −log E2  of the
     two sub-models under the given acquisition.
 
-    For Gaussian compartments (Ball, Stick, Zeppelin) R_i is linear in b and
-    the formula is exact.  For restricted compartments (Cylinder, Sphere) it
+    For Gaussian compartments (Ball, Stick, Zeppelin) R_i is linear in b.
+    The closed form is exact for constant q in the narrow-pulse limit;
+    replacing finite PGSE pulses by t_d = Delta - delta/3 is an approximation
+    with exchange. Double-encoding sequences use the waveform propagator.
+    For restricted compartments (Cylinder, Sphere) it
     is an effective-medium approximation that treats each compartment as a
     single-mode Gaussian with apparent diffusivity −log(E_i)/b.
 
