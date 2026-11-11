@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **Reference catalogue, batch 2: the obvious mistakes fixed** (audit in `docs/catalog_audit.md`, "Batch 2"; documented
+  design choices stay).
+  - `active_ax()` is the minimal model of white matter diffusion: the Callaghan cylinder and the Zeppelin share one
+    orientation and one parallel diffusivity, and the Zeppelin's perpendicular diffusivity is the tortuosity
+    D_par v_ec / (v_ic + v_ec). Parameters `G2Zeppelin_1_mu`, `G2Zeppelin_1_lambda_par` and
+    `G2Zeppelin_1_lambda_perp` are gone (two free scalars and one orientation fewer). At the parity harness's
+    midpoint parameters the signal moves by up to 9.0e-2 of S0 (25 % relative); a fit that used the free Zeppelin
+    returned a hindered tensor unrelated to the axon direction and its own diffusivities.
+  - `sandi()` is the direction-averaged model of Palombo et al. 2020, Eq. 10: a spherical-mean model (no
+    `C1Stick_1_mu`), with the soma diffusivity fixed at the free-water value 3e-9 m^2/s (was 1.58e-9) and the neurite
+    diffusivity `C1Stick_1_lambda_par` free (was fixed at 1.7e-9; five free scalars). At soma diameter 8-16 um and
+    b = 0.5-6 ms/um^2 the soma signal moves by up to 0.12 of S0 (0.59 to 0.71 at 8 um, b = 6) from the diffusivity
+    alone. The spherical-mean JAX forward gains the Gaussian-phase sphere, so `solver="jax"` still works; the parity
+    record's `ref.sandi` JAX cases move to `sm_forward/sandi`.
+  - `noddida_mte()` is `noddida()` with a T2 per compartment (stick, zeppelin): the Ball and its diffusivity and T2 are
+    gone, the model is Watson-dispersed (`odi`), the diffusivities are free in [0, 4] um^2/ms, and there is no
+    tortuosity or equality link. Fitted values of the former aligned Stick + Zeppelin + Ball model have no
+    counterpart. No paper defines the combination; the docstring says so.
+  - Docstrings only: `two_fascicle_noddi()` is not defined by Behrens 2007 (a ball-and-sticks paper); `axcaliber()`'s
+    and `DD1Gamma`'s Gamma is on the radius (the mean diameter is 2 alpha beta), as in Assaf 2008 Eq. 5, not on the
+    diameter as the docstring said; `charmed()`, `verdict()` and `impulsed()` state what could and could not be
+    verified.
+  - Parity harness: `rebaseline --only` also drops a matching recorded case that is no longer registered.
+
 - **Reference catalogue, batch 1: the obvious mistakes fixed** (audit in `docs/catalog_audit.md`; documented design
   choices stay).
   - `ball_and_stick()` has one diffusivity shared by stick and ball (Behrens 2003 Eqs. 12-13): the parameter

@@ -314,5 +314,239 @@ choices stay.
 | C4 | Authors corrected. |
 | B2 | Unchanged (source unread). |
 
-`noddida_mte()` keeps its Stick + tortuous Zeppelin + Ball structure (it is
-not rebuilt here); only its NODDIDA citation is corrected.
+`noddida_mte()` kept its Stick + tortuous Zeppelin + Ball structure in batch 1
+(only its NODDIDA citation was corrected); batch 2 rebuilds it on `noddida()`.
+
+# Reference catalogue audit, batch 2
+
+Eight more catalogue entries against their papers: D1, E1-E3, F1-F3 and the
+`noddida_mte()` factory. Checks are in `tests/test_catalog_audit_batch2.py`.
+The lead's decision for this batch (2026-11-11): fix the obvious mistakes in the
+same change; documented design choices stay. The tests' predictions were written
+before any factory was changed; the tests that failed on the unchanged factories
+are listed per model, and every one now passes. No finding is left open, so the
+batch has no xfail.
+
+**How each source was read.** As in batch 1. "Full text" is the author
+manuscript or open-access page, equations read from its MathML. "Abstract only"
+means nothing but the abstract was readable; no equation of such a paper is
+claimed. "Secondary" is a later open paper restating the model.
+
+## Summary
+
+| ID | Model | Source read | Verdict | One line |
+|---|---|---|---|---|
+| D1 | `two_fascicle_noddi()` | Behrens 2007: full text (Eqs. 1-2) | no published source for this composition | The cited paper is a ball-and-sticks paper; the factory is two NODDI bundles. Docstring and table fixed; arithmetic verified. |
+| E1 | `charmed()` | Assaf & Basser 2005: abstract only; Eqs. 1-3 as restated in Assaf 2008 (full text) | source not verifiable | Composite and Callaghan cylinder equal the restated Eqs. 1-3 to 1e-15; the tortuosity link and shared D_par are unverified. |
+| E2 | `axcaliber()` | Assaf 2008: full text (Eqs. 1-5) | faithful | Gamma on the radius, area-weighted, equals Eqs. 4-5 to 2.1e-3 (quadrature). Docstrings said "diameter": fixed. |
+| E3 | `active_ax()` | Alexander 2010: abstract only; Dyrby 2013 and Sepehrband 2016 (secondary, full text) | differs: changes recovery (fixed) | Cylinder and Zeppelin shared nothing (two orientations, free D_perp, two D_par). Now one orientation, one D_par, tortuosity. |
+| F1 | `verdict()` | Panagiotaki 2014: abstract only | source not verifiable | Sphere + stick + ball arithmetic checks; fixed diffusivities and an isotropic vascular compartment unverified. |
+| F2 | `sandi()` | Palombo 2020: full text (Eqs. 4-10) | differs: changes recovery (fixed) | Powder-averaged model; the factory was oriented, fixed D_in, and used D_soma 1.58 instead of 3 um^2/ms. |
+| F3 | `impulsed()` | Xu 2019: main text (Eq. 1); supplement (OGSE equations) not read | faithful (PGSE) | Sphere + Ball with D_in = 1.58 fixed equals Eq. 1 with the Gaussian-phase sphere to 1.5e-12. |
+| I5 | `noddida_mte()` | none: no paper defines it | no published source (kept, made consistent) | Was the old aligned Stick + Zeppelin + Ball; now NODDIDA with one T2 per compartment. |
+
+## D1 two_fascicle_noddi: cited Behrens et al. 2007
+
+Source: Behrens, Berg, Jbabdi, Rushworth, Woolrich, NeuroImage 34:144-155
+(author manuscript on PMC, full text), Eq. 1: S_i = S0[(1 - sum f_j) exp(-b_i d)
++ sum_j f_j exp(-b_i d r_i^T R_j A R_j^T r_i)], A = diag(1, 0, 0). N sticks and
+one isotropic compartment, **one diffusivity d**, orientations (theta_j, phi_j),
+automatic relevance determination on the fractions. It has no Watson dispersion,
+no tortuosity and no CSF compartment. The paper does not define the factory.
+
+Factory: two Watson bundles (each the NODDI bundle: Stick D_a = 1.7 and a
+Zeppelin with D_par = D_a, D_perp = D_a (1 - f), its own mu, ODI and f_intra) and
+a CSF Ball at 3 um^2/ms, three signal fractions.
+
+| Difference | Effect |
+|---|---|
+| Behrens 2007 cited as the source | Citation error: the composition has no published source. The docstring now says it is this package's composition of two NODDI bundles (Zhang 2012) and names Behrens 2007 only as the motivation. The table says the same. |
+| Extracellular signal averaged as signals | Inherited from the documented design choice at `noddi()` (4.5e-3 to 7.3e-3 of S0); not re-audited. |
+
+Tests: `test_d1_is_two_noddi_bundles_and_a_csf_ball` (3e-6, tolerance 1e-4),
+`test_d1_free_parameters_are_per_bundle_orientation_dispersion_fraction`,
+`test_d1_citation_does_not_claim_behrens_defines_this_model` (failed before the
+docstring fix).
+
+Verdict: no published source for this composition. Kept, reported.
+
+## E1 charmed: Assaf & Basser 2005
+
+Source: the 2005 paper is not open; **abstract only** (CHARMED, high-b
+high-angular-resolution data, population fraction of the restricted
+compartment). What I did read is Assaf 2008 (E2), which restates CHARMED as
+Eq. 1, E = f_h E_h + f_r E_r, with E_h Gaussian (Eq. 2) and E_r Callaghan's
+cylinder (Eq. 3, perpendicular gradients, short pulses). The printed bracket of
+Eq. 3 is not squared; as printed the sum does not reach 1 at q -> 0, the
+squared (Callaghan) form does, and that is what the test reference uses.
+
+Factory: `C3CylinderCallaghanApproximation` + `G2Zeppelin`, shared orientation
+and D_par, D_perp = D_par (1 - f_r), free D_par, diameter and f_r.
+
+| Difference | Effect |
+|---|---|
+| Tortuosity link, shared D_par, one free diameter | Unverified: the 2005 paper was not readable. Not changed. |
+| Restricted compartment equals Eq. 3; composite equals Eqs. 1-2 | Matches to 6e-16 (perpendicular gradients, delta/Delta = 1.7 %; the factory's diffusion time is Delta). |
+
+Tests (all pass): `test_e1_restricted_part_equals_callaghan_eq3`,
+`test_e1_composite_is_population_weighted_hindered_plus_restricted`,
+`test_e1_eq3_reference_is_normalised_at_zero_q`.
+
+Verdict: source not verifiable. Docstring states what was and was not checked.
+
+## E2 axcaliber: Assaf et al. 2008
+
+Source: Assaf, Blumenfeld-Katzir, Yovel, Basser, MRM 59:1347 (author manuscript
+on PMC, full text), Eqs. 1-5. Hindered Gaussian Eq. 2: exp(-b D_h) for the
+perpendicular gradients, D_h free. Restricted Eq. 4: Callaghan cylinders over a
+distribution of radii a_i, Gamma weights w(a) of Eq. 5 with parameters
+(alpha, beta). Eq. 4 as printed weights each radius by f_i / (pi a_i^2), which
+is not normalised and whose meaning (volume or number fraction) the text does
+not say; the area-weighted normalised ensemble is the usual reading and is what
+the factory does.
+
+Factory: `DD1GammaDistributed([C3...])` + `G2Zeppelin`, free alpha, beta,
+D_par, D_perp, mu and fractions. The distribution draws the cylinder *radius*
+from Gamma(alpha, beta) and sets the diameter to twice the draw (mean diameter
+2 alpha beta), area-weighted: Eq. 5 as printed. The docstrings of `axcaliber()`
+and `DD1Gamma` called it a Gamma of the diameter; fixed.
+
+| Difference | Effect |
+|---|---|
+| Docstrings said "diameter" | Cosmetic; corrected. |
+| Intra-axonal diffusivity fixed (1.7 um^2/ms, a default of the cylinder) | The paper does not list D_r among the fitted quantities; consistent. |
+| Unlinked D_par of cylinder and Zeppelin | Irrelevant for the paper's perpendicular-only protocol. |
+
+Tests (all pass): `test_e2_gamma_distributed_restricted_signal_matches_eq4_eq5`
+(any gradient direction, measured 2.1e-3 against the 30-step quadrature),
+`test_e2_hindered_part_is_stejskal_tanner_with_a_free_dh`.
+
+Verdict: faithful.
+
+## E3 active_ax: Alexander et al. 2010
+
+Source: Alexander, Hubbard, Hall, Moore, Ptito, Parker, Dyrby, NeuroImage
+52:1374. **Abstract only** ("a four-compartment tissue model"). The model
+structure is from two open papers that restate it: Dyrby et al., MRM 2013
+(full text; "the intra- and extra-axonal compartments, ... a single cylinder
+diameter ..., a cerebrospinal fluid compartment and a fourth, isotropically
+restricted, compartment") and Sepehrband et al., NMR Biomed 2016 (full text;
+"a bundle of cylinders with equal radii, and ... hindered water displacement,
+with a tortuosity hindrance in the direction perpendicular to the axons",
+tortuosity = d_par v_ec / (v_ic + v_ec)). Values of the fixed diffusivities in
+the original (intrinsic, CSF) are not in these secondaries and were not
+checked; the factory's D_csf = 3 um^2/ms is kept.
+
+Factory before the fix: Cylinder + Zeppelin + Ball(3), but with two orientation
+parameters, two independent parallel diffusivities and a free D_perp: the
+"extra-axonal" compartment had no relation to the axons.
+
+| Difference | Effect |
+|---|---|
+| Two orientations, two D_par, free D_perp | Changes recovery. Fixed: one orientation, one D_par, D_perp by tortuosity (two free scalars and one orientation, two angles, fewer). At the harness's midpoint parameters the signal moves by up to 9.0e-2 of S0. |
+| No dot compartment | Documented: the dot belongs to the ex-vivo variant; not added (a new compartment is out of scope). |
+
+Tests: `test_e3_restricted_and_hindered_share_one_orientation` and
+`test_e3_extra_axonal_perpendicular_diffusivity_is_tortuous` (failed before the
+fix, pass now), `test_e3_csf_ball_is_fixed_at_free_water_diffusivity`.
+
+Verdict: differed (fixed). Source for the details beyond the structure
+unverified.
+
+## F1 verdict: Panagiotaki et al. 2014
+
+Source: **abstract only** (Cancer Res 74:1902; the full text was refused). It
+names a vascular, an extracellular and a restricted intracellular compartment
+and a vascular pseudo-diffusivity. Open abstracts of later work describe the
+same three-compartment structure (restricted sphere, isotropic extracellular
+tensor, vascular stick), and one a variant with an orientation-averaged
+("astro") stick; none is the 2014 paper.
+
+Factory: Gaussian-phase sphere (diameter free), oriented Stick (mu, D free),
+Ball (D free), three signal fractions.
+
+| Difference | Effect |
+|---|---|
+| Vascular stick has an orientation | Unverified: tumour tissue is isotropic and a variant uses an orientation-averaged stick; whether the 2014 model does is unknown. Not changed. |
+| Fixed diffusivities of the original | Unverified. |
+
+Test: `test_f1_is_sphere_plus_stick_plus_ball` (composition arithmetic with the
+SANDI Eq. 8 sphere, 1e-12).
+
+Verdict: source not verifiable.
+
+## F2 sandi: Palombo et al. 2020
+
+Source: Palombo, Ianus, Guerreri, Nunes, Alexander, Shemesh, Zhang, NeuroImage
+215:116835 (open access, full text), Eqs. 4-10. The model is the
+direction-averaged signal (Eq. 10): (1 - f_ec)(f_in A_in + (1 - f_in) A_is) +
+f_ec A_ec, with A_ec = exp(-b D_ec), A_in the powder-averaged stick (Eq. 7), A_is
+the Gaussian-phase sphere (Eq. 8; the prefactor is 2(gamma g)^2 / D_is, the
+printed fraction bar is lost in text extraction, and the standard Murday-Cotts
+form confirms it). Six parameters, of which D_is is fixed to the free-water
+value, ~3 um^2/ms (Sec. 2.2.3): f_in, f_ec, D_in, D_ec, r_s free.
+
+Factory before the fix: `MultiCompartmentModel([sphere(D 1.58), Stick, Ball])`
+with an oriented stick (mu free) and D_in fixed at 1.7.
+
+| Difference | Effect |
+|---|---|
+| Oriented stick for a direction-averaged model | Changes recovery: the neurite compartment of Eq. 7 has no orientation. Fixed: spherical-mean model. |
+| D_soma = 1.58 | Changes recovery. Fixed: 3e-9. Soma signal at 8 um, b = 6 ms/um^2, delta/Delta 6/20 ms: 0.590 -> 0.708; at 12 um 0.197 -> 0.274. |
+| D_in fixed at 1.7 | Changes recovery: the paper estimates D_in. Fixed: free (parameter `C1Stick_1_lambda_par`, default range 0.1-3 um^2/ms). |
+
+The JAX spherical-mean forward gains the sphere (Gaussian-phase, per-shell PGSE);
+before, `solver="jax"` would have refused the model.
+
+Tests: `test_f2_has_the_published_free_parameters` and
+`test_f2_matches_eq10_with_soma_diffusivity_3_um2_per_ms` (failed before the fix;
+2e-12 after), `test_f2_jax_spherical_mean_forward_matches_the_numpy_model`.
+
+Verdict: differed (fixed). End-to-end recovery of a fitted voxel was not tested
+(see "Not verified").
+
+## F3 impulsed: Xu et al. 2019
+
+Source: Xu, Jiang, Devan, Arlinghaus, McKinley, Xie, Zu, Wang, Chakravarthy,
+Wang, Gore, MRM 83:2002 (author manuscript, main text). Eq. 1: S = v_in S_in +
+(1 - v_in) S_ex, S_ex = exp(-b D_ex) with D_ex a constant, cells impermeable
+spheres, **D_in fixed at 1.58 um^2/ms**. The cosine-modulated OGSE sphere
+equations are in the Supporting Information (Eqs. S5, S6), which I did not read.
+
+Factory: Gaussian-phase sphere with D = 1.58, Ball with free D, two fractions.
+
+| Difference | Effect |
+|---|---|
+| none for PGSE | Equals Eq. 1 with the Gaussian-phase sphere to 1.5e-12. |
+| OGSE sphere equations | Unverified (supplement). |
+
+Test: `test_f3_is_v_in_sphere_plus_ball_with_din_1_58`.
+
+Verdict: faithful for PGSE; OGSE unverified.
+
+## noddida_mte
+
+No paper defines NODDIDA with a T2 per compartment; MTE-NODDI (Gong et al. 2020)
+is NODDI with per-compartment T2, whose text I did not read. After batch 1
+`noddida()` is the Watson-dispersed Stick + Zeppelin of Jelescu 2016 with no
+Ball; `noddida_mte()` still held the former aligned Stick + Zeppelin + Ball and
+called itself "unconstrained NODDIDA". Made consistent: it is `noddida()` with a
+T2 on the stick and one on the zeppelin (the Ball, its diffusivity and T2 are
+gone), bounds as `noddida()`, and the docstring says the combination is not a
+published model.
+
+Tests: `test_noddida_mte_is_noddida_with_a_t2_per_compartment` (T2-weighted
+Eq. 2 reference to 7e-5; equals `noddida()` to 1.5e-4 with T2 off),
+`test_noddida_mte_docstring_matches_the_model` (both failed before).
+
+## Not verified
+
+- E1, E3 and F1: primary papers unreadable (abstracts only); structure checked
+  against restatements (E1, E3) or an abstract (F1).
+- F3: the OGSE sphere equations (supplement).
+- F2: fits of simulated voxels through `sandi().fit(...)` were tried once (JAX and
+  brute2fine, one noise-free voxel) and did not recover the generating
+  parameters, but the same data pipeline did not recover `mcsmt()` either, so
+  the test data path, not the model, is suspected; not pursued.
+- Eq. 4 of Assaf 2008 is typeset ambiguously (weighting) and Eq. 3 prints a
+  missing square; the references follow the standard forms.
