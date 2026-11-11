@@ -535,6 +535,24 @@ def _make_dd2poisson_jax_fn(model_obj, acquisition_scheme=None):
     return dd2poisson_jax_fn
 
 
+def checked_compartment_exponent(signal, name):
+    """Real effective-medium -log(E), checked also under JIT on CPU/GPU.
+
+    A runtime callback raises CompartmentSignalDomainError for underflowed,
+    negative or nonfinite restricted signals. Gaussian pools use exponents
+    directly, so valid high attenuation never enters this domain check.
+    """
+    from ..signal_models.exchange_models import CompartmentSignalDomainError
+    def raise_domain():
+        raise CompartmentSignalDomainError(
+            f'{name}: effective-medium -log(E) requires finite E > 0')
+    def fail(_):
+        jax.debug.callback(raise_domain)
+        return jnp.zeros_like(signal)
+    return jax.lax.cond(jnp.all(jnp.isfinite(signal) & (signal > 0)),
+                        lambda _: -jnp.log(signal), fail, operand=None)
+
+
 def _resolve_karger_diffusion_fn(sub_model, karger_model, acquisition_scheme):
     """Diffusion-only JAX fn + relaxation keys for one Karger sub-model.
 
@@ -568,9 +586,20 @@ def _resolve_karger_diffusion_fn(sub_model, karger_model, acquisition_scheme):
     T2_key = inv.get((sub_model, 'T2'))
     T1_key = inv.get((sub_model, 'T1'))
 
-    def diff_fn(scheme_jax, params):
-        return base_fn(scheme_jax, {p: params[k] for p, k in key_map.items()})
-    return diff_fn, T2_key, T1_key
+    def exponent_fn(scheme_jax, params):
+        p = {name: params[key] for name, key in key_map.items()}
+        if base_type is G1Ball:
+            return scheme_jax['bvalues'] * p['lambda_iso']
+        if base_type in (C1Stick, G2Zeppelin):
+            axis = unitsphere2cart_1d_jax(p['mu'])
+            B = scheme_jax['btensor']
+            along = jnp.einsum('i,mij,j->m', axis, B, axis)
+            if base_type is C1Stick:
+                return p['lambda_par'] * along
+            return (p['lambda_perp'] * jnp.trace(B, axis1=-2, axis2=-1)
+                    + (p['lambda_par'] - p['lambda_perp']) * along)
+        return checked_compartment_exponent(base_fn(scheme_jax, p), base_type.__name__)
+    return exponent_fn, T2_key, T1_key
 
 
 def _make_karger_matrix_jax_fn(model_obj, acquisition_scheme):
@@ -618,9 +647,8 @@ def _make_karger_matrix_jax_fn(model_obj, acquisition_scheme):
         K = jexchange.exchange_matrix(params['kappa'], f)
         M0 = jnp.array([f, 1.0 - f])
 
-        EPS = 1e-10
-        Ri = -jnp.log(jnp.maximum(intra_fn(scheme_jax, params), EPS))
-        Re = -jnp.log(jnp.maximum(extra_fn(scheme_jax, params), EPS))
+        Ri = intra_fn(scheme_jax, params)
+        Re = extra_fn(scheme_jax, params)
         bpos = jnp.maximum(b, 1.0)
         D = jnp.stack([Ri / bpos, Re / bpos], axis=-1)         # (n_m, 2)
         T2 = jnp.array([_T(params, intra_T2k), _T(params, extra_T2k)])
@@ -663,9 +691,8 @@ def _make_karger_waveform_jax_fn(model_obj, acquisition_scheme, double):
         f = params['f']
         K = jexchange.exchange_matrix(params['kappa'], f)
         M0 = jnp.stack([f, 1.0 - f])
-        EPS = 1e-10
-        Ri = -jnp.log(jnp.maximum(intra_fn(scheme_jax, params), EPS))
-        Re = -jnp.log(jnp.maximum(extra_fn(scheme_jax, params), EPS))
+        Ri = intra_fn(scheme_jax, params)
+        Re = extra_fn(scheme_jax, params)
         D = jnp.where((b > 0)[:, None], jnp.stack([Ri, Re], axis=-1) / jnp.maximum(b, 1e-300)[:, None], 0.0)
         T2 = jnp.stack([_T(params, intra_T2k), _T(params, extra_T2k)])
         T1 = jnp.stack([_T(params, intra_T1k), _T(params, extra_T1k)])
@@ -736,10 +763,8 @@ def _make_x1karger_jax_fn(model_obj, acquisition_scheme=None):
         def _sphere_ball_jax_fn(scheme_jax, params):
             # Sub-model signals (no T2 — parent applies it)
             E_intra = s4_jax_fn(scheme_jax, {'diameter': params[sphere_param]})
-            E_extra = jgaussian.ball(scheme_jax['bvalues'], params[ball_param])
-            EPS = 1e-10
-            Ri = -jnp.log(jnp.maximum(E_intra, EPS))
-            Re = -jnp.log(jnp.maximum(E_extra, EPS))
+            Ri = checked_compartment_exponent(E_intra, 'S4SphereGaussianPhaseApproximation')
+            Re = scheme_jax['bvalues'] * params[ball_param]
             t_d = jexchange.diffusion_time(scheme_jax['delta'], scheme_jax['Delta'])
             E = jexchange.karger(Ri, Re, params['kappa'], params['f'], t_d)
             return E

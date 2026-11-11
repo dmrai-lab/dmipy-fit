@@ -43,6 +43,7 @@ of a unit state, so its rounding is absolute.
 """
 import hashlib
 import importlib
+import importlib.util
 import json
 import os
 import platform

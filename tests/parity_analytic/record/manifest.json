@@ -1991,7 +1991,7 @@
     "bitwise": true
    },
    "numpy/X0GeneralizedKarger.rotational_harmonics_representation/legacy2": {
-    "sha256": "4584c0f526bde2875cbec36fa288c900ccb89b82ffe563c632db1870f2ff7836",
+    "sha256": "00dbb38340d5ce9a3974aaf25e8c55d8009e0f3f289c187c7b6a056d3e5d0c16",
     "shape": [
      10,
      7
@@ -2000,7 +2000,7 @@
     "bitwise": true
    },
    "numpy/X0GeneralizedKarger.rotational_harmonics_representation/pgse2": {
-    "sha256": "4584c0f526bde2875cbec36fa288c900ccb89b82ffe563c632db1870f2ff7836",
+    "sha256": "00dbb38340d5ce9a3974aaf25e8c55d8009e0f3f289c187c7b6a056d3e5d0c16",
     "shape": [
      10,
      7
@@ -2241,7 +2241,7 @@
     "bitwise": true
    },
    "numpy/composite/karger.ball_ball/pgse_rf": {
-    "sha256": "09959d5787dd1d4c5ad7f9ea71bba84a63cdd83baded07f20ee9c3c6a99ab331",
+    "sha256": "52deacddd378f66efc02f5fcdabadf2e2f820e1c82dc7a85f42b26f370c4bc14",
     "shape": [
      32
     ],
@@ -2281,7 +2281,7 @@
     "bitwise": true
    },
    "numpy/composite/karger.stick_zeppelin_T2_T1/pgste": {
-    "sha256": "2aa54d37d7648822ed1e115dd7c55a73c5c3e29979f91a3fb871f6a9a15881d5",
+    "sha256": "9a1980eb876a08cca76ac5d8b4e55bea1fa8cbacb2f0abdc2530fb18b69064a9",
     "shape": [
      32
     ],
@@ -2289,7 +2289,7 @@
     "bitwise": true
    },
    "numpy/composite/karger.stick_zeppelin_T2_rf/pgse_rf": {
-    "sha256": "5cdd6f86f685b0900c1bafcaf81c0c59bbacb9880f1e353248dc9273ad56303e",
+    "sha256": "183ce9fad2b7cb794b5f2c6b93ab5bd06421b04eb8315960590c9dccee840ad6",
     "shape": [
      32
     ],
@@ -2393,7 +2393,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.exchange_impulsed/pgse2": {
-    "sha256": "8a818fba6e8104c90559f5fcad4dc7da2fc830aa6d8f6d077ad659cca278a788",
+    "sha256": "a6cc89efa026da0346ec93c44d5499b8a3e68e2b1fc2fec9029e7543ace44880",
     "shape": [
      32
     ],
@@ -2441,7 +2441,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.karger_two_compartment/pgse2": {
-    "sha256": "e8c018b76bfaebd1a5255fa7dc77dc654e00f3967728b2a04375f4b9de38b00c",
+    "sha256": "35a2b67a2e53d97046fd9001be62d351d936536800cd01ad860db377a6d21528",
     "shape": [
      32
     ],
@@ -2521,7 +2521,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.stick_zeppelin_karger/legacy2": {
-    "sha256": "25c0d40668993a29a0d7e509f31a3dca2d432646ef325f323d62d19fc62b5ba8",
+    "sha256": "b59cb0867df9cb76f2d1cd2f4963453c06284cb525d5fcc48db47cf0f67b849e",
     "shape": [
      32
     ],
@@ -2529,7 +2529,7 @@
     "bitwise": true
    },
    "numpy/composite/ref.stick_zeppelin_karger/pgse2": {
-    "sha256": "25c0d40668993a29a0d7e509f31a3dca2d432646ef325f323d62d19fc62b5ba8",
+    "sha256": "b59cb0867df9cb76f2d1cd2f4963453c06284cb525d5fcc48db47cf0f67b849e",
     "shape": [
      32
     ],
@@ -3290,7 +3290,7 @@
     "bitwise": true
    },
    "jax_f32/forward/karger.sphere_ball/pgse2": {
-    "sha256": "482632a003e806e99583da3932790ea01298c69fbe37a4b01db5a7a6550d02ca",
+    "sha256": "23953e7c1ef84ce9a77b8f62aaf205cacd4d9ec16f8b690d37971590536195a5",
     "shape": [
      32
     ],
@@ -3298,7 +3298,7 @@
     "bitwise": true
    },
    "jax_f32/forward/karger.stick_zeppelin_T2/pgse2": {
-    "sha256": "7b1e1594be000e23862b4efb7d68143945b99993f4551257123970a8ede9fd6b",
+    "sha256": "f4ccae98732d4a6f4c3f475ab4f2dc73536898f9a8b55c6f8c3d60e44004698b",
     "shape": [
      32
     ],
@@ -3306,7 +3306,7 @@
     "bitwise": true
    },
    "jax_f32/forward/karger.stick_zeppelin_T2_T1/pgste": {
-    "sha256": "bdaa5665116394bf2b8d2525c97c6ecbcc711d46148abb8a1c352dfa1f6b9242",
+    "sha256": "1b05f46e3895ea9241295f0d5dc0fde0c6cc2035dfe51000470a13f62805bc0a",
     "shape": [
      32
     ],
@@ -3370,7 +3370,7 @@
     "bitwise": true
    },
    "jax_f32/forward/ref.exchange_impulsed/pgse2": {
-    "sha256": "299934ee6d9547b4ecd5d04ab2b5c9b3602ed2056975b620e8f5851d1a8c48dd",
+    "sha256": "ba4b20af3cc4486527131e837a5a01706c84acdf16a261eb3f2654056f11f961",
     "shape": [
      32
     ],
@@ -3474,7 +3474,7 @@
     "bitwise": true
    },
    "jax_f32/forward/ref.sandix/pgse2": {
-    "sha256": "d8f965b45f2dc676ff726b17417dd1554354aa35e11877eecb8198ed431e450b",
+    "sha256": "210089d83853625ce1c06aa890253168b1d69feb1336c90cf285c59e1b68d61c",
     "shape": [
      32
     ],
@@ -4482,7 +4482,7 @@
     "bitwise": true
    },
    "jax_f64/forward/karger.ball_ball_T2/pgse2": {
-    "sha256": "27922e2b108ac05b39dc47b077d0f4424b61b4ec684e15960a60cd3efc61a279",
+    "sha256": "ce5d10c71810837e64d9609248c51ed3d5fdeba3d9b4eea78597a81fa38f367b",
     "shape": [
      32
     ],
@@ -4490,7 +4490,7 @@
     "bitwise": true
    },
    "jax_f64/forward/karger.sphere_ball/pgse2": {
-    "sha256": "a3a534906c21c19e799b869a0bab4fe9dc0d82ca7770d9e863b914998bc30989",
+    "sha256": "99ac8b13f3501f236c3ea1127db28c3e8d775251ebbc98ab42750591937750c1",
     "shape": [
      32
     ],
@@ -4498,7 +4498,7 @@
     "bitwise": true
    },
    "jax_f64/forward/karger.stick_zeppelin_T2/pgse2": {
-    "sha256": "feb0f1779fd20d7e4993c595d2922b5e2f650ef441be6445fbcb47a80075b78f",
+    "sha256": "2a3b0debc15db24d29d79d3c8dfadd4ce06e770c2a05289b03ab80a15a2ea728",
     "shape": [
      32
     ],
@@ -4506,7 +4506,7 @@
     "bitwise": true
    },
    "jax_f64/forward/karger.stick_zeppelin_T2_T1/pgste": {
-    "sha256": "3f7472407fe7ab8c15acefb4633b0ec55ab8c99e699b603c507757dd87245ffd",
+    "sha256": "098052c54dd71e186b708355c45856a77ff879c820219c9d78c8e52e8147a74a",
     "shape": [
      32
     ],
@@ -4610,7 +4610,7 @@
     "bitwise": true
    },
    "jax_f64/forward/ref.exchange_impulsed/pgse2": {
-    "sha256": "7babbf61fec4495939fa478caf90daf58f75300783a67cb2e9dd2da1cdae560e",
+    "sha256": "8096a934cd4092d2bba9309de1898ea0f181ec12a189b3a9e649e635aec8e1cb",
     "shape": [
      32
     ],
@@ -4714,7 +4714,7 @@
     "bitwise": true
    },
    "jax_f64/forward/ref.sandix/pgse2": {
-    "sha256": "670a3ea065f2ddba7e4c7ec452467140f34e6a371263ca34a57704c529eb7969",
+    "sha256": "68ecda7a676f18b26761faab39132b19fb2872ecb9ca5261868036c198f1352f",
     "shape": [
      32
     ],

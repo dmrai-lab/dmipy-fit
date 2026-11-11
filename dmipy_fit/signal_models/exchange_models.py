@@ -36,9 +36,44 @@ from ..distributions.distribute_models import DistributedModel
 __all__ = [
     'X0GeneralizedKarger',
     'X1NEXI',
+    'CompartmentSignalDomainError',
+    'compartment_exponent',
 ]
 
 from ..core.constants import DIFFUSIVITY_SCALING
+
+
+class CompartmentSignalDomainError(ValueError):
+    """An effective-medium compartment signal cannot define a real exponent."""
+
+
+def compartment_exponent(model, scheme, parameters):
+    """Diffusion exponent without exp/log round trips for Gaussian pools.
+
+    Restricted pools retain the effective-medium interpretation -log(E).
+    Its domain is finite E > 0: zero (including underflow), negative and
+    nonfinite signals raise CompartmentSignalDomainError, never a floor.
+    """
+    from .attenuation import OccupancyGatedModel
+    from .cylinder_models import C1Stick
+    from .gaussian_models import G1Ball, G2Zeppelin
+    from ..utils.utils import unitsphere2cart_1d
+    base = model.model if isinstance(model, OccupancyGatedModel) else model
+    if isinstance(base, G1Ball):
+        return np.asarray(scheme.bvalues) * parameters['lambda_iso']
+    if isinstance(base, (C1Stick, G2Zeppelin)):
+        axis = unitsphere2cart_1d(parameters['mu'])
+        B = scheme.btensor()
+        along = np.einsum('i,mij,j->m', axis, B, axis)
+        if isinstance(base, C1Stick):
+            return parameters['lambda_par'] * along
+        return (parameters['lambda_perp'] * np.trace(B, axis1=-2, axis2=-1)
+                + (parameters['lambda_par'] - parameters['lambda_perp']) * along)
+    signal = np.asarray(base(scheme, **parameters))
+    if np.any(~np.isfinite(signal)) or np.any(signal <= 0):
+        raise CompartmentSignalDomainError(
+            f'{type(base).__name__}: effective-medium -log(E) requires finite E > 0')
+    return -np.log(signal)
 
 
 class _GLNodeScheme:
@@ -313,14 +348,10 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
 
         # Sub-model signals (T2 handled inside models via tau_perp_SE or TE,
         # so sub-models receive no T2 keyword — _sub_kwargs already excludes T2)
-        E1 = self.model_intra(acquisition_scheme,
-                              **self._sub_kwargs(self.model_intra, kwargs))
-        E2 = self.model_extra(acquisition_scheme,
-                              **self._sub_kwargs(self.model_extra, kwargs))
-
-        EPS = 1e-10
-        R1 = -np.log(np.maximum(E1, EPS))   # effective dephasing exponent
-        R2 = -np.log(np.maximum(E2, EPS))
+        R1 = compartment_exponent(self.model_intra, acquisition_scheme,
+                                  self._sub_kwargs(self.model_intra, kwargs))
+        R2 = compartment_exponent(self.model_extra, acquisition_scheme,
+                                  self._sub_kwargs(self.model_extra, kwargs))
 
         double = _double_encodings(acquisition_scheme)
         if double:
@@ -457,12 +488,8 @@ class X0GeneralizedKarger(DistributedModel, AnisotropicSignalModelProperties):
 
             node_scheme = _GLNodeScheme(b, delta_v, Delta_v, G_dirs)
 
-            E1_u = self.model_intra(node_scheme, **kwargs_intra)
-            E2_u = self.model_extra(node_scheme, **kwargs_extra)
-
-            EPS  = 1e-10
-            R1_u = -np.log(np.maximum(E1_u, EPS))
-            R2_u = -np.log(np.maximum(E2_u, EPS))
+            R1_u = compartment_exponent(self.model_intra, node_scheme, kwargs_intra)
+            R2_u = compartment_exponent(self.model_extra, node_scheme, kwargs_extra)
             t_d  = exchange.diffusion_time(delta_v, Delta_v)
 
             E_u = exchange.karger(R1_u, R2_u, kappa, f, t_d)
@@ -490,7 +517,7 @@ class X1NEXI(ModelProperties, IsotropicSignalModelProperties):
     Wrap in MultiCompartmentSphericalMeanModel for fitting. As with the
     general Karger PGSE path, t=Delta-delta/3 approximates finite pulses;
     Eqs. (3)--(6) are the narrow-pulse model, not a waveform propagator.
-    The existing Karger signal floor is unchanged.
+    Gaussian exponents are formed directly, without a compartment-signal floor.
 
     Jelescu et al. 2022, NeuroImage 256, 119277.
     doi:10.1016/j.neuroimage.2022.119277

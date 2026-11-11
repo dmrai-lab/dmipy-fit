@@ -50,8 +50,8 @@ The kernel assumes Gaussian, time-independent compartment diffusivities,
 barrier-limited exchange, and narrow diffusion pulses.
 
 The following comparison describes the preserved directional variant;
-`nexi()` now implements the published column (subject to the unchanged
-finite-pulse approximation and compartment-signal floor).
+`nexi()` now implements the published column (subject to the finite-pulse approximation of the published narrow-pulse
+kernel; it has no compartment-signal floor).
 
 | Property | Published NEXI | `stick_zeppelin_karger()` | Effect on recovered values |
 |---|---|---|---|
@@ -63,7 +63,7 @@ finite-pulse approximation and compartment-signal floor).
 | Free tissue parameters | Four scalars | Di, De_par, f, kappa, plus two angles: six scalars | Different inverse problem. The factory's bounded kappa interval also induces fraction-dependent t_ex bounds. |
 | Pulse treatment | Eqs. (3)--(5) are narrow-pulse expressions | Plain PGSE uses b and t=Delta-delta/3 in the closed kernel | This is a finite-pulse approximation, not an exact finite-PGSE solution with exchange. Both require a pulse-width applicability check. |
 | Double encoding | Outside Eqs. (3)--(6) | Can dispatch to a FEXI waveform | A useful extension, but not the original NEXI experiment or equation. |
-| Very attenuated kernels | No imposed floor | E_i floored at 1e-10 before logarithms | Changes high-b predictions, including the no-exchange limit; see EXCHANGE-AUDIT-3. |
+| Very attenuated kernels | No imposed floor | No floor (the former 1e-10 floor is removed) | None; see EXCHANGE-AUDIT-3. |
 
 In the absence of exchange,
 
@@ -135,8 +135,8 @@ fast exchange), sigma vanishes and AXR cannot be identified from this recovery.
 | Rate | AXR = k12+k21 | kappa = k12 in forward model | Convert by 1/(1-f); comparing the two raw rate values is wrong. |
 | Statistical fitting | ADC recovery equation | AXR code fits signal jointly, projecting out per-series S0, using bounds and multiple starts | Mathematical recovery equation matches; noise weighting and active bounds can affect estimates. Original 2011 optimiser details are unverified. |
 | Finite detection b | Low-b monoexponential approximation | AXR code applies it at all supplied b_d | Higher cumulants can bias recovered AXR; no automatic small-b validation. |
-| Waveform weighting | Consistent diffusion weighting for prediction and analysis | Reported b and the continuous waveform integral differ at finite sampling | No/fast-exchange limit failures at the declared b; EXCHANGE-AUDIT-4. |
-| Plain PGSE / attenuation floor | Same two-site limits | Shares the closed-path approximation and 1e-10 floor | EXCHANGE-AUDIT-2 and -3 also affect this factory. |
+| Waveform weighting | Consistent diffusion weighting for prediction and analysis | Replay's b_from_gradient and the exact held-waveform integral differ at O(dt^2) | No/fast-exchange limit failures at the declared b; EXCHANGE-AUDIT-4. |
+| Plain PGSE / attenuation floor | Same two-site limits | Shares the closed-path approximation; no floor | EXCHANGE-AUDIT-2 (documented) and -3 (resolved). |
 
 ## 3. Numerical checks and open findings
 
@@ -162,9 +162,9 @@ in the new NEXI reference predictor.
 | Audit ID (local finding, not a remote issue number) | Evidence | Disposition |
 |---|---|---|
 | EXCHANGE-AUDIT-1 | The former factory was directional Stick + tortuous Zeppelin. | Resolved: renamed `stick_zeppelin_karger()`; `nexi()` is now a spherical-mean Stick + Ball fitter with t_ex in seconds. The original equality assertion passes without xfail. |
-| EXCHANGE-AUDIT-2 | At delta=18 ms, Delta=40 ms, b=2.4e9, f=0.35, kappa=17/s, closed-path NEXI variant gives 0.02358852056 versus ODE 0.02349958737 (0.378% high); two-Ball FEXI on PGSE gives 0.1339173042 versus 0.1307964269 (2.386% high). Narrow-pulse and waveform checks pass. | Two strict xfails at rtol=1e-5. Do not advertise this PGSE path as exact for finite pulses. |
-| EXCHANGE-AUDIT-3 | At b=1e11, kappa=0, the E_i>=1e-10 floor replaces the true small compartment signals. | Two strict xfails retain the exact nonexchanging sum at rtol=2e-12, atol=0. |
-| EXCHANGE-AUDIT-4 | FEXI delta=4 ms, Delta=10 ms, dt=0.2 ms reports filtered b about 1.19999987e9, while exact integration of its piecewise-constant effective gradient gives about 1.19957310e9 (0.0356% less). No-exchange signal is 0.30323503 versus 0.30315341 at declared b; fast exchange also fails. | Two strict xfails; original tolerances unchanged. Shared acquisition/analytic weighting convention needs review. |
+| EXCHANGE-AUDIT-2 | At delta=18 ms, Delta=40 ms, b=2.4e9, f=0.35, kappa=17/s, closed-path NEXI variant gives 0.02358852056 versus ODE 0.02349958737 (0.378% high); two-Ball FEXI on PGSE gives 0.1339173042 versus 0.1307964269 (2.386% high). Narrow-pulse and waveform checks pass. | Not a defect: the published models are defined with the narrow-pulse kernel at t = Delta - delta/3. The xfail is now a passing test asserting the approximation at its measured size (0.378 % and 2.386 %); the exact finite-pulse route remains the waveform propagator, used for double encoding and arbitrary waveforms. |
+| EXCHANGE-AUDIT-3 | At b=1e11, kappa=0, the E_i>=1e-10 floor replaces the true small compartment signals. | Resolved: no floor. Gaussian pools form their exponents directly; a restricted pool's -log(E) is guarded by `CompartmentSignalDomainError`. The xfail mark is removed (NumPy and JAX, float64 and float32). |
+| EXCHANGE-AUDIT-4 | FEXI delta=4 ms, Delta=10 ms, dt=0.2 ms reports filtered b about 1.19999987e9, while exact integration of its piecewise-constant effective gradient gives about 1.19957310e9 (0.0356% less). No-exchange signal is 0.30323503 versus 0.30315341 at declared b; fast exchange also fails. | Not a defect: the package's b is dmipy-replay's `b_from_gradient` (trapezoid over a rectangular moment); the exact integral of the held waveform differs by O(dt^2) (0.036 % here). The two xfails are passing tests that state both quadratures and use the exact integral for the waveform route. |
 
 The last finding is consistent with reported b using trapezoidal integration
 of sampled squared moments, whereas `karger_waveform` integrates q(t)²
@@ -203,17 +203,14 @@ parameter identifiability for an arbitrary demo protocol.
   constrained two-pool forward fit. If fitting both diffusivities is wanted,
   `karger_two_compartment()` already exposes them; removing the fixed Df
   assumption or imposing a pool ordering requires the lead's decision.
-* **Finite pulses:** choose either the published narrow-pulse scope, with
-  a suitable acquisition, or the finite-waveform two-site model. Routing
-  plain PGSE through the waveform propagator would change predictions; it
-  has not been done here. Resolve EXCHANGE-AUDIT-4 before making that switch.
-* **High attenuation:** remove the artificial signal floor for Gaussian
-  kernels by constructing b-weighted diffusivities directly, or adopt a
-  justified log-signal implementation. No threshold was changed here.
-* **Waveform b definition:** select one consistent continuous/discrete
-  weighting convention across acquisition construction, forward prediction,
-  and ADC analysis. No rescaling, threshold relaxation, or dependency edit
-  was made to conceal the mismatch.
+* **Finite pulses:** the published Karger-based models keep the narrow-pulse
+  kernel at t = Delta - delta/3 and state the approximation (asserted at its
+  size in the audit tests). The waveform propagator serves double encoding and
+  arbitrary waveforms.
+* **High attenuation:** resolved; no signal floor.
+* **Waveform b:** dmipy-replay's `b_from_gradient` is the package's b; the exact
+  held-waveform integral differs by O(dt^2) and is used only as the oracle of
+  the waveform route in the tests.
 * **Permeability and units:** kappa and AXR have units s^-1; permeability P has
   units length/time. In a well-mixed two-pool geometry with membrane area A
   and volumes Vi, Ve, k12=P A/Vi, k21=P A/Ve. Thus
@@ -226,8 +223,8 @@ The initial audit corrected documentary inaccuracies in place: the directional
 variant's identity, the FEXI forward/AXR distinction, the finite-PGSE exactness
 claim, and the finite-b ADC/first-cumulant statement. The NEXI follow-up then
 changed the factory definition as described above and preserved the renamed
-variant's equations and parameter bounds. Findings 2--4 remain open, with
-their original physical assertions and strict xfail marks.
+variant's equations and parameter bounds. Finding 3 was then resolved; findings 2 and 4 are documented approximations
+and quadratures asserted at their measured size, with no xfail marks.
 
 ## 5. Initial audit execution
 

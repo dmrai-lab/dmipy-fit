@@ -16,10 +16,11 @@ def nexi_spherical_mean(bvalues, delta, Delta, di, de, f, t_ex,
 
     bvalues are s/m², diffusivities m²/s and t_ex seconds. The quadrature
     nodes and weights come from X1NEXI. The PGSE effective time and the
-    general Karger compartment-signal floor match the NumPy composition.
+    narrow-pulse kernel match the NumPy composition; Gaussian exponents are
+    formed directly, without a compartment-signal floor.
     """
-    ri = -jnp.log(jnp.maximum(jnp.exp(-bvalues[:, None] * di * cos_theta**2), 1e-10))
-    re = -jnp.log(jnp.maximum(jnp.exp(-bvalues[:, None] * de), 1e-10))
+    ri = bvalues[:, None] * di * cos_theta**2
+    re = bvalues[:, None] * de
     time = jexchange.diffusion_time(delta, Delta)[:, None]
     kernels = jexchange.karger(ri, re, (1. - f) / t_ex, f, time)
     return kernels @ weights
