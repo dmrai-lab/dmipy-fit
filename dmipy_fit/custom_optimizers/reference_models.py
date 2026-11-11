@@ -38,7 +38,6 @@ G2  karger_two_compartment()          3  Exchange        Kärger 1985, Adv Collo
 G3  fexi()                            4  Exchange        Lasič et al. 2011, MRM 66
 G4  sandix()                          4  Exchange+soma   SANDI (Palombo 2020) + Kärger 1985
 G5  exchange_impulsed()               3  Exchange+soma   Shi et al. 2025, Magn Reson Imaging
-G6  stick_zeppelin_karger()           3  Exchange        Kärger et al. 1988, Adv Magn Reson 12
 H1  temporal_zeppelin_model()         3  Time-dep WM     Novikov et al. 2019, NMR Biomed 32
 I1  mte_ball_stick()                  3  Relaxometry     Gong et al. 2020, NeuroImage 217
 I2  mte_noddi()                       9  Relaxometry     Gong et al. 2020, NeuroImage 217
@@ -47,7 +46,7 @@ I4  wmti()                            5  Kurtosis-WM     Fieremans et al. 2011, 
 I5  noddida_mte()                     8  Relaxometry     Jelescu 2015 + Gong 2020
 I6  mte_impulsed()                    3  Relaxometry     Jiang et al. 2025, MRM
 
-Total: 32 models, 8 categories
+Total: 31 models, 8 categories
 
 
 IMPORTANT — WHAT IS NOT HERE
@@ -110,7 +109,6 @@ from dmipy_fit.core.modeling_framework import (
     MultiCompartmentModel,
     MultiCompartmentSphericalMeanModel,
 )
-from dmipy_fit.utils.utils import T1_tortuosity
 
 # ---------------------------------------------------------------------------
 # Physical constants (published default values)
@@ -467,33 +465,6 @@ def nexi():
     doi:10.1016/j.neuroimage.2022.119277
     """
     return MultiCompartmentSphericalMeanModel([X1NEXI()])
-
-
-def stick_zeppelin_karger():
-    """Orientation-resolved Stick + tortuous Zeppelin exchange variant.
-
-    The same generic X0GeneralizedKarger used by karger_two_compartment/fexi, with an
-    intra-axonal Stick, an extra-axonal Zeppelin, and the NODDI tortuosity link
-    (De_perp = (1 − f)·De_par) pre-wired via parameter_links.  Free parameters:
-    mu, f, kappa, C1Stick_1_lambda_par (Di), G2Zeppelin_1_lambda_par (De).
-
-    This differs from published NEXI: Jelescu et al. Eqs. (3)--(6) use a
-    powder average, an independent isotropic extra-neurite diffusivity,
-    and no tortuosity link. Here kappa is the intra-to-extra rate (s^-1),
-    so the paper's t_ex = (1-f)/kappa, not 1/kappa. These structural
-    differences can change fitted fractions, diffusivities and exchange.
-    The published signal is available as nexi(); this factory preserves the
-    orientation-resolved variant's parameters and numerical behaviour.
-
-    Karger, Pfeifer & Heink 1988, Advances in Magnetic Resonance 12, 1--89.
-    doi:10.1016/S0065-2385(08)60067-1
-    """
-    stick, zeppelin = C1Stick(), G2Zeppelin()
-    karger = X0GeneralizedKarger(
-        stick, zeppelin,
-        parameter_links=[(zeppelin, 'lambda_perp', T1_tortuosity(),
-                          [(zeppelin, 'lambda_par'), (None, 'f')])])
-    return MultiCompartmentModel([karger])
 
 
 def karger_two_compartment():

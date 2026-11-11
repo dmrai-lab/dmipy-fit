@@ -2296,6 +2296,22 @@
     "dtype": "<f8",
     "bitwise": true
    },
+   "numpy/composite/karger.stick_zeppelin_tortuous/legacy2": {
+    "sha256": "b59cb0867df9cb76f2d1cd2f4963453c06284cb525d5fcc48db47cf0f67b849e",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "numpy/composite/karger.stick_zeppelin_tortuous/pgse2": {
+    "sha256": "b59cb0867df9cb76f2d1cd2f4963453c06284cb525d5fcc48db47cf0f67b849e",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
    "numpy/composite/ref.active_ax/pgse2": {
     "sha256": "d9eb959fda43412c35a14ca4505e918ed0443ac2dffbdef672d6ae7521137a56",
     "shape": [
@@ -2516,22 +2532,6 @@
     "sha256": "dd26db66f93fbd95446b387276007a6cf2cdbab7b9422bc71d5a2424b39e3929",
     "shape": [
      4
-    ],
-    "dtype": "<f8",
-    "bitwise": true
-   },
-   "numpy/composite/ref.stick_zeppelin_karger/legacy2": {
-    "sha256": "b59cb0867df9cb76f2d1cd2f4963453c06284cb525d5fcc48db47cf0f67b849e",
-    "shape": [
-     32
-    ],
-    "dtype": "<f8",
-    "bitwise": true
-   },
-   "numpy/composite/ref.stick_zeppelin_karger/pgse2": {
-    "sha256": "b59cb0867df9cb76f2d1cd2f4963453c06284cb525d5fcc48db47cf0f67b849e",
-    "shape": [
-     32
     ],
     "dtype": "<f8",
     "bitwise": true
@@ -3313,6 +3313,22 @@
     "dtype": "<f4",
     "bitwise": true
    },
+   "jax_f32/forward/karger.stick_zeppelin_tortuous/legacy2": {
+    "sha256": "3a7cbb640e2c4f4403f2daf29d80115c269d9aa2a20228c250760bbb89f16828",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
+   "jax_f32/forward/karger.stick_zeppelin_tortuous/pgse2": {
+    "sha256": "3a7cbb640e2c4f4403f2daf29d80115c269d9aa2a20228c250760bbb89f16828",
+    "shape": [
+     32
+    ],
+    "dtype": "<f4",
+    "bitwise": true
+   },
    "jax_f32/forward/ref.ball/legacy": {
     "sha256": "e937d9f493c829528afd3e7ded4ba385f5527dc435716c57614e096273396ce3",
     "shape": [
@@ -3493,22 +3509,6 @@
     "sha256": "d9750b367d3bc5dd19b0562bfc88260667f402546cccdbdb2b4af53239f3564f",
     "shape": [
      4
-    ],
-    "dtype": "<f4",
-    "bitwise": true
-   },
-   "jax_f32/forward/ref.stick_zeppelin_karger/legacy2": {
-    "sha256": "3a7cbb640e2c4f4403f2daf29d80115c269d9aa2a20228c250760bbb89f16828",
-    "shape": [
-     32
-    ],
-    "dtype": "<f4",
-    "bitwise": true
-   },
-   "jax_f32/forward/ref.stick_zeppelin_karger/pgse2": {
-    "sha256": "3a7cbb640e2c4f4403f2daf29d80115c269d9aa2a20228c250760bbb89f16828",
-    "shape": [
-     32
     ],
     "dtype": "<f4",
     "bitwise": true
@@ -4513,6 +4513,22 @@
     "dtype": "<f8",
     "bitwise": true
    },
+   "jax_f64/forward/karger.stick_zeppelin_tortuous/legacy2": {
+    "sha256": "d4b432ec5bbf827b9e7f16f13418faf131cf4e79965a0897dfdf8b8496233a4d",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
+   "jax_f64/forward/karger.stick_zeppelin_tortuous/pgse2": {
+    "sha256": "d4b432ec5bbf827b9e7f16f13418faf131cf4e79965a0897dfdf8b8496233a4d",
+    "shape": [
+     32
+    ],
+    "dtype": "<f8",
+    "bitwise": true
+   },
    "jax_f64/forward/ref.active_ax/pgse2": {
     "sha256": "f630ca70404492fccbd851b23236c780d4944ce5293523b27f7f11d9455f269a",
     "shape": [
@@ -4733,22 +4749,6 @@
     "sha256": "98e597ed1f88cc55abe95c3371e80cfa211a0b38b153799c632314759382fac6",
     "shape": [
      4
-    ],
-    "dtype": "<f8",
-    "bitwise": true
-   },
-   "jax_f64/forward/ref.stick_zeppelin_karger/legacy2": {
-    "sha256": "d4b432ec5bbf827b9e7f16f13418faf131cf4e79965a0897dfdf8b8496233a4d",
-    "shape": [
-     32
-    ],
-    "dtype": "<f8",
-    "bitwise": true
-   },
-   "jax_f64/forward/ref.stick_zeppelin_karger/pgse2": {
-    "sha256": "d4b432ec5bbf827b9e7f16f13418faf131cf4e79965a0897dfdf8b8496233a4d",
-    "shape": [
-     32
     ],
     "dtype": "<f8",
     "bitwise": true

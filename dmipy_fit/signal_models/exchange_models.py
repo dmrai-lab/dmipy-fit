@@ -4,7 +4,7 @@
 Implements the generalised Karger exchange framework and published NEXI,
 a powder-averaged Stick+Ball signal without a tortuosity constraint
 (Jelescu et al. 2022, Eqs. 3--6). The orientation-resolved, tortuous
-Stick+Zeppelin factory is reference_models.stick_zeppelin_karger().
+Stick+Zeppelin pair is built from X0GeneralizedKarger directly.
 
 Architecture
 ------------

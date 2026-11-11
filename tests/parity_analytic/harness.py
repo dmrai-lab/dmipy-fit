@@ -479,6 +479,7 @@ def _composites():
     from dmipy_fit.signal_models import plane_models as pm
     from dmipy_fit.signal_models.exchange_models import X0GeneralizedKarger
     from dmipy_fit.distributions import distribute_models as dm
+    from dmipy_fit.utils.utils import T1_tortuosity
     T2, T1 = att.TransverseRelaxation, att.LongitudinalRelaxation
     SR = att.SurfaceRelaxivity
 
@@ -498,7 +499,7 @@ def _composites():
     ref = {n: getattr(rm, n) for n in (
         "ball", "zeppelin", "temporal_zeppelin", "ball_and_stick", "ball_and_zeppelin", "stick_tortuous_zeppelin",
         "free_water_elimination", "ivim", "noddi", "bingham_noddi", "noddida", "two_fascicle_noddi", "charmed",
-        "axcaliber", "active_ax", "verdict", "sandi", "impulsed", "stick_zeppelin_karger", "karger_two_compartment", "fexi",
+        "axcaliber", "active_ax", "verdict", "sandi", "impulsed", "karger_two_compartment", "fexi",
         "sandix", "exchange_impulsed", "temporal_zeppelin_model")}
     comp = []
     for n, schemes in [
@@ -508,11 +509,20 @@ def _composites():
         ("noddi", ["pgse", "legacy", "ste"]), ("bingham_noddi", ["pgse", "legacy"]), ("noddida", ["pgse"]),
         ("two_fascicle_noddi", ["pgse"]), ("charmed", ["pgse2", "legacy2"]), ("axcaliber", ["pgse2", "legacy2"]),
         ("active_ax", ["pgse2"]), ("verdict", ["pgse2", "ogse"]), ("sandi", ["pgse2", "mixed"]),
-        ("impulsed", ["mixed", "ogse"]), ("stick_zeppelin_karger", ["pgse2", "legacy2"]), ("karger_two_compartment", ["pgse2"]),
+        ("impulsed", ["mixed", "ogse"]), ("karger_two_compartment", ["pgse2"]),
         ("fexi", ["pgse2"]), ("sandix", ["pgse2"]), ("exchange_impulsed", ["pgse2"]),
         ("temporal_zeppelin_model", ["pgse2"])]:
         comp.append(("ref." + n, ref[n], schemes))
+
+    def stick_zeppelin_tortuous():
+        stick, zeppelin = cm.C1Stick(), gm.G2Zeppelin()
+        return MultiCompartmentModel([X0GeneralizedKarger(
+            stick, zeppelin,
+            parameter_links=[(zeppelin, 'lambda_perp', T1_tortuosity(),
+                              [(zeppelin, 'lambda_par'), (None, 'f')])])])
+
     comp += [
+        ("karger.stick_zeppelin_tortuous", stick_zeppelin_tortuous, ["pgse2", "legacy2"]),
         ("gated.zeppelin_T2_SR", gated(gm.G2Zeppelin, [T2, lambda: SR(surface_to_volume=2e6)]), ["pgse", "ste"]),
         ("gated.stick_T2_SR_ext", gated(cm.C1Stick, [T2, lambda: att.ExteriorSurfaceRelaxivity(1.5e6)]), ["pgse"]),
         ("gated.stick_T2_intrapore", gated(cm.C1Stick, [T2, att.IntraPoreSurfaceRelaxivity]), ["pgse"]),

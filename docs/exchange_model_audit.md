@@ -3,8 +3,8 @@
 `nexi()` now fits the powder-averaged Stick + independent isotropic Ball
 model defined by Jelescu et al. (2022), with four free parameters: f, Di, De
 and t_ex in seconds. The former orientation-resolved, tortuous Stick +
-Zeppelin variant retains its numerical behaviour as `stick_zeppelin_karger()`.
-There is no compatibility alias for that variant under the NEXI name.
+Zeppelin variant is not a published model and is no longer in the reference factory; the tests that exercise the generic
+Karger machinery build it explicitly from `X0GeneralizedKarger(C1Stick(), G2Zeppelin(), parameter_links=[...])`.
 `fexi()` is a constrained two-pool forward model on a
 user-supplied acquisition, not the phenomenological AXR analysis. The latter is
 already available as `FEXIApparentExchange`.
@@ -53,14 +53,14 @@ The following comparison describes the preserved directional variant;
 `nexi()` now implements the published column (subject to the finite-pulse approximation of the published narrow-pulse
 kernel; it has no compartment-signal floor).
 
-| Property | Published NEXI | `stick_zeppelin_karger()` | Effect on recovered values |
+| Property | Published NEXI | Stick + Zeppelin Karger composition | Effect on recovered values |
 |---|---|---|---|
 | Intra-neurite compartment | Stick | Stick | Same compartment assumption. |
 | Extra-neurite compartment | Independent isotropic Ball | Coaxial Zeppelin | Changes signal and meaning of De; can bias every tissue estimate under model mismatch. |
 | Tortuosity | None | De_perp = (1-f) De_par | Couples fraction to diffusion anisotropy; can move f, diffusivities, and exchange. Powder averaging alone would not remove this difference. |
-| Signal / orientation | Eq. (6) powder average; no mu | Directional kernel; shared mu with two angles | Fits a different signal and two extra scalars. Averaging measured data alone does not turn this factory into Eq. (6). |
+| Signal / orientation | Eq. (6) powder average; no mu | Directional kernel; shared mu with two angles | Fits a different signal and two extra scalars. Averaging measured data alone does not turn this composition into Eq. (6). |
 | Exchange coordinate | t_ex | One-way kappa | Reparameterisation alone preserves predictions after t_ex=(1-f)/kappa. Calling kappa permeability or using 1/kappa as t_ex changes the reported quantity. |
-| Free tissue parameters | Four scalars | Di, De_par, f, kappa, plus two angles: six scalars | Different inverse problem. The factory's bounded kappa interval also induces fraction-dependent t_ex bounds. |
+| Free tissue parameters | Four scalars | Di, De_par, f, kappa, plus two angles: six scalars | Different inverse problem. The composition's bounded kappa interval also induces fraction-dependent t_ex bounds. |
 | Pulse treatment | Eqs. (3)--(5) are narrow-pulse expressions | Plain PGSE uses b and t=Delta-delta/3 in the closed kernel | This is a finite-pulse approximation, not an exact finite-PGSE solution with exchange. Both require a pulse-width applicability check. |
 | Double encoding | Outside Eqs. (3)--(6) | Can dispatch to a FEXI waveform | A useful extension, but not the original NEXI experiment or equation. |
 | Very attenuated kernels | No imposed floor | No floor (the former 1e-10 floor is removed) | None; see EXCHANGE-AUDIT-3. |
@@ -161,7 +161,7 @@ in the new NEXI reference predictor.
 
 | Audit ID (local finding, not a remote issue number) | Evidence | Disposition |
 |---|---|---|
-| EXCHANGE-AUDIT-1 | The former factory was directional Stick + tortuous Zeppelin. | Resolved: renamed `stick_zeppelin_karger()`; `nexi()` is now a spherical-mean Stick + Ball fitter with t_ex in seconds. The original equality assertion passes without xfail. |
+| EXCHANGE-AUDIT-1 | The former factory was directional Stick + tortuous Zeppelin. | Resolved: the variant left the factory (no published reference); tests build it explicitly; `nexi()` is now a spherical-mean Stick + Ball fitter with t_ex in seconds. The original equality assertion passes without xfail. |
 | EXCHANGE-AUDIT-2 | At delta=18 ms, Delta=40 ms, b=2.4e9, f=0.35, kappa=17/s, closed-path NEXI variant gives 0.02358852056 versus ODE 0.02349958737 (0.378% high); two-Ball FEXI on PGSE gives 0.1339173042 versus 0.1307964269 (2.386% high). Narrow-pulse and waveform checks pass. | Not a defect: the published models are defined with the narrow-pulse kernel at t = Delta - delta/3. The xfail is now a passing test asserting the approximation at its measured size (0.378 % and 2.386 %); the exact finite-pulse route remains the waveform propagator, used for double encoding and arbitrary waveforms. |
 | EXCHANGE-AUDIT-3 | At b=1e11, kappa=0, the E_i>=1e-10 floor replaces the true small compartment signals. | Resolved: no floor. Gaussian pools form their exponents directly; a restricted pool's -log(E) is guarded by `CompartmentSignalDomainError`. The xfail mark is removed (NumPy and JAX, float64 and float32). |
 | EXCHANGE-AUDIT-4 | FEXI delta=4 ms, Delta=10 ms, dt=0.2 ms reports filtered b about 1.19999987e9, while exact integration of its piecewise-constant effective gradient gives about 1.19957310e9 (0.0356% less). No-exchange signal is 0.30323503 versus 0.30315341 at declared b; fast exchange also fails. | Not a defect: the package's b is dmipy-replay's `b_from_gradient` (trapezoid over a rectangular moment); the exact integral of the held waveform differs by O(dt^2) (0.036 % here). The two xfails are passing tests that state both quadratures and use the exact integral for the waveform route. |
@@ -193,8 +193,8 @@ parameter identifiability for an arbitrary demo protocol.
   t_ex=5/30/200 ms and 15 b/Delta pairs (b=0/0.2/1/3/6 ms/µm²,
   Delta=15/40/80 ms, delta=4 ms). NumPy/float64 tolerance is rtol=2e-12,
   atol=2e-14; float32 tolerance is rtol=2e-5, atol=2e-7.
-  The directional variant's callers and parity cases now use
-  `stick_zeppelin_karger()`; its predictions and assertions are preserved.
+  The directional variant's callers build the composition explicitly in the test;
+  its predictions and assertions are preserved.
 * **Time definition:** the reference accepts b and t explicitly, with b=q²t;
   it does not silently substitute Delta-delta/3 for a finite-pulse experiment.
   t_ex=inf and t_ex=0 explicitly select the two mathematical limits.
@@ -274,6 +274,6 @@ existing spherical-mean fit tests retain their assertions and fail at its
 import. End-to-end JAX fitting and GPU execution are therefore unverified.
 
 All 614 parity archive arrays still match their recorded hashes; six case
-IDs and archive keys were renamed to `ref.stick_zeppelin_karger`, with their
+IDs and archive keys were renamed to `karger.stick_zeppelin_tortuous`, with their
 values and hashes preserved. The complete parity harness was not run.
 Nothing was committed.
