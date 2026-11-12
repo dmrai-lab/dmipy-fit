@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Reference catalogue: `two_fascicle_noddi()` and `noddida_mte()` removed.** Neither composition has a published
+  source (Behrens 2007 is a ball-and-sticks paper; no paper defines NODDIDA with a T2 per compartment). Build either
+  from the compartments if needed; there is no alias. The parity record loses only the three `ref.two_fascicle_noddi`
+  cases; every other key is unchanged.
+
 - **Reference catalogue, batch 2: the obvious mistakes fixed** (audit in `docs/catalog_audit.md`, "Batch 2"; documented
   design choices stay).
   - `active_ax()` is the minimal model of white matter diffusion: the Callaghan cylinder and the Zeppelin share one

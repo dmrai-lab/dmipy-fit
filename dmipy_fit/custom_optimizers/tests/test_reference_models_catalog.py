@@ -17,7 +17,7 @@ FACTORIES = sorted(
 
 
 def test_catalog_nonempty():
-    assert len(FACTORIES) >= 30, FACTORIES
+    assert len(FACTORIES) >= 29, FACTORIES
 
 
 @pytest.mark.parametrize("name", FACTORIES)
