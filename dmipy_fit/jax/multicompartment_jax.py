@@ -58,7 +58,7 @@ from .distributed_models_jax import (
     build_bingham_sh_jax_fn,
     _all_inner_models_have_rh,
 )
-from ..signal_models.attenuation import OccupancyGatedModel
+from ..signal_models.attenuation import OccupancyGatedModel, TransverseRelaxation
 from .attenuation_jax import build_jax_factor
 
 
@@ -855,11 +855,16 @@ def _g2zeppelin_sm_fn(shell_bvals_jax, params):
         shell_bvals_jax, params['lambda_par'], params['lambda_perp'])
 
 
+def _dot_sm_fn(shell_bvals_jax, params):
+    return jnp.ones_like(shell_bvals_jax)
+
+
 # Spherical mean models indexed by class; no orientation params needed.
 _JAX_SM_MODEL_FNS = {
     G1Ball:     _g1ball_sm_fn,
     C1Stick:    _c1stick_sm_fn,
     G2Zeppelin: _g2zeppelin_sm_fn,
+    S1Dot:     _dot_sm_fn,
 }
 
 
@@ -903,7 +908,41 @@ def _make_s4sphere_sm_jax_fn(model, acquisition_scheme):
     return forward
 
 
+def _make_transverse_sm_jax_fn(model, acquisition_scheme):
+    """A base spherical mean times one transverse-relaxation factor.
+
+    Other factor combinations require their own spherical-mean lowering;
+    refuse them explicitly rather than ignoring a factor.
+    """
+    if (len(model.factors) != 1
+            or type(model.factors[0]) is not TransverseRelaxation):
+        raise NotImplementedError('JAX gated spherical mean requires exactly '
+                                  'one TransverseRelaxation factor')
+    if acquisition_scheme.TE is None:
+        raise ValueError('T2 spherical mean requires TE')
+    base = model.model
+    base_type = type(base)
+    if base_type in _JAX_SM_MODEL_FACTORIES:
+        base_fn = _JAX_SM_MODEL_FACTORIES[base_type](base, acquisition_scheme)
+    elif base_type in _JAX_SM_MODEL_FNS:
+        base_fn = _JAX_SM_MODEL_FNS[base_type]
+    else:
+        raise NotImplementedError(f'No JAX spherical mean for {base_type.__name__}')
+    sms = acquisition_scheme.spherical_mean_scheme
+    # Preserve transverse occupancy for stimulated echoes as well as PGSE TE.
+    tau = sms.tau_perp if sms.tau_perp is not None else sms.TE
+    transverse_time = jnp.asarray(tau)[~acquisition_scheme.shell_b0_mask]
+    base_names = [p for p in base.parameter_ranges if p != 'mu']
+
+    def forward(bvalues, params):
+        base_params = {p: params[p] for p in base_names}
+        return base_fn(bvalues, base_params) * jnp.exp(-transverse_time / params['T2'])
+
+    return forward
+
+
 _JAX_SM_MODEL_FACTORIES = {X1NEXI: _make_nexi_sm_jax_fn,
+                           OccupancyGatedModel: _make_transverse_sm_jax_fn,
                            S4SphereGaussianPhaseApproximation:
                                _make_s4sphere_sm_jax_fn}
 
@@ -947,19 +986,33 @@ def build_mc_sm_forward_fn(model, acquisition_scheme, broadcast=True):
     is_multi   = model.N_models > 1
     # Static mapping from measurement → shell index for broadcasting
     shell_indices_jax = jnp.array(acquisition_scheme.shell_indices)  # (N_meas,)
+    b0_idx = np.where(b0_mask)[0]
+    has_relaxation = any(type(m) is OccupancyGatedModel for m in model.models)
+    if has_relaxation:
+        sms = acquisition_scheme.spherical_mean_scheme
+        tau = sms.tau_perp if sms.tau_perp is not None else sms.TE
+        b0_transverse_time = jnp.asarray(tau)[b0_idx]
 
     def sm_forward_fn(params_scaled):
         non_b0_signal = jnp.zeros(len(non_b0_idx))
+        b0_signal = jnp.zeros(len(b0_idx))
         for entry in dispatch:
             model_params  = _extract_params_jax(params_scaled, entry['param_slices'])
             # Call the SM function (uses shell bvalues, no orientation)
             compartment_sm = entry['jax_fn'](shell_bvals_non_b0, model_params)
             vf = params_scaled[entry['vf_idx']] if is_multi else jnp.array(1.0)
             non_b0_signal = non_b0_signal + vf * compartment_sm
+            if has_relaxation:
+                b0_decay = (jnp.exp(-b0_transverse_time / model_params['T2'])
+                            if entry['model_type'] is OccupancyGatedModel
+                            else jnp.ones(len(b0_idx)))
+                b0_signal = b0_signal + vf * b0_decay
 
-        # Build full (N_shells,) output: b0 = 1.0, others = computed
+        # Diffusion-only b0 is unity; gated b0 carries its compartmental decay.
         signal_shells = jnp.ones(N_shells)
         signal_shells = signal_shells.at[non_b0_idx].set(non_b0_signal)
+        if has_relaxation:
+            signal_shells = signal_shells.at[b0_idx].set(b0_signal)
         # (N_meas,) broadcast for full-data comparison, or (N_shells,) for the
         # spherical-mean fit (data is per-shell means).
         return signal_shells[shell_indices_jax] if broadcast else signal_shells

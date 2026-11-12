@@ -31,9 +31,6 @@ def test_reference_model_constructs(name):
 import inspect
 import re
 
-# Models whose primary reference is a conference abstract with no DOI.
-_NO_DOI_ALLOWLIST = {"mte_sandi"}
-
 _DOI_RE = re.compile(r'(?:doi:|https?://doi\.org/)\s*(10\.\d{4,}/\S+)')
 
 
@@ -44,13 +41,13 @@ def test_reference_has_year(name):
     assert re.search(r'\b(19|20)\d{2}\b', doc), f"{name}: no citation year in docstring"
 
 
-@pytest.mark.parametrize("name", sorted(set(FACTORIES) - _NO_DOI_ALLOWLIST))
+@pytest.mark.parametrize("name", FACTORIES)
 def test_reference_has_wellformed_doi(name):
-    """Every model (except known abstracts) carries a well-formed DOI in its docstring,
+    """Every model carries a well-formed DOI in its docstring,
     so the dmipy.org catalog can render a resolvable link (not a possibly-wrong free-text
     reference)."""
     doc = inspect.getdoc(getattr(rm, name)) or ""
     m = _DOI_RE.search(doc)
-    assert m, f"{name}: no DOI in docstring (add `doi:10.xxxx/...` or allowlist it)"
+    assert m, f"{name}: no DOI in docstring (add `doi:10.xxxx/...`)"
     doi = m.group(1).rstrip('.,);')
     assert re.fullmatch(r'10\.\d{4,}/\S+', doi), f"{name}: malformed DOI {doi!r}"
