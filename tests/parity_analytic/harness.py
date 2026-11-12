@@ -510,7 +510,7 @@ def _composites():
 
     ref = {n: getattr(rm, n) for n in (
         "ball", "zeppelin", "temporal_zeppelin", "ball_and_stick", "ball_and_zeppelin", "stick_tortuous_zeppelin",
-        "free_water_elimination", "ivim", "noddi", "bingham_noddi", "noddida", "two_fascicle_noddi", "charmed",
+        "free_water_elimination", "ivim", "noddi", "bingham_noddi", "noddida", "charmed",
         "axcaliber", "active_ax", "verdict", "sandi", "impulsed", "karger_two_compartment", "fexi",
         "sandix", "exchange_impulsed", "temporal_zeppelin_model")}
     comp = []
@@ -519,7 +519,7 @@ def _composites():
         ("ball_and_stick", ["pgse", "legacy"]), ("ball_and_zeppelin", ["pgse"]),
         ("stick_tortuous_zeppelin", ["pgse", "ste"]), ("free_water_elimination", ["pgse"]), ("ivim", ["pgse"]),
         ("noddi", ["pgse", "legacy", "ste"]), ("bingham_noddi", ["pgse", "legacy"]), ("noddida", ["pgse"]),
-        ("two_fascicle_noddi", ["pgse"]), ("charmed", ["pgse2", "legacy2"]), ("axcaliber", ["pgse2", "legacy2"]),
+        ("charmed", ["pgse2", "legacy2"]), ("axcaliber", ["pgse2", "legacy2"]),
         ("active_ax", ["pgse2"]), ("verdict", ["pgse2", "ogse"]), ("sandi", ["pgse2", "mixed"]),
         ("impulsed", ["mixed", "ogse"]), ("karger_two_compartment", ["pgse2"]),
         ("fexi", ["pgse2"]), ("sandix", ["pgse2"]), ("exchange_impulsed", ["pgse2"]),

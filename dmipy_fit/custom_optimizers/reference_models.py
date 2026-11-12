@@ -26,7 +26,6 @@ C1  noddi()                           9  ODF dispersion  Zhang et al. 2012, Neur
 C2  bingham_noddi()                   9  ODF dispersion  Tariq et al. 2016, NeuroImage 133
 C3  noddida()                         5  ODF dispersion  Jelescu et al. 2016, NMR Biomed 29
 C4  mcsmt()                           5  Spherical mean  Kaden et al. 2016, NeuroImage 139
-D1  two_fascicle_noddi()             16  Multi-fascicle  Zhang 2012 bundles x2 (unpublished composition)
 E1  charmed()                         7  Cylinder        Assaf & Basser 2005, NeuroImage 27
 E2  axcaliber()                       4  Cylinder diam   Assaf et al. 2008, MRM 59
 E3  active_ax()                       5  Cylinder diam   Alexander et al. 2010, NeuroImage 52
@@ -43,10 +42,9 @@ I1  mte_ball_stick()                  3  Relaxometry     Gong et al. 2020, Neuro
 I2  mte_noddi()                       9  Relaxometry     Gong et al. 2020, NeuroImage 217
 I3  mte_sandi()                       5  Relaxometry     ISMRM 2023 abstract #0766
 I4  wmti()                            5  Kurtosis-WM     Fieremans et al. 2011, NeuroImage 58
-I5  noddida_mte()                     8  Relaxometry     Jelescu 2016 + Gong 2020 (unpublished composition)
 I6  mte_impulsed()                    3  Relaxometry     Jiang et al. 2025, MRM
 
-Total: 31 models, 8 categories
+Total: 29 models, 8 categories
 
 
 IMPORTANT — WHAT IS NOT HERE
@@ -359,42 +357,6 @@ def mcsmt():
         'partial_volume_1',
     )
     mcm.set_equal_parameter('C1Stick_1_lambda_par', 'G2Zeppelin_1_lambda_par')
-    return mcm
-
-
-# ===========================================================================
-# D. Multi-fascicle models
-# ===========================================================================
-
-def two_fascicle_noddi():
-    """Two independently oriented Watson-NODDI bundles + shared CSF Ball.
-
-    Each bundle has its own mu, ODI, f_intra.  D_a = 1.7×10⁻⁹ fixed.
-    Suitable for crossing-fibre voxels.
-
-    This composition is this package's; it is not a published model. Behrens
-    et al. 2007 (NeuroImage 34, doi:10.1016/j.neuroimage.2006.09.018) motivate
-    more than one fibre orientation per voxel, with a ball-and-sticks model
-    (Eq. 1: N sticks and one isotropic compartment sharing one diffusivity)
-    that has no Watson dispersion and no tortuosity, so that paper does not
-    define this factory. Each bundle is the NODDI bundle of Zhang et al. 2012
-    (NeuroImage 61, doi:10.1016/j.neuroimage.2012.03.072), with the
-    extracellular-signal design difference documented at :func:`noddi`.
-    """
-    bundle1 = SD1WatsonDistributed(models=[C1Stick(), G2Zeppelin()])
-    bundle1.set_tortuous_parameter(
-        'G2Zeppelin_1_lambda_perp', 'G2Zeppelin_1_lambda_par', 'partial_volume_0')
-    bundle1.set_equal_parameter('G2Zeppelin_1_lambda_par', 'C1Stick_1_lambda_par')
-    bundle1.set_fixed_parameter('G2Zeppelin_1_lambda_par', _Da)
-
-    bundle2 = SD1WatsonDistributed(models=[C1Stick(), G2Zeppelin()])
-    bundle2.set_tortuous_parameter(
-        'G2Zeppelin_1_lambda_perp', 'G2Zeppelin_1_lambda_par', 'partial_volume_0')
-    bundle2.set_equal_parameter('G2Zeppelin_1_lambda_par', 'C1Stick_1_lambda_par')
-    bundle2.set_fixed_parameter('G2Zeppelin_1_lambda_par', _Da)
-
-    mcm = MultiCompartmentModel([bundle1, bundle2, G1Ball()])
-    mcm.set_fixed_parameter('G1Ball_1_lambda_iso', _Dcsf)
     return mcm
 
 
@@ -747,29 +709,6 @@ def wmti():
     mcm.set_equal_parameter('C1Stick_1_mu', 'G2Zeppelin_1_mu')
     mcm.set_equal_parameter('C1Stick_1_lambda_par', 'G2Zeppelin_1_lambda_par')
     return mcm
-
-
-def noddida_mte():
-    """NODDIDA-MTE: NODDIDA with a T2 per compartment.
-
-    The Watson-dispersed Stick + Zeppelin of :func:`noddida` (three free
-    diffusivities in [0, 4] µm²/ms, no CSF compartment, no tortuosity link),
-    with one T2 for the stick and one for the zeppelin; acquire at several TE
-    to separate the T2 weighting of the fractions. This combination is not a
-    published model: NODDIDA is Jelescu et al. 2016, NMR Biomed 29,
-    doi:10.1002/nbm.3450, and the per-compartment T2 of MTE-NODDI is Gong et
-    al. 2020, NeuroImage 217, doi:10.1016/j.neuroimage.2020.116906.
-    """
-    bundle = SD1WatsonDistributed(models=[
-        OccupancyGatedModel(C1Stick(), [TransverseRelaxation()]),
-        OccupancyGatedModel(G2Zeppelin(), [TransverseRelaxation()])])
-    mcm = MultiCompartmentModel([bundle])
-    for name in ('OccupancyGatedModel_1_lambda_par',
-                 'OccupancyGatedModel_2_lambda_par',
-                 'OccupancyGatedModel_2_lambda_perp'):
-        mcm.set_parameter_optimization_bounds(
-            'SD1WatsonDistributed_1_' + name, [0., 4e-9])
-    return mcm   # per-compartment T2 via the T2 factors
 
 
 def mte_impulsed():

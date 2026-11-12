@@ -2552,14 +2552,6 @@
     "dtype": "<f8",
     "bitwise": true
    },
-   "numpy/composite/ref.two_fascicle_noddi/pgse": {
-    "sha256": "6ec1d4a84974ea88aac09da6bf50ced678298aa22f56e52dfab3a11047936aa3",
-    "shape": [
-     32
-    ],
-    "dtype": "<f8",
-    "bitwise": true
-   },
    "numpy/composite/ref.verdict/ogse": {
     "sha256": "0b3ad87bcf9e87a6e59939a95fadc50f41b0d39fb52889aff1d4e40171416ac1",
     "shape": [
@@ -3507,14 +3499,6 @@
    },
    "jax_f32/forward/ref.temporal_zeppelin_model/pgse2": {
     "sha256": "bf1a8b0a527cbbd81106800ea6e202f6355f521d74df5a980a5a5a47c2ace2f8",
-    "shape": [
-     32
-    ],
-    "dtype": "<f4",
-    "bitwise": true
-   },
-   "jax_f32/forward/ref.two_fascicle_noddi/pgse": {
-    "sha256": "ff4c410a8ace2a64d3514c1fa631a976bbe22fd7d24b9c83cbe2b6c3fa39dd4b",
     "shape": [
      32
     ],
@@ -4747,14 +4731,6 @@
    },
    "jax_f64/forward/ref.temporal_zeppelin_model/pgse2": {
     "sha256": "69e119c714aebc258fad0b6306c066656ecba5446fb265c2fcc09f4c00235366",
-    "shape": [
-     32
-    ],
-    "dtype": "<f8",
-    "bitwise": true
-   },
-   "jax_f64/forward/ref.two_fascicle_noddi/pgse": {
-    "sha256": "9455db2d9034b26c8fff570962bb5adb86c902b956e33e8bc63bfe8272d75d14",
     "shape": [
      32
     ],

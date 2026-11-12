@@ -647,7 +647,7 @@ def test_citations_are_corrected():
         assert "Kaden, Kelm, Carson, Does & Alexander" in text \
             or "Kaden et al. 2016" in text
         assert "McKinstry" not in text and "Rueckert" not in text
-    for text in (rm.noddida.__doc__, rm.noddida_mte.__doc__):
+    for text in (rm.noddida.__doc__,):
         assert "Jelescu" in text and "2016" in text
         assert "Adisetiyo" not in text and "2015" not in text
     assert "Jelescu et al. 2016, NMR Biomed 29" in rm.__doc__

@@ -1,6 +1,6 @@
 """Independent CPU checks for the reference-catalogue audit, batch 2.
 
-The audit IDs (D1, E1-E3, F1-F3 and the noddida_mte factory) and the published
+The audit IDs (E1-E3, F1-F3) and the published
 equations are in docs/catalog_audit.md. No network, external files or reference
 checkouts are used. Every reference signal below is written here from the
 paper's equations with NumPy/SciPy only. Predictions and tolerances are stated
@@ -20,7 +20,6 @@ from scipy.stats import gamma as gamma_dist
 
 from dmipy_fit.core.acquisition_scheme import acquisition_scheme_from_bvalues
 from dmipy_fit.custom_optimizers import reference_models as rm
-from dmipy_fit.distributions.distributions import odi2kappa
 
 DA = 1.7e-9
 DCSF = 3.0e-9
@@ -52,34 +51,6 @@ def _scheme(b=(1e9, 2e9, 3e9), per_shell=20, delta=0.0106, Delta=0.0431,
         bvals = np.r_[0.0, bvals]
     return acquisition_scheme_from_bvalues(
         bvals, dirs, delta=delta, Delta=Delta, TE=TE)
-
-
-def _sphere_grid(n=96):
-    x, wx = np.polynomial.legendre.leggauss(n)
-    ph = np.linspace(0, 2 * np.pi, 2 * n, endpoint=False)
-    xx, pp = np.meshgrid(x, ph, indexing="ij")
-    s = np.sqrt(1 - xx ** 2)
-    nodes = np.stack([s * np.cos(pp), s * np.sin(pp), xx], -1).reshape(-1, 3)
-    w = (wx[:, None] * np.ones_like(pp)).reshape(-1) * (2 * np.pi / (2 * n))
-    return nodes, w
-
-
-def _watson_weights(nodes, w, kappa, mu_c):
-    dens = np.exp(kappa * (nodes @ mu_c) ** 2) * w
-    return dens / dens.sum()
-
-
-def _stick_dispersed(scheme, nodes, weights, d):
-    c = scheme.gradient_directions @ nodes.T
-    return (np.exp(-scheme.bvalues[:, None] * d * c ** 2) * weights).sum(1)
-
-
-def _zeppelin_dispersed(scheme, nodes, weights, dpar, dperp):
-    """ODF average of the per-orientation zeppelin signal (the bundle design
-    of this package, documented at noddi())."""
-    c = scheme.gradient_directions @ nodes.T
-    b = scheme.bvalues[:, None]
-    return (np.exp(-b * (dperp + (dpar - dperp) * c ** 2)) * weights).sum(1)
 
 
 def _stick_oriented(scheme, mu, d):
@@ -127,74 +98,6 @@ def _callaghan_cylinder_perp(q, radius, D, Delta, n_max=30, k_max=60):
                 * beta ** 2 / (beta ** 2 - n ** 2) \
                 * (x * jvp(n, x) / (x ** 2 - beta ** 2)) ** 2
     return e
-
-
-# ---------------------------------------------------------------------------
-# D1  two_fascicle_noddi  (cited: Behrens 2007, NeuroImage 34:144)
-# ---------------------------------------------------------------------------
-
-_B1 = "SD1WatsonDistributed_1_"
-_B2 = "SD1WatsonDistributed_2_"
-
-
-def _bundle_signal(scheme, f, odi, mu):
-    """NODDI bundle of this package: Watson ODF, stick Da, zeppelin with
-    D_par = Da and D_perp = Da (1 - f), signal-averaged zeppelin."""
-    nodes, w = _sphere_grid()
-    wt = _watson_weights(nodes, w, odi2kappa(odi), _unit(mu))
-    return f * _stick_dispersed(scheme, nodes, wt, DA) \
-        + (1 - f) * _zeppelin_dispersed(scheme, nodes, wt, DA, DA * (1 - f))
-
-
-def test_d1_is_two_noddi_bundles_and_a_csf_ball():
-    """Composition of the factory: S = w1 B1 + w2 B2 + w3 exp(-b 3e-9), each
-    bundle B_k the NODDI bundle (Watson ODF, Da 1.7, tortuosity) with its own
-    mu, ODI and f_intra.
-
-    Prediction: agrees with the NumPy reference to atol 1e-4 (the factory's
-    Watson quadrature versus the 96x192 Gauss grid).
-    """
-    scheme = _scheme()
-    w = (0.45, 0.35, 0.20)
-    e = rm.two_fascicle_noddi()(
-        scheme,
-        **{_B1 + "SD1Watson_1_mu": [0.6, 0.3], _B1 + "SD1Watson_1_odi": 0.2,
-           _B1 + "partial_volume_0": 0.7,
-           _B2 + "SD1Watson_1_mu": [1.4, 2.0], _B2 + "SD1Watson_1_odi": 0.4,
-           _B2 + "partial_volume_0": 0.5,
-           "partial_volume_0": w[0], "partial_volume_1": w[1],
-           "partial_volume_2": w[2]})
-    ref = w[0] * _bundle_signal(scheme, 0.7, 0.2, [0.6, 0.3]) \
-        + w[1] * _bundle_signal(scheme, 0.5, 0.4, [1.4, 2.0]) \
-        + w[2] * np.exp(-scheme.bvalues * DCSF)
-    np.testing.assert_allclose(e, ref, atol=1e-4)
-
-
-def test_d1_free_parameters_are_per_bundle_orientation_dispersion_fraction():
-    """Each bundle has mu, ODI and f_intra, the model has three bundle/CSF
-    fractions, and no diffusivity is free (Da and D_csf fixed).
-
-    Prediction: exactly the nine parameters.
-    """
-    assert set(rm.two_fascicle_noddi().parameter_names) == {
-        _B1 + "SD1Watson_1_mu", _B1 + "SD1Watson_1_odi",
-        _B1 + "partial_volume_0", _B2 + "SD1Watson_1_mu",
-        _B2 + "SD1Watson_1_odi", _B2 + "partial_volume_0",
-        "partial_volume_0", "partial_volume_1", "partial_volume_2"}
-
-
-def test_d1_citation_does_not_claim_behrens_defines_this_model():
-    """Behrens 2007 Eq. 1 is the ball-and-sticks model: N sticks and one
-    isotropic compartment sharing ONE diffusivity d, with automatic relevance
-    determination on the fractions. It has no Watson dispersion and no
-    tortuosity, so it does not define this factory.
-
-    Prediction: the docstring names Behrens 2007 only as the source of the
-    multi-fibre idea and states that the composition is this package's.
-    """
-    doc = " ".join(rm.two_fascicle_noddi.__doc__.split())
-    assert "Behrens" in doc and "Zhang" in doc
-    assert "does not define" in doc or "not a published" in doc
 
 
 # ---------------------------------------------------------------------------
@@ -526,72 +429,3 @@ def test_f3_is_v_in_sphere_plus_ball_with_din_1_58():
         "partial_volume_0": vin, "partial_volume_1": 1 - vin})
     ref = vin * es + (1 - vin) * np.exp(-scheme.bvalues * dex)
     np.testing.assert_allclose(e, ref, atol=1e-4)
-
-
-# ---------------------------------------------------------------------------
-# noddida_mte  (no published model; NODDIDA + per-compartment T2)
-# ---------------------------------------------------------------------------
-
-def _pick(model, suffix):
-    hits = [n for n in model.parameter_names if n.endswith(suffix)]
-    assert len(hits) == 1, (suffix, hits)
-    return hits[0]
-
-
-def test_noddida_mte_is_noddida_with_a_t2_per_compartment():
-    """noddida() is the Watson-dispersed Stick + Zeppelin of Jelescu 2016
-    Eq. 2 with no isotropic compartment. noddida_mte() is that model with one
-    T2 for the stick and one for the zeppelin.
-
-    Prediction: no Ball parameter; two T2 parameters; at TE = 60 ms with
-    T2 = 80 / 50 ms the signal equals f A_stick e^{-TE/T2a} + (1 - f)
-    A_zeppelin e^{-TE/T2e} to atol 1e-4, and with the T2 factors disabled
-    (scheme without TE) it equals noddida() to atol 5e-4 (measured 1.5e-4: the
-    two evaluate the Watson convolution through different kernels).
-    """
-    mte = rm.noddida_mte()
-    names = mte.parameter_names
-    assert not any("lambda_iso" in n for n in names)
-    assert len([n for n in names if n.endswith("T2")]) == 2
-
-    f, da, dpar, dperp, odi, mu = 0.5, 2.1e-9, 1.4e-9, 0.6e-9, 0.3, [0.7, 0.4]
-    par = {_pick(mte, "OccupancyGatedModel_1_lambda_par"): da,
-           _pick(mte, "OccupancyGatedModel_2_lambda_par"): dpar,
-           _pick(mte, "OccupancyGatedModel_2_lambda_perp"): dperp,
-           _pick(mte, "_mu"): mu, _pick(mte, "_odi"): odi,
-           _pick(mte, "_partial_volume_0"): f}
-    # the stick T2 is OccupancyGatedModel_1, the zeppelin T2 is _2
-    scheme = _scheme(TE=0.06, b0=True)
-    e = mte(scheme, **par, **{_pick(mte, "OccupancyGatedModel_1_T2"): 0.08,
-                              _pick(mte, "OccupancyGatedModel_2_T2"): 0.05})
-    nodes, w = _sphere_grid()
-    wt = _watson_weights(nodes, w, odi2kappa(odi), _unit(mu))
-    ref = f * _stick_dispersed(scheme, nodes, wt, da) * np.exp(-0.06 / 0.08) \
-        + (1 - f) * _zeppelin_dispersed(scheme, nodes, wt, dpar, dperp) \
-        * np.exp(-0.06 / 0.05)
-    np.testing.assert_allclose(e, ref, atol=1e-4)
-
-    no_te = _scheme()
-    plain = rm.noddida()(no_te, **{
-        "SD1WatsonDistributed_1_C1Stick_1_lambda_par": da,
-        "SD1WatsonDistributed_1_G2Zeppelin_1_lambda_par": dpar,
-        "SD1WatsonDistributed_1_G2Zeppelin_1_lambda_perp": dperp,
-        "SD1WatsonDistributed_1_SD1Watson_1_mu": mu,
-        "SD1WatsonDistributed_1_SD1Watson_1_odi": odi,
-        "SD1WatsonDistributed_1_partial_volume_0": f})
-    e0 = mte(no_te, **par, **{_pick(mte, "OccupancyGatedModel_1_T2"): 0.08,
-                              _pick(mte, "OccupancyGatedModel_2_T2"): 0.05})
-    np.testing.assert_allclose(e0, plain, atol=5e-4)
-
-
-def test_noddida_mte_docstring_matches_the_model():
-    """The docstring no longer calls the model 'unconstrained NODDIDA' with a
-    free isotropic Ball, and states that the combination is not a published
-    model.
-
-    Prediction: 'Ball' and 'unconstrained' are absent; 'not a published' is
-    present.
-    """
-    doc = " ".join(rm.noddida_mte.__doc__.split())
-    assert "unconstrained" not in doc and "Ball" not in doc
-    assert "not a published" in doc

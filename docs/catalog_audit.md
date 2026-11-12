@@ -370,6 +370,8 @@ docstring fix).
 
 Verdict: no published source for this composition. Kept, reported.
 
+Removed: the entry was removed for lack of a published source; `two_fascicle_noddi()` and its tests are gone.
+
 ## E1 charmed: Assaf & Basser 2005
 
 Source: the 2005 paper is not open; **abstract only** (CHARMED, high-b
@@ -538,6 +540,8 @@ published model.
 Tests: `test_noddida_mte_is_noddida_with_a_t2_per_compartment` (T2-weighted
 Eq. 2 reference to 7e-5; equals `noddida()` to 1.5e-4 with T2 off),
 `test_noddida_mte_docstring_matches_the_model` (both failed before).
+
+Removed: the entry was removed for lack of a published source; `noddida_mte()` and its tests are gone.
 
 ## Not verified
 

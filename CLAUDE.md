@@ -70,7 +70,7 @@ fit = noddi().fit(scheme, data, solver="jax")
 ```
 Available: `ball`, `zeppelin`, `ball_and_stick`, `ball_and_zeppelin`, `stick_tortuous_zeppelin`,
 `noddi`, `bingham_noddi`, `noddida`, `mcsmt`, `charmed`, `axcaliber`, `active_ax`, `verdict`,
-`sandi`, `impulsed`, `nexi`, `ivim`, `free_water_elimination`, `two_fascicle_noddi`.
+`sandi`, `impulsed`, `nexi`, `ivim`, `free_water_elimination`.
 
 **Myelin-water fraction from a multi-echo T2 decay** (e.g. a dmipy-sim CPMG train):
 ```python
