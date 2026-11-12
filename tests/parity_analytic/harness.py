@@ -357,7 +357,7 @@ def _sm_forward_cases():
     (``lambda_par > lambda_perp``: the closed form with ``erf``) by narrowed bounds and by the tortuosity link of MC-SMT,
     and oblate (``lambda_par < lambda_perp``: the Gauss-Legendre rule of dmipy-analytic) by narrowed bounds."""
     from dmipy_fit.core.modeling_framework import MultiCompartmentSphericalMeanModel
-    from dmipy_fit.custom_optimizers.reference_models import mcsmt, sandi
+    from dmipy_fit.custom_optimizers.reference_models import mcsmt, sandi, sandix, mte_sandi
     from dmipy_fit.signal_models import cylinder_models as cm, gaussian_models as gm
 
     def compartments(*classes):
@@ -375,7 +375,7 @@ def _sm_forward_cases():
                        ("stick_zeppelin", stick_zeppelin([1.0e-9, 3.0e-9], [0.1e-9, 1.0e-9])),
                        ("stick_zeppelin_oblate", stick_zeppelin([0.1e-9, 1.0e-9], [1.0e-9, 3.0e-9])),
                        ("stick_ball", compartments(cm.C1Stick, gm.G1Ball)), ("mcsmt", mcsmt),
-                       ("sandi", sandi)):
+                       ("sandi", sandi), ("sandix", sandix), ("mte_sandi", mte_sandi)):
         for broadcast in (False, True):
             for sect in ("jax_f32", "jax_f64"):
                 add(sect, f"{sect}/sm_forward/{cid}/{'meas' if broadcast else 'shell'}",
@@ -643,6 +643,7 @@ JAX_UNSUPPORTED = {
     "dist.poisson_c4": "the Poisson diameter integral has the C3 cylinder only",
     "dist.bundle": "no JAX forward for the bundle model",
     "ref.sandi": "a spherical-mean model: its JAX forward is the sm_forward/sandi case",
+    "ref.sandix": "a spherical-mean model: its JAX forward is the sm_forward/sandix case",
 }
 
 

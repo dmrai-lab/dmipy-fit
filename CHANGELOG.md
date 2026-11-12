@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+- **Reference catalogue, batch 3** (seven entries audited in `docs/catalog_audit.md`).
+  - `sandix()` now cites Olesen et al. 2022 and exchanges neurites with extracellular water, leaving soma
+    non-exchanging. It is a spherical-mean sphere + exchanging Stick/Ball + immobile Dot model, with soma D0=2e-9
+    m^2/s (was 1.58e-9), free neurite diffusivity (was fixed 1.7e-9), and no orientation. Fractions 0/1/2 now mean
+    soma/pair/immobile; `X1NEXI_1_f` is the neurite fraction within the pair. Old nested sphere/ball, kappa and
+    stick-orientation names are removed without aliases. `X1NEXI_1_t_ex` is seconds, 1/(r_n+r_e), with bounds
+    0.001-0.5 s (old soma-efflux kappa bounds: 0.1-200 s^-1; these are not equivalent). Fitted fractions and
+    exchange values from the old topology have no direct counterpart. Finite-pulse exchange still uses the effective-time narrow-pulse approximation, covered
+    by strict xfail G4-finite-pulse; the factory does not claim the full finite-pulse SANDIX equation.
+  - `exchange_impulsed()` fixes Din to 1.56e-9 m^2/s, as in Shi 2025 Sec. 2.2 (was 1.58e-9). At d=14 um,
+    f=0.55, zero exchange, delta/Delta=12/74 ms and b=0.25-1.8 ms/um^2, total signal changes by up to 3.88e-4
+    of S0; recovered diameter/fraction can consequently shift. The parity midpoint moves by 1.60e-4. The factory
+    still lacks Shi's two-mode intracellular diffusion, edge-enhancement correction, T=Delta+delta propagation
+    and high-frequency extracellular slope; strict xfail G5-EXCHANGE retains the published PGSE equations.
+    Its kappa is not the paper's corrected molecular exchange rate. No EXCHANGE clinical-validation claim remains.
+  - `mte_sandi()` uses the direction-averaged SANDI base: no `OccupancyGatedModel_2_mu`, free
+    `OccupancyGatedModel_2_lambda_par` (was fixed at 1.7e-9), soma D=3e-9 m^2/s (was 1.58e-9). Fits can now
+    estimate neurite diffusivity and cannot fit an irrelevant fibre orientation. At 12 um and b=6 ms/um^2,
+    delta/Delta=6/20 ms, the unweighted soma attenuation changes from 0.197 to 0.274 (F2); its contribution is
+    further scaled by f_soma^0 exp(-TE/T2_soma). Fractions remain TE=0 signal fractions. The correct abstract
+    authors are Gong, Tax, Mancini, Jones, Zhang and Palombo (#0766, 2023). This is a joint forward model of
+    its relaxation law, not its staged estimator.
+  - JAX spherical means gain Dot and compartments gated by one TransverseRelaxation factor, including the
+    weighted b0 relaxation sum. Forcing b0=1 would mis-estimate T2 and TE=0 fractions; the new path agrees with
+    NumPy including b0. Existing diffusion-only spherical means are unchanged. Unsupported factor combinations
+    raise explicitly. No new compartment class was introduced.
+  - Descriptions only (signals/fitted values unchanged): G2 specifies the efflux convention and source-access
+    limit; H1 describes its perpendicular log-time asymptote and fixed CSF Ball, not longitudinal 1/sqrt(t) or
+    the full Standard Model. No source was found defining H1's exact composition or I1's generic multi-TE
+    Stick/Ball composition; both are retained. I2 keeps C1's documented signal-averaged
+    extracellular formulation (strict xfail I2-EA), and states joint-fitting versus Gong's staged algorithm.
+  - Parity entries were changed only with `harness.py rebaseline --only`: SANDIX's two old JAX full-forward
+    entries are removed, eight spherical-mean forwards are added (SANDIX and MTE-SANDI, shell/measurement,
+    float32/64), and the SANDIX NumPy and three EXCHANGE entries are rewritten. End-to-end recovery of the
+    changed factories was not tested; forward equations, inventories and JAX/NumPy agreement were checked.
+
 - **Reference catalogue: `two_fascicle_noddi()` and `noddida_mte()` removed.** Neither composition has a published
   source (Behrens 2007 is a ball-and-sticks paper; no paper defines NODDIDA with a T2 per compartment). Build either
   from the compartments if needed; there is no alias. The parity record loses only the three `ref.two_fascicle_noddi`

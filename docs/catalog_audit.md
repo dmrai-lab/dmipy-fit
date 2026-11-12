@@ -554,3 +554,270 @@ Removed: the entry was removed for lack of a published source; `noddida_mte()` a
   the test data path, not the model, is suspected; not pursued.
 - Eq. 4 of Assaf 2008 is typeset ambiguously (weighting) and Eq. 3 prints a
   missing square; the references follow the standard forms.
+
+# Reference catalogue audit, batch 3
+
+Audited 2026-11-12 against `origin/main` e58d230. Predictions live in
+`tests/test_catalog_audit_batch3.py` and were written before factory changes.
+The first run had 4 failures, 5 passes and 3 strict xfails. Reading the final
+Shi manuscript subsequently exposed its 1.56 (not 1.58) soma diffusivity;
+the source-based no-exchange prediction was changed **before** that fix and
+failed by 3.88e-4 of S0. Tests are offline CPU checks with independent
+NumPy/SciPy equations. SI units throughout; diameter = twice paper radius.
+There is no claim of end-to-end parameter recovery from these forward tests.
+
+## Batch 3 summary
+
+| ID | Factory | Primary-source access/read | Verdict |
+|---|---|---|---|
+| G2 | `karger_two_compartment()` | Kärger 1985 abstract only; full text unavailable. Olesen 2022 full text read for equations | Conditional match to constant-q two-pool equations; finite PGSE pulses approximate |
+| G4 | `sandix()` | Olesen et al. 2022 full text, especially Sec. 2.1 and Eqs. 1-6 | Composition mistakes fixed; finite-pulse exchange still differs (strict xfail) |
+| G5 | `exchange_impulsed()` | Shi 2025 full author manuscript (PMC12805662), plus 2024 preprint (PMC11312621) | Fixed Din; still not EXCHANGE (strict xfail) |
+| H1 | `temporal_zeppelin_model()` | Novikov 2019 full text, Secs. 2.4, 3.2; Burcaw 2015 full text, Eqs. 24-25 | Transverse asymptotic law; description corrected; no published source found for this composition |
+| I1 | `mte_ball_stick()` | Gong 2020 full text | Relaxation algebra matches; no published source found for this two-pool composition; retained |
+| I2 | `mte_noddi()` | Gong 2020 full text, Sec. 2, Eqs. 1-8 | Relaxation algebra matches; C1 signal-averaged extracellular design retained (strict xfail) |
+| I3 | `mte_sandi()` | Complete ISMRM 2023 conference abstract #0766, including Methods and figure captions; not a journal full text. Palombo 2020 full text for base SANDI | Base SANDI mistakes and attribution fixed; joint forward form of the abstract's relaxation law |
+
+### Source access and limits
+
+Primary URLs actually read (no model is marked verified from memory):
+
+- [Kärger 1985 abstract](https://www.sciencedirect.com/science/article/pii/000186868580018X).
+  The full publisher page returns HTTP 403 through the web tool; the Elsevier
+  content endpoint returns an input error. Searches found no accessible
+  author copy. Its equations were **not** verified against the 1985 text.
+- [Olesen et al. 2022 author PDF](https://shemeshlab.org/wp-content/uploads/2022/02/1-s2.0-S1053811922001057-main.pdf),
+  *Diffusion time dependence, power-law scaling, and exchange in gray matter*,
+  NeuroImage 251:118976, doi:10.1016/j.neuroimage.2022.118976. This is the
+  paper defining SANDIX, not an unpublished combination of Palombo and Kärger.
+- [Shi et al. 2025 full manuscript](https://pmc.ncbi.nlm.nih.gov/articles/PMC12805662/),
+  *Comprehensive characterization of tumor therapeutic response via simultaneous
+  mapping of cell size, density, and transcytolemmal water exchange*,
+  MRI 122:110433, doi:10.1016/j.mri.2025.110433. The initially consulted
+  [2024 preprint XML](https://www.ebi.ac.uk/europepmc/webservices/rest/PMC11312621/fullTextXML)
+  is not the final publication; the audit and tests use the final main-text
+  equations. The final supplement's waveform discretisation was not read.
+- [Novikov et al. 2019 full text](https://pmc.ncbi.nlm.nih.gov/articles/PMC6481929/),
+  doi:10.1002/nbm.3998, and [Burcaw et al. 2015 full text](https://pmc.ncbi.nlm.nih.gov/articles/PMC4446209/),
+  doi:10.1016/j.neuroimage.2015.03.061. The latter supplies the finite-pulse
+  transverse law, of which the implemented log+3/2 is an asymptote.
+- [Gong et al. 2020 full published PDF](https://discovery.ucl.ac.uk/id/eprint/10098354/1/1-s2.0-S105381192030392X-main.pdf),
+  doi:10.1016/j.neuroimage.2020.116906. Supplementary simulations were not read.
+- [ISMRM #0766 complete abstract](https://cds.ismrm.org/protected/23MProceedings/PDFfiles/0766_IoX8F2Pxv.html)
+  (accessible from the [archive synopsis](https://archive.ismrm.org/2023/0766.html)),
+  doi:10.58530/2023/0766. The archive landing page alone omits Methods.
+- [Palombo et al. 2020 full PDF](https://discovery.ucl.ac.uk/10095891/1/1-s2.0-S1053811920303220-main.pdf),
+  doi:10.1016/j.neuroimage.2020.116835, base equations as in batch 2 F2.
+
+## G2 karger_two_compartment: Kärger 1985
+
+Two isotropic Gaussian pools, fraction f and 1-f; the factory's `kappa` is
+pool-1 efflux in s^-1. Detailed balance gives reverse rate kappa*f/(1-f).
+In the constant-q approximation the signal is
+`[1,1] exp([[ -b D1-k t, k_reverse t ],[ k t, -b D2-k_reverse t ]]) [f,1-f]`.
+This equation is verified from **Olesen Eqs. 2, 4-6**, not the unreadable
+Kärger full text. Both diffusivities and f/kappa remain free and unchanged.
+
+The test `test_g2_matches_independent_karger_matrix` predicts 1e-12 agreement
+including b0. PGSE substitutes t=Delta-delta/3; this is the existing
+constant-q approximation, not a finite-pulse waveform solution. The docstring
+now states the rate convention and access limit. Fitted values do not change.
+
+Verdict: conditional match to the later primary restatement, not full
+verification of the 1985 publication.
+
+## G4 sandix: Olesen et al. 2022
+
+Sec. 2.1.2 exchanges **neurites with extracellular water**, while soma
+exchange is neglected. Eq. 3 is solved for each stick angle before averaging;
+averaging the sticks before exchange is a different model. The independent
+soma is a GPA sphere with D0 fixed at **2 um^2/ms** (Sec. 2.1.1). The models
+include an immobile signal offset f_im. D_n and D_e are estimated (Table 1).
+
+| Difference before fix | Action and effect |
+|---|---|
+| Soma exchanged with Ball; neurites impermeable | Fixed topology: non-exchanging sphere plus coupled powder-averaged Stick/Ball plus Dot offset |
+| Oriented stick; D_n fixed at 1.7 | Fixed: direction-averaged model, free D_n |
+| Soma D0=1.58 | Fixed: 2e-9 m^2/s |
+| No immobile offset | Fixed: `S1Dot()` with its own total signal fraction |
+| No defining SANDIX citation | Fixed: Olesen 2022 |
+| Effective-time constant-q exchange rather than finite-pulse Eq. 3 | **Unfixed G4-finite-pulse**; strict xfail asserts the full finite-pulse ODE |
+
+Implementation uses existing `X1NEXI` to average coupled kernels, without a
+new compartment class. `partial_volume_0/1/2` now mean soma/pair/immobile;
+`X1NEXI_1_f` is the neurite fraction *within* the pair, and
+`t_ex=1/(r_n+r_e)`, r_n=(1-f)/t_ex. The old sphere/pair and oriented-stick
+names are gone, with no aliases. Old kappa referred to soma efflux and has no
+biophysical correspondence to the new neurite rate. The inherited t_ex
+fitting range is 0.001-0.5 s instead of the old kappa range 0.1-200 s^-1;
+these ranges are not equivalent. All parameter/meaning/bound changes are
+flagged for the lead. They are not claims that the source prescribes bounds.
+
+Tests: `test_g4_composition_and_narrow_pulse_kernel` pins the inventory and
+independent sphere + angular matrix-exponential + offset (1e-8);
+`test_g4_matches_published_finite_pulse_rate_equations` retains the published
+Eq. 3 assertion at delta/Delta=12/20 ms, strict xfail at 1e-7.
+The JAX spherical-mean path gains the Dot; its forward agrees with NumPy.
+
+Verdict: composition fixed; finite-pulse SANDIX remains unimplemented.
+
+## G5 exchange_impulsed: Shi et al. 2025
+
+The final paper Sec. 2.2 fixes intrinsic Din (usually **1.56 um^2/ms**).
+That corrects the factory's inherited 1.58, without changing `impulsed()`
+(F3, out of scope). At zero exchange, d=14 um, f=0.55, delta/Delta=12/74 ms,
+b=0.25/1/1.8 ms/um^2, the total signal changes by up to 3.88e-4 of S0.
+Consequently a fitted diameter/fraction can shift even at zero exchange.
+No fit recovery experiment was performed.
+
+The remaining implementation is the effective-medium substitution
+R_in=-log(S_sphere), R_ex=b D_ex in a two-site Kärger matrix. Shi explicitly
+explains why this is insufficient (Sec. 2.1.1). The publication requires:
+
+- Eq. 3 crossing probability p using cell radius, Din and kin;
+- Eq. 4 two-mode intracellular signal, combining restricted diffusion and
+  hindered diffusion, D_in,h = v_in ADC_r + v_ex D_ex;
+- Eq. 5 edge-enhancement correction: magnetisation efflux differs from water
+  molecular efflux, while k_ex^m is approximated by kin*v_in/v_ex;
+- propagation for T=**Delta+delta** (Eq. 1), not Delta-delta/3;
+- high-frequency extracellular diffusivity slope when f >= 100 Hz (Sec. 2.2).
+
+The existing building blocks do not express those coupled, size-dependent
+corrections. No new compartment class was added. `kappa` remains the generic
+model's magnetisation efflux, **not** the published corrected molecular kin;
+clinical validation claims were removed from the factory docstring.
+
+Tests: `test_g5_no_exchange_limit` compares to the independent GPA sphere
+mixture at the corrected Din (1e-8). Strict xfail
+`test_g5_matches_shi_pgse_exchange` asserts final Eqs. 1-5 (PGSE constants
+alpha=2.39, gamma1=0, gamma2=0.83, gamma3=2.88), 1e-7. It fails because the
+published corrections remain absent, not because their expected signal was
+changed to the current approximation. OGSE and arbitrary-waveform EXCHANGE
+are unverified, including the supplement's numerical waveform treatment.
+
+Verdict: fixed Din; still differs substantially from published EXCHANGE.
+
+## H1 temporal_zeppelin_model: Novikov et al. 2019
+
+The code changes **perpendicular**, not parallel diffusivity:
+`Dperp=lambda_inf+A*(log(Delta/delta)+3/2)/(Delta-delta/3)`;
+Dpar is constant. A has units m^2. Novikov Eq. 2.34 discusses transverse
+packing disorder's log(t)/t tail; a longitudinal 1/sqrt(t) correction is a
+different disorder regime. Burcaw Eqs. 24-25 give
+`Dperp=Dinf+A*F(Delta/delta)/(Delta-delta/3)`, with
+`F(x)=x^2/2*log(1-1/x^2)+log(x^2-1)/2+x*log((x+1)/(x-1))`.
+The implemented `log(x)+3/2` is its large-x asymptote, retained as the
+existing definition and now explicitly described as approximate.
+
+The Ball is **fixed** at 3e-9, not free. The composition has no intra-neurite
+stick and thus is not the Standard Model of Novikov Sec. 3.2. No published
+source was found defining this particular temporal Zeppelin+fixed-CSF model;
+it is reported and retained, not silently removed. The corrected description
+changes no signal, fitted value, parameter or bound.
+
+Test: `test_h1_perpendicular_log_time_dependence_and_csf` checks the actual
+asymptotic transverse law and composition at 1e-12. It does not assert that
+this is the full F(x) finite-pulse expression.
+
+Verdict: description corrected; faithful asymptotic building block, catalogue
+composition with no located defining source. Full finite-pulse F(x) is not implemented.
+
+## I1 mte_ball_stick: Gong et al. 2020
+
+Gong defines **MTE-NODDI**, not this Stick+Ball model. No defining publication
+for this two-pool factory was found. It is retained and explicitly labelled a
+generic composition for the lead to review. It has independent diffusivities
+(unlike Behrens's single-diffusivity ball-and-stick), which are not changed.
+
+The relaxation algebra follows the b0 compartment sum in Gong Eq. 8:
+`S/S0=sum_i f_i^0 exp(-TE/T2_i) A_i`, with f_i^0 defined at **TE=0**.
+At finite TE these are not the fractions of the TE-normalised diffusion
+signal: divide each decayed weight by their sum to obtain those fractions.
+`test_i1_generic_two_pool_relaxation` checks the independent oriented
+stick/ball relaxation sum at 1e-12, including b0. It verifies algebra,
+not the existence of a published two-pool model. No fitted values change.
+
+Verdict: source does not define the composition; relaxation algebra matches.
+
+## I2 mte_noddi: Gong et al. 2020
+
+Sec. 2 and Eqs. 1-8 introduce separate intra-neurite, extra-neurite and CSF
+T2. Eq. 4 predicts
+`f_in(TE)=f_in^0 exp(-TE/T2in)/(f_in^0 exp(-TE/T2in)+(1-f_in^0) exp(-TE/T2en))`;
+Eq. 5 applies the corresponding weighting to CSF. Eq. 8 supplies the total
+b0 decay. The factory's inner fraction is f_in^0 within tissue; outer
+fractions are tissue and CSF at TE=0. All three T2 parameters are exposed.
+Fixed Di=1.7e-9 and Diso=3e-9 match Gong Sec. 3.1.2.
+
+**As C1, the extracellular signal is the orientation average of microscopic
+Zeppelin signals, rather than exp(-b g^T <D> g). This documented design choice
+is retained.** Passing `test_i2_preserves_documented_signal_average_and_t2_weights`
+uses independent normalised Watson quadrature (2e-4). Strict xfail
+`test_i2_published_extracellular_gaussian` asserts the published
+averaged-tensor Gaussian to the same tolerance (finding I2-EA).
+
+Gong's estimation procedure first fits NODDI per TE, then Eq. 6/7 fraction
+relations and Eq. 8 b0 relaxation; this factory is a joint forward fit with
+one ODI, TE=0-fraction tortuosity, and three T2 values. These are different
+estimators, not evidence of reproducing the staged algorithm's estimates.
+No implementation or fitted-value change in this entry.
+
+Verdict: relaxation algebra matches; retained C1 extracellular difference and
+joint-estimation scope stated explicitly.
+
+## I3 mte_sandi: Gong et al., ISMRM 2023 #0766
+
+The complete conference abstract's authors are **Gong, Tax, Mancini, Jones,
+Zhang and Palombo**, not Palombo, Gong and Shemesh. Methods estimates SANDI
+per TE, then fits `S(b=0,TE)*f_soma(TE)=S0_soma*exp(-TE/T2_soma)`,
+analogously for neurite and extracellular signals, and normalises the
+extrapolated S0_i to get relaxation-independent fractions.
+
+The factory uses the equivalent compartment relaxation sum as a **joint
+forward model**, not the abstract's staged estimator. Its diffusion base
+must remain SANDI (Palombo Eq. 10, as F2): direction average, soma D=3e-9,
+free neurite and extracellular diffusivities. Fixed base errors: oriented
+stick -> spherical-mean model; D_soma 1.58 -> 3; D_neurite fixed at 1.7 ->
+free. `OccupancyGatedModel_2_mu` is removed; `..._2_lambda_par` is added;
+three T2 values and all fraction names remain. These definition/parameter
+changes are flagged for lead review. The abstract itself does not specify
+new diffusion bounds or a new fixed soma diffusivity; the base follows F2.
+
+Tests: `test_i3_direction_average_free_dn_and_compartment_t2` checks inventory
+and independent direction-averaged sphere/stick/ball sum with separate T2
+values, including b0, 2e-5. JAX gains the T2-gated spherical means (one
+TransverseRelaxation factor only; unsupported combinations raise), including
+compartment-weighted b0 decay instead of forcing it to one. Existing
+relaxation-free spherical means keep their b0 convention. Fits now estimate
+neurite diffusivity and cannot estimate an irrelevant fibre orientation;
+fractions refer to TE=0 signals, not TE-weighted observations.
+
+Verdict: base-model and attribution mistakes fixed; conference abstract's
+relaxation law matched. Its staged estimation and parameter recovery were
+not reproduced.
+
+## Batch 3 validation and remaining limits
+
+- Batch-3 tests: **12 passed, 3 strict xfailed** (15 cases). Both shell and
+  measurement-broadcast JAX outputs are covered; a two-TE case checks both
+  b0 relaxation sums independently.
+- Regression runs: all eight files under `tests/` were exercised across two
+  sequential runs, plus catalogue construction/DOI checks, core spherical-mean
+  T2 parity, JAX spherical means and multi-compartment tests: **238 distinct
+  passing tests, 3 strict xfails** in total. The full package suite, CI runners
+  and GPU execution were not run. All local computation was CPU, cost $0.
+- The 1985 full text remains unreadable; G5's waveform supplement and both
+  multi-TE publications' staged estimation procedures were not reproduced.
+  No end-to-end recovery claim is made for the changed factories.
+- Parity was recorded exclusively with `harness.py rebaseline --only` for
+  the SANDIX/EXCHANGE entries and the new SANDIX/MTE-SANDI spherical means:
+  **8 added, 2 removed, 4 modified**; **605 other manifest entries and their
+  arrays are byte-for-byte unchanged** against `origin/main`. The stored
+  environment block was preserved.
+- Full `harness.py check` emitted **617 cases** and exited 1 with **89
+  mismatches in unselected cases**; none of the selected cases failed. This
+  environment differs from the stored record (Python 3.11.18 vs 3.12.3,
+  NumPy 2.4.6 vs 2.5.4, SciPy 1.17.1 vs 1.18.1, JAX/JAXlib 0.10.2 vs
+  0.12.0.1, and dependency revisions). A same-environment base comparison
+  was not performed, so the exact cause of those mismatches is unverified.
+  No unrelated key was re-recorded to hide them.

@@ -35,7 +35,7 @@ F3  impulsed()                        3  Soma/tumour     Xu et al. 2019, Magn Re
 G1  nexi()                            1  Exchange/SM     Jelescu et al. 2022, NeuroImage 256
 G2  karger_two_compartment()          3  Exchange        Kärger 1985, Adv Colloid Interface Sci 23
 G3  fexi()                            4  Exchange        Lasič et al. 2011, MRM 66
-G4  sandix()                          4  Exchange+soma   SANDI (Palombo 2020) + Kärger 1985
+G4  sandix()                          2  Exchange+soma   Olesen et al. 2022, NeuroImage 251
 G5  exchange_impulsed()               3  Exchange+soma   Shi et al. 2025, Magn Reson Imaging
 H1  temporal_zeppelin_model()         3  Time-dep WM     Novikov et al. 2019, NMR Biomed 32
 I1  mte_ball_stick()                  3  Relaxometry     Gong et al. 2020, NeuroImage 217
@@ -535,7 +535,11 @@ def nexi():
 def karger_two_compartment():
     """Generic Kärger two-compartment model: Ball + Ball with exchange.
 
-    The simplest Kärger model — two isotropic pools exchanging at rate kappa.
+    The simplest Kärger model — two isotropic pools. kappa (s^-1) is
+    pool-1 efflux; the reverse rate is kappa*f/(1-f), not kappa.
+    The PGSE implementation uses t=Delta-delta/3 in a constant-q kernel;
+    finite-pulse exchange is approximate. The equations are those restated
+    in Olesen et al. 2022, Eqs. 2 and 4-6.
     Covers FEXI slow/fast pool interpretation and basic intra/extracellular
     exchange without diffusion anisotropy.
 
@@ -575,35 +579,38 @@ def fexi():
 
 
 def sandix():
-    """SANDIX: SANDI with exchange between soma (sphere) and extracellular (Ball).
+    """SANDIX composition with a narrow-pulse exchange approximation.
 
-    Extends SANDI by adding Kärger-type permeable exchange.  The neurite
-    (Stick) compartment is kept as a separate non-exchanging component
-    — wrapping only sphere+extracellular in the Kärger pair.
+    Olesen et al. 2022, Sec. 2.1: non-exchanging soma (GPA sphere,
+    D0=2e-9 m^2/s), powder-averaged exchanging neurite/extra pair and
+    immobile offset. Fractions 0/1/2 refer to soma/pair/offset; X1NEXI_f
+    is the neurite fraction within the pair. D_i and D_e are free;
+    t_ex=1/(r_n+r_e) in seconds, r_n=(1-f)/t_ex.
 
-    Composed model (no single reference) — SANDI base + Kärger exchange:
-    SANDI: Palombo et al. 2020, NeuroImage 215, doi:10.1016/j.neuroimage.2020.116835
-    Exchange: Kärger 1985, Adv Colloid Interface Sci 23, doi:10.1016/0001-8686(85)80018-X
+    The paper solves the finite-pulse rate equations. Here X1NEXI uses
+    t=Delta-delta/3 in the constant-q kernel, which differs from the paper
+    for finite pulses (G4-finite-pulse in docs/catalog_audit.md).
+
+    doi:10.1016/j.neuroimage.2022.118976
     """
-    soma  = S4SphereGaussianPhaseApproximation(diffusion_constant=_Din)
-    extra = G1Ball()
-    mcm   = MultiCompartmentModel([X0GeneralizedKarger(soma, extra), C1Stick()])
-    mcm.set_fixed_parameter('C1Stick_1_lambda_par', _Da)
-    return mcm
+    soma = S4SphereGaussianPhaseApproximation(diffusion_constant=2e-9)
+    return MultiCompartmentSphericalMeanModel([soma, X1NEXI(), S1Dot()])
 
 
 def exchange_impulsed():
-    """EXCHANGE: IMPULSED + transcytolemmal Kärger exchange (tumour).
+    """Effective-medium sphere/ball exchange, not the full EXCHANGE method.
 
-    Simultaneously maps cell size, cell density, and membrane water exchange
-    rate.  Validated in breast cancer patients under neoadjuvant chemotherapy.
-    Intra-cellular D_in fixed at 1.58×10⁻⁹ m²/s; exchange rate κ is the
-    key new biomarker vs IMPULSED.
+    D_in is fixed at 1.56e-9 m^2/s (Shi Sec. 2.2). kappa is the model's intracellular
+    magnetisation efflux rate, not Shi's corrected molecular exchange rate.
+    The factory lacks Shi Eqs. 3-5 (two-mode intracellular diffusion and
+    edge-enhancement correction), and uses Delta-delta/3 rather than
+    T=Delta+delta. These remain finding G5-EXCHANGE in docs/catalog_audit.md.
+    Clinical validation of the published method does not validate this factory.
 
     Shi et al. 2025, Magnetic Resonance Imaging (arXiv:2408.01918)
     doi:10.1016/j.mri.2025.110433
     """
-    soma  = S4SphereGaussianPhaseApproximation(diffusion_constant=_Din)
+    soma  = S4SphereGaussianPhaseApproximation(diffusion_constant=1.56e-9)
     extra = G1Ball()
     return MultiCompartmentModel([X0GeneralizedKarger(soma, extra)])
 
@@ -613,13 +620,20 @@ def exchange_impulsed():
 # ===========================================================================
 
 def temporal_zeppelin_model():
-    """Temporal Zeppelin + free Ball: Standard Model with structural disorder.
+    """Temporal Zeppelin plus CSF Ball fixed at 3e-9 m^2/s.
 
-    G3TemporalZeppelin captures D_par(t) = D_par_∞ + A/√t arising from
-    1D disorder along axons; free Ball accounts for CSF partial volume.
+    G3 changes the perpendicular diffusivity, with constant D_par:
+    D_perp = lambda_inf + A*(log(Delta/delta)+3/2)/(Delta-delta/3).
+    A has units m^2. The log+3/2 expression is the large-Delta/delta
+    approximation to Burcaw 2015 Eqs. 24-25, not its full F(Delta/delta).
+    This is the transverse packing-disorder correction,
+    not a longitudinal 1/sqrt(t) law. The review discusses its basis but
+    does not define this Zeppelin+CSF composition as the Standard Model
+    (which includes intra-neurite sticks); this is a catalogue composition.
 
     Novikov, Fieremans, Jespersen & Kiselev 2019, NMR in Biomedicine 32
     doi:10.1002/nbm.3998
+    Finite-pulse basis: doi:10.1016/j.neuroimage.2015.03.061
     """
     mcm = MultiCompartmentModel([G3TemporalZeppelin(), G1Ball()])
     mcm.set_fixed_parameter('G1Ball_1_lambda_iso', _Dcsf)
@@ -631,10 +645,13 @@ def temporal_zeppelin_model():
 # ===========================================================================
 
 def mte_ball_stick():
-    """Multi-TE Ball-and-Stick with per-compartment T2 relaxation.
+    """Generic multi-TE Stick+Ball with per-compartment T2 relaxation.
 
     T2_intra and T2_extra are free parameters; requires multi-echo acquisition.
-    Serves as the simplest jointly estimated diffusion + relaxation model.
+    Fractions are TE=0 signal fractions (not TE-normalised weights).
+    Gong Eq. 8 supports the relaxation algebra, but defines MTE-NODDI,
+    not this two-pool composition: it is a catalogue composition that no
+    publication defines.
 
     Gong, Tong, He, Sun, Zhong & Zhang 2020, NeuroImage 217
     doi:10.1016/j.neuroimage.2020.116906
@@ -652,6 +669,12 @@ def mte_noddi():
     Per-compartment T2 weighting (T2_intra, T2_extra) is included as free
     parameters; acquire at multiple TE to separate T2-driven volume fraction
     bias from true neurite density.
+
+    Fractions are TE=0 signal fractions; the third T2 belongs to CSF.
+    This is a joint forward model, not Gong's staged per-TE NODDI fitting
+    procedure. As in noddi(), extracellular signals are averaged over the
+    Watson distribution instead of exponentiating its averaged tensor;
+    this documented C1 design choice is retained (finding I2-EA).
 
     Gong, Tong, He, Sun, Zhong & Zhang 2020, NeuroImage 217
     doi:10.1016/j.neuroimage.2020.116906
@@ -677,15 +700,19 @@ def mte_sandi():
     Allows disentangling T2 from diffusion-based compartment fractions in grey
     matter.  All three T2 values (soma, neurite, extra) are free parameters.
 
-    Palombo, Gong & Shemesh 2023, ISMRM abstract #0766
+    Direction-averaged SANDI base: soma D=3e-9 m^2/s, neurite D free.
+    Fractions are TE=0 signal fractions. This joint forward model uses
+    the abstract's compartmental relaxation law; it does not reproduce
+    the abstract's staged per-TE SANDI fitting procedure.
+
+    Gong, Tax, Mancini, Jones, Zhang & Palombo 2023, ISMRM abstract #0766
+    doi:10.58530/2023/0766
     """
     soma    = OccupancyGatedModel(
-        S4SphereGaussianPhaseApproximation(diffusion_constant=_Din), [TransverseRelaxation()])
+        S4SphereGaussianPhaseApproximation(diffusion_constant=_D_SOMA), [TransverseRelaxation()])
     neurite = OccupancyGatedModel(C1Stick(), [TransverseRelaxation()])
     extra   = OccupancyGatedModel(G1Ball(), [TransverseRelaxation()])
-    mcm = MultiCompartmentModel([soma, neurite, extra])
-    mcm.set_fixed_parameter('OccupancyGatedModel_2_lambda_par', _Da)  # neurite stick
-    return mcm   # per-compartment T2 (soma, neurite, extra) via the T2 factors
+    return MultiCompartmentSphericalMeanModel([soma, neurite, extra])
 
 
 def wmti():
