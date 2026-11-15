@@ -106,7 +106,7 @@ dmipy_fit = [
 testpaths = ["dmipy_fit", "tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --durations=25 --durations-min=1.0"
 markers = [
     "slow: marks tests that take > 30 s (deselect with -m 'not slow')",
 ]
